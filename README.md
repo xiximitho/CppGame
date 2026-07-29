@@ -13,9 +13,9 @@ o que ainda não existe está em [docs/roadmap.md](docs/roadmap.md), explicitame
 ## Rodando em qualquer máquina
 
 Este é o ponto central do projeto: **nenhuma dependência precisa estar instalada
-no sistema.** SDL3, EnTT, glm, ENet e doctest são baixados pelo próprio build,
-travados em commits exatos (SHA, não tag). Você só precisa de compilador, CMake e
-Ninja.
+no sistema.** SDL3, SDL3_image, EnTT, glm, ENet e doctest são baixados pelo
+próprio build, travados em commits exatos (SHA, não tag). Você só precisa de
+compilador, CMake e Ninja.
 
 ### 1. Pré-requisitos (uma vez por máquina)
 
@@ -46,8 +46,11 @@ ctest --preset debug      # os testes devem passar antes de você confiar em nad
 ./build/debug/bin/game_client            # abre o mundo em modo solo
 ```
 
-Não existe passo de instalação de asset: toda a arte do protótipo é **gerada em
-código**, então um clone limpo não pode falhar por falta de um PNG.
+Um clone limpo roda sem passo de instalação de asset. A arte vem de um atlas PNG
+(`assets/tilesets/atlas.png`, decodificado pelo SDL_image) e o mundo de um mapa em
+texto (`assets/maps/dungeon.txt`); se qualquer um faltar, o cliente cai num atlas
+**gerado em código** e num mapa **gerado por seed**. Um arquivo ausente nunca
+quebra o build nem a execução.
 
 ### 3. Multiplayer local
 
@@ -85,9 +88,25 @@ cmake --preset server-only && cmake --build --preset server-only
 
 ## O que já roda
 
-- **Mundo isométrico 2:1** (tiles 64×32) com 3 andares, gerado deterministicamente
-  a partir de uma seed — lagos, salas com portas, trilhas, árvores, plataforma
-  elevada.
+- **Mundo isométrico 2:1** (tiles 64×32) com múltiplos andares. Por padrão o mundo
+  é um **calabouço de pedra carregado de arquivo**; sem arquivo, cai num mapa
+  gerado deterministicamente por seed — lagos, salas com portas, trilhas, árvores,
+  plataforma elevada.
+- **Catálogo de itens/tipos** (`sim::ItemTypeRegistry`): cada `TileId` carrega
+  propriedades de jogo (bloqueia passo/visão, pegável, empilhável, peso). O
+  `blocking` de um tile é **derivado** dessas flags, não escrito à mão. Puro,
+  sem I/O — o servidor continua precisando só dos números. Ver
+  [docs/content.md](docs/content.md).
+- **Arte por atlas PNG**: sprites carregados de `assets/tilesets/atlas.png` via
+  SDL_image e ligados a ids por `assets/tilesets/atlas.txt`, com fallback
+  procedural. Trocar a arte não recompila nada. Ver [docs/sprites.md](docs/sprites.md).
+- **Mapas em arquivo texto**: mundo autorado em `assets/maps/*.txt` (formato
+  legível, editável à mão), lido pelo **mesmo parser puro** no cliente (via VFS,
+  à prova de APK) e no servidor (via `<fstream>`, sem SDL) — solo e multiplayer
+  não podem divergir. Ver [docs/maps.md](docs/maps.md).
+- **Editor de mapa** (`game_editor`): editor isométrico clicável cuja paleta é
+  montada dos ids do catálogo + sprites do atlas; pinta/apaga tiles com o mouse e
+  salva de volta pro `.txt`.
 - **Movimento tile-a-tile** com duração de passo, custo maior na diagonal, e a
   regra estrita de não cortar quina de parede.
 - **Occupancy real**: dois atores não entram no mesmo tile, e o destino é
@@ -109,9 +128,10 @@ cmake --preset server-only && cmake --build --preset server-only
   visual em CI e para alguém te mandar exatamente o que está vendo.
 - **Solo e multiplayer usam o mesmo código de render**, porque o modo solo roda a
   simulação de verdade e monta o mesmo `Snapshot` que o servidor mandaria.
-- **72 casos de teste / ~47k asserções** cobrindo projeção, picking, regras de
-  movimento, área de interesse e formato de rede, incluindo pacote truncado e id
-  desconhecido. Passam também sob AddressSanitizer e UBSan (`--preset asan`).
+- **81 casos de teste / ~47k asserções** cobrindo projeção, picking, regras de
+  movimento, área de interesse, formato de rede (incluindo pacote truncado e id
+  desconhecido), o catálogo de itens e o round-trip do formato de mapa. Passam
+  também sob AddressSanitizer e UBSan (`--preset asan`).
 
 ### Ressalva importante
 
@@ -139,6 +159,17 @@ SDL_VIDEODRIVER=dummy ./build/debug/bin/game_client --solo --screenshot /tmp/sho
 Diagnóstico (fps, draw calls, tick, tile sob o cursor) fica no **título da
 janela** — HUD de verdade depende de Dear ImGui, que está no roadmap.
 
+## Editor de mapa
+
+```bash
+./build/debug/bin/game_editor --map assets/maps/dungeon.txt   # rode da raiz do repo
+```
+
+Editor isométrico simples: a paleta é montada dos ids do catálogo de itens + os
+sprites do atlas, então mostra exatamente o que dá para colocar. Clique esquerdo
+coloca o brush, direito apaga; um fantasma do brush segue o cursor. Controles
+completos em [docs/maps.md](docs/maps.md).
+
 ## Estrutura
 
 ```
@@ -147,6 +178,7 @@ src/sim/       estado autoritativo e regras. Sem SDL, sem sockets, sem I/O, sem 
 src/net/       formato de fio (bit packing) e transporte atrás de ITransport.
 src/platform/  SDL: janela, caminhos, VFS de assets (à prova de APK do Android).
 src/client/    render, input, câmera, sessão solo e sessão remota.
+src/editor/    editor de mapa isométrico (game_editor). Tool client-side; reusa o render do cliente.
 src/server/    main() headless. Não linka SDL.
 tests/         doctest. Não linka SDL.
 ```
@@ -165,6 +197,12 @@ regra está em [docs/architecture.md](docs/architecture.md).
   falta
 - [docs/roadmap.md](docs/roadmap.md) — o que não existe ainda, em ordem de
   importância
+- [docs/content.md](docs/content.md) — plataforma de itens/tipos e o pipeline de
+  conteúdo (SQLite → bake → blob)
+- [docs/sprites.md](docs/sprites.md) — como a arte chega na tela e como vincular
+  um sprite a um objeto
+- [docs/maps.md](docs/maps.md) — formato de mapa texto, carregamento e o editor
+  `game_editor`
 
 ## Configuração opcional
 
