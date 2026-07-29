@@ -1,0 +1,36 @@
+# Matches the style already used across src/ and tests/.
+# Run: find src tests -name '*.cpp' -o -name '*.hpp' | xargs clang-format -i
+---
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 84
+IndentWidth: 4
+AccessModifierOffset: -4
+TabWidth: 4
+UseTab: Never
+
+# Pointer and reference bind to the type: `SDL_Renderer* renderer`.
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# Braces stay on the same line, and always present even for single statements.
+BreakBeforeBraces: Attach
+InsertBraces: true
+
+# Keeps the include blocks grouped the way they already are: own header, then C/C++
+# standard library, then third party, then project headers.
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+SpaceAfterTemplateKeyword: false
+AlwaysBreakTemplateDeclarations: Yes
+
+# Aligned trailing comments read better in the component and constant tables.
+AlignTrailingComments: true
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false

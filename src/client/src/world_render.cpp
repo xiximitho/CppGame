@@ -1,0 +1,212 @@
+#include "client/world_render.hpp"
+
+#include <algorithm>
+
+#include "client/iso.hpp"
+#include "sim/snapshot.hpp"
+
+namespace client {
+namespace {
+
+/// Extra tiles drawn beyond the window edge. Tall sprites (a wall is twice a
+/// tile's height) have their anchor tile off screen while still being visible,
+/// so culling exactly at the viewport edge would pop them in and out.
+constexpr int kCullMarginTiles = 4;
+
+const sim::ActorState* find_actor(const WorldView& view, sim::NetId id) {
+    if (id == sim::kInvalidNetId) {
+        return nullptr;
+    }
+    const auto it = std::find_if(
+        view.actors.begin(), view.actors.end(),
+        [id](const sim::ActorState& actor) { return actor.net_id == id; });
+    return it == view.actors.end() ? nullptr : &*it;
+}
+
+struct TileRange {
+    int min_x = 0;
+    int max_x = 0;
+    int min_y = 0;
+    int max_y = 0;
+};
+
+/// Tiles of floor `z` that can touch the window. Derived by inverse-projecting
+/// the four window corners rather than by guessing a radius, so it stays correct
+/// at any zoom and window size.
+TileRange visible_tiles(const Renderer2D& renderer, int z) {
+    float wx0 = 0.0F;
+    float wy0 = 0.0F;
+    float wx1 = 0.0F;
+    float wy1 = 0.0F;
+    renderer.window_to_world(0.0F, 0.0F, wx0, wy0);
+    renderer.window_to_world(static_cast<float>(renderer.viewport_width()),
+                             static_cast<float>(renderer.viewport_height()), wx1,
+                             wy1);
+
+    const sim::TilePos corners[4] = {
+        iso::screen_to_tile(wx0, wy0, z),
+        iso::screen_to_tile(wx1, wy0, z),
+        iso::screen_to_tile(wx0, wy1, z),
+        iso::screen_to_tile(wx1, wy1, z),
+    };
+
+    TileRange range{corners[0].x, corners[0].x, corners[0].y, corners[0].y};
+    for (const sim::TilePos& corner : corners) {
+        range.min_x = std::min(range.min_x, static_cast<int>(corner.x));
+        range.max_x = std::max(range.max_x, static_cast<int>(corner.x));
+        range.min_y = std::min(range.min_y, static_cast<int>(corner.y));
+        range.max_y = std::max(range.max_y, static_cast<int>(corner.y));
+    }
+
+    range.min_x -= kCullMarginTiles;
+    range.min_y -= kCullMarginTiles;
+    range.max_x += kCullMarginTiles;
+    range.max_y += kCullMarginTiles;
+    return range;
+}
+
+void submit_entry(Renderer2D& renderer, TextureHandle texture,
+                  const AtlasEntry& entry, iso::ScreenPos apex, float depth,
+                  Color tint) {
+    SpriteCmd sprite;
+    sprite.texture = texture;
+    sprite.uv = entry.uv;
+    sprite.dst = Rect{apex.x + entry.origin_x, apex.y + entry.origin_y,
+                      entry.width, entry.height};
+    sprite.depth = depth;
+    sprite.tint = tint;
+    renderer.submit(sprite);
+}
+
+/// Floors above the actor are hidden so a roof does not cover the player. The
+/// exception is standing in the open, where the floor above has nothing on it and
+/// showing it costs nothing but reveals bridges and overhangs.
+int top_visible_floor(const WorldView& view, int actor_floor) {
+    const int above = actor_floor + 1;
+    if (above >= view.map.floors()) {
+        return actor_floor;
+    }
+
+    const sim::ActorState* local = find_actor(view, view.local_id);
+    if (local == nullptr) {
+        return actor_floor;
+    }
+
+    const sim::TilePos overhead{local->tile.x, local->tile.y,
+                                static_cast<std::int8_t>(above)};
+    const bool covered = view.map.at(overhead).ground != sim::kTileEmpty;
+    return covered ? actor_floor : above;
+}
+
+}  // namespace
+
+int local_floor(const WorldView& view) {
+    const sim::ActorState* local = find_actor(view, view.local_id);
+    return local != nullptr ? local->tile.z : 0;
+}
+
+bool camera_target(const WorldView& view, float& out_x, float& out_y) {
+    const sim::ActorState* local = find_actor(view, view.local_id);
+    if (local == nullptr) {
+        return false;
+    }
+
+    const sim::InterpolatedPos pos = sim::interpolate(*local);
+    const iso::ScreenPos screen = iso::tile_to_screen(pos.x, pos.y, pos.z);
+
+    // Centre on the tile's middle, not its top vertex, so the actor sits in the
+    // middle of the window rather than half a tile high.
+    out_x = screen.x;
+    out_y = screen.y + static_cast<float>(iso::kHalfTileHeight);
+    return true;
+}
+
+void render_world(Renderer2D& renderer, const Tileset& tileset,
+                  const WorldView& view, const RenderParams& params) {
+    const TextureHandle texture = tileset.texture();
+    if (!texture.valid() || !view.ready) {
+        return;
+    }
+
+    const int actor_floor = local_floor(view);
+    const int top_floor = top_visible_floor(view, actor_floor);
+
+    for (int z = 0; z <= top_floor; ++z) {
+        const TileRange range = visible_tiles(renderer, z);
+
+        // Floors below the actor's are dimmed, which reads as depth and keeps the
+        // eye on the floor being played.
+        const int depth_below = actor_floor - z;
+        const auto brightness = static_cast<std::uint8_t>(
+            std::max(120, 255 - depth_below * 45));
+        const Color floor_tint{brightness, brightness, brightness, 255};
+
+        for (int y = range.min_y; y <= range.max_y; ++y) {
+            for (int x = range.min_x; x <= range.max_x; ++x) {
+                const sim::TilePos pos{static_cast<std::int16_t>(x),
+                                       static_cast<std::int16_t>(y),
+                                       static_cast<std::int8_t>(z)};
+                if (!view.map.in_bounds(pos)) {
+                    continue;
+                }
+                const sim::Tile& tile = view.map.at(pos);
+                if (tile.ground == sim::kTileEmpty) {
+                    continue;
+                }
+
+                const iso::ScreenPos apex = iso::tile_to_screen(pos);
+                const auto fx = static_cast<float>(x);
+                const auto fy = static_cast<float>(y);
+
+                const AtlasEntry& ground = tileset.ground(tile.ground);
+                if (ground.valid) {
+                    submit_entry(renderer, texture, ground, apex,
+                                 iso::depth_key(fx, fy, z, iso::Layer::Ground),
+                                 floor_tint);
+                }
+
+                if (tile.object != sim::kTileEmpty) {
+                    const AtlasEntry& object = tileset.object(tile.object);
+                    if (object.valid) {
+                        submit_entry(renderer, texture, object, apex,
+                                     iso::depth_key(fx, fy, z, iso::Layer::Object),
+                                     floor_tint);
+                    }
+                }
+            }
+        }
+
+        // Hover highlight, drawn above the ground of its own tile but below any
+        // object standing on it.
+        if (params.hover_valid && params.hover.z == z &&
+            view.map.in_bounds(params.hover)) {
+            const iso::ScreenPos apex = iso::tile_to_screen(params.hover);
+            submit_entry(renderer, texture, tileset.highlight(), apex,
+                         iso::depth_key(static_cast<float>(params.hover.x),
+                                        static_cast<float>(params.hover.y), z,
+                                        iso::Layer::Ground) +
+                             0.5F,
+                         Color{255, 255, 255, 255});
+        }
+
+        for (const sim::ActorState& actor : view.actors) {
+            if (actor.tile.z != z) {
+                continue;
+            }
+            const sim::InterpolatedPos pos = sim::interpolate(actor);
+            const iso::ScreenPos apex = iso::tile_to_screen(pos.x, pos.y, pos.z);
+
+            // The local player is tinted warm so it is findable in a crowd
+            // without a nameplate system existing yet.
+            const Color tint = (actor.net_id == view.local_id)
+                                   ? Color{255, 244, 205, 255}
+                                   : floor_tint;
+
+            submit_entry(renderer, texture, tileset.actor(actor.facing), apex,
+                         iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor),
+                         tint);
+        }
+    }
+}
+
+}  // namespace client

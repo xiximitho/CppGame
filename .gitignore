@@ -1,0 +1,39 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# Pinned dependency cache (FETCHCONTENT_BASE_DIR). Never committed: it is fully
+# reproducible from cmake/Dependencies.cmake. See docs/dependencies.md for how
+# to move it to an offline machine.
+.deps/
+
+# Local, machine-specific preset overrides. Intentionally not committed.
+CMakeUserPresets.json
+
+# Editors / tooling
+.vscode/
+.idea/
+.cache/
+compile_commands.json
+*.swp
+*~
+
+# Android
+platform/android/.gradle/
+platform/android/local.properties
+platform/android/app/build/
+platform/android/build/
+*.apk
+*.aab
+*.keystore
+
+# Xcode / iOS
+platform/ios/build/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# OS noise
+.DS_Store
+Thumbs.db

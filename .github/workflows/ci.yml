@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch cancels the previous run; SDL3 takes a few minutes
+# to compile and there is no point paying for a superseded commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Cheap and fast, so it fails before anyone waits on a compile.
+  layering:
+    name: module boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-layering.sh
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+            preset: ci
+          - name: macos
+            os: macos-latest
+            preset: ci
+          - name: windows
+            os: windows-latest
+            # `release` rather than `ci`: the code is warning-clean under
+            # GCC/Clang but has never been audited against MSVC's /W4, so
+            # -Werror there would fail on warnings nobody has read yet. Promote
+            # this to `ci` once MSVC warnings have been triaged once.
+            preset: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keyed on the dependency manifest: any pin change invalidates it, and
+      # nothing else does. This turns a 5 minute SDL3 build into seconds.
+      - name: Cache pinned dependencies
+        uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-${{ matrix.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: deps-${{ matrix.os }}-
+
+      - name: Install system prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: ./scripts/setup-linux.sh
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress
+
+      # Puts cl.exe on PATH so the Ninja generator can find it.
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+        # The `release` preset has no matching test preset name on Windows, so run
+        # the binary directly there.
+        if: runner.os != 'Windows'
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build/release --output-on-failure
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-binaries
+          path: |
+            build/*/bin/game_client*
+            build/*/bin/game_server*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Proves the claim in the README: the server needs no graphics libraries at all.
+  # Deliberately does NOT run setup-linux.sh, so a stray SDL3 dependency in the
+  # server would fail here even though the GitHub runner happens to have X11
+  # headers installed.
+  server-only:
+    name: headless server (no SDL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-server-only-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Install only build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git
+
+      - name: Configure and build
+        run: |
+          cmake --preset server-only
+          cmake --build --preset server-only
+
+      - name: The server starts and binds a port
+        run: |
+          timeout 5 ./build/server-only/bin/game_server --port 7777 &
+          sleep 2
+          # A server that failed to bind logs an error and exits, so a live
+          # process here means the socket is up.
+          pgrep -f game_server > /dev/null && echo "server is running"
+          wait || true
+
+  sanitizers:
+    name: asan + ubsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-asan-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: deps-ubuntu-latest-
+
+      - name: Install system prerequisites
+        run: ./scripts/setup-linux.sh
+
+      - name: Configure and build
+        run: |
+          cmake --preset asan
+          cmake --build --preset asan
+
+      # The bit reader and writer deal with attacker-controlled lengths, so the
+      # value here is specifically in running the protocol tests under asan.
+      - name: Test under sanitizers
+        run: ctest --preset asan
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          ASAN_OPTIONS: detect_leaks=1

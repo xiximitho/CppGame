@@ -1,0 +1,339 @@
+#include "client/tileset.hpp"
+
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+#include "client/iso.hpp"
+#include "sim/rng.hpp"
+#include "sim/tile_ids.hpp"
+
+namespace client {
+namespace {
+
+constexpr int kAtlasSize = 256;
+
+// Atlas layout. Kept as explicit constants rather than a packer because the
+// placeholder set is fixed; a real atlas gets packed offline by a tool.
+constexpr int kGroundRowY = 0;    // four 64x32 diamonds
+constexpr int kHighlightY = 32;   // one 64x32 diamond outline
+constexpr int kBlockRowY  = 64;   // two 64x64 blocks (wall, tree)
+constexpr int kActorRowY  = 128;  // eight 32x48 frames
+
+constexpr int kActorFrameW = 32;
+constexpr int kActorFrameH = 48;
+
+struct Rgba {
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
+    std::uint8_t a = 0;
+};
+
+/// Tightly packed RGBA byte canvas, which is what Renderer2D::create_texture
+/// expects on every platform.
+class Canvas {
+public:
+    Canvas(int width, int height)
+        : width_(width),
+          height_(height),
+          pixels_(static_cast<std::size_t>(width) *
+                  static_cast<std::size_t>(height) * 4U, 0U) {}
+
+    void set(int x, int y, Rgba color) {
+        if (x < 0 || y < 0 || x >= width_ || y >= height_) {
+            return;
+        }
+        const std::size_t offset =
+            (static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
+             static_cast<std::size_t>(x)) * 4U;
+        pixels_[offset + 0] = color.r;
+        pixels_[offset + 1] = color.g;
+        pixels_[offset + 2] = color.b;
+        pixels_[offset + 3] = color.a;
+    }
+
+    const std::uint8_t* data() const { return pixels_.data(); }
+    int width() const { return width_; }
+    int height() const { return height_; }
+
+private:
+    int width_;
+    int height_;
+    std::vector<std::uint8_t> pixels_;
+};
+
+Rgba shade(Rgba color, float factor) {
+    const auto apply = [factor](std::uint8_t channel) {
+        const float scaled = static_cast<float>(channel) * factor;
+        const float clamped = scaled < 0.0F ? 0.0F : (scaled > 255.0F ? 255.0F : scaled);
+        return static_cast<std::uint8_t>(clamped);
+    };
+    return Rgba{apply(color.r), apply(color.g), apply(color.b), color.a};
+}
+
+/// Horizontal extent of an isometric diamond at row `row`, for a w x h diamond.
+/// For the canonical 64x32 tile this yields 4, 8, 12 ... 64 ... 12, 8, 4.
+int diamond_span(int row, int width, int height) {
+    const int half = height / 2;
+    const int step = width / half;
+    const int mirrored = row < half ? row : height - 1 - row;
+    return step * (mirrored + 1);
+}
+
+void fill_diamond(Canvas& canvas, int origin_x, int origin_y, int width,
+                  int height, Rgba fill, Rgba edge) {
+    for (int row = 0; row < height; ++row) {
+        const int span = diamond_span(row, width, height);
+        const int start = (width - span) / 2;
+        for (int col = start; col < start + span; ++col) {
+            const bool on_edge = (col == start) || (col == start + span - 1);
+            canvas.set(origin_x + col, origin_y + row, on_edge ? edge : fill);
+        }
+    }
+}
+
+/// Speckles a filled diamond so large areas of one ground type do not read as
+/// flat colour. Deterministic: the same tile always gets the same noise.
+void speckle_diamond(Canvas& canvas, int origin_x, int origin_y, int width,
+                     int height, Rgba color, std::uint64_t seed, int count) {
+    sim::Rng rng(seed);
+    for (int i = 0; i < count; ++i) {
+        const int row = rng.next_range(1, height - 2);
+        const int span = diamond_span(row, width, height);
+        const int start = (width - span) / 2;
+        if (span <= 2) {
+            continue;
+        }
+        const int col = rng.next_range(start + 1, start + span - 2);
+        canvas.set(origin_x + col, origin_y + row, color);
+    }
+}
+
+/// An isometric cube: top diamond plus the two visible side faces. Total height
+/// is tile_height + wall_height, and the cube's BASE diamond sits at the bottom.
+void fill_block(Canvas& canvas, int origin_x, int origin_y, Rgba top,
+                Rgba left, Rgba right, int wall_height) {
+    const int w = iso::kTileWidth;
+    const int h = iso::kTileHeight;
+
+    // Side faces first so the top diamond overwrites their upper edge cleanly.
+    for (int col = 0; col < w; ++col) {
+        const float distance =
+            std::fabs(static_cast<float>(col) - (static_cast<float>(w) - 1.0F) * 0.5F);
+        // Lower edge of the top diamond at this column.
+        const float face_top =
+            static_cast<float>(h) -
+            (distance / (static_cast<float>(w) * 0.5F)) * static_cast<float>(h) * 0.5F;
+
+        const int start = static_cast<int>(face_top);
+        const Rgba face = col < w / 2 ? left : right;
+        for (int row = start; row < start + wall_height; ++row) {
+            canvas.set(origin_x + col, origin_y + row, face);
+        }
+    }
+
+    fill_diamond(canvas, origin_x, origin_y, w, h, top, shade(top, 0.8F));
+}
+
+void fill_rect(Canvas& canvas, int x, int y, int w, int h, Rgba color) {
+    for (int row = 0; row < h; ++row) {
+        for (int col = 0; col < w; ++col) {
+            canvas.set(x + col, y + row, color);
+        }
+    }
+}
+
+void fill_circle(Canvas& canvas, int cx, int cy, int radius, Rgba color) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            if (dx * dx + dy * dy <= radius * radius) {
+                canvas.set(cx + dx, cy + dy, color);
+            }
+        }
+    }
+}
+
+/// Squashed ellipse used as a contact shadow so actors do not look like they are
+/// floating above the tile.
+void fill_shadow(Canvas& canvas, int cx, int cy, int radius_x, int radius_y) {
+    for (int dy = -radius_y; dy <= radius_y; ++dy) {
+        for (int dx = -radius_x; dx <= radius_x; ++dx) {
+            const float nx = static_cast<float>(dx) / static_cast<float>(radius_x);
+            const float ny = static_cast<float>(dy) / static_cast<float>(radius_y);
+            if (nx * nx + ny * ny <= 1.0F) {
+                canvas.set(cx + dx, cy + dy, Rgba{0, 0, 0, 70});
+            }
+        }
+    }
+}
+
+void draw_diamond_outline(Canvas& canvas, int origin_x, int origin_y, int width,
+                          int height, Rgba color) {
+    for (int row = 0; row < height; ++row) {
+        const int span = diamond_span(row, width, height);
+        const int start = (width - span) / 2;
+        canvas.set(origin_x + start, origin_y + row, color);
+        canvas.set(origin_x + start + span - 1, origin_y + row, color);
+        // Second pixel inward keeps the outline visible at 1x zoom, where a
+        // single-pixel diagonal nearly disappears.
+        canvas.set(origin_x + start + 1, origin_y + row, color);
+        canvas.set(origin_x + start + span - 2, origin_y + row, color);
+    }
+}
+
+/// A small humanoid, drawn once per grid direction. The facing is communicated
+/// by a bright marker offset along the isometric projection of that direction,
+/// which is enough to read direction at a glance without eight art passes.
+void draw_actor_frame(Canvas& canvas, int origin_x, int origin_y,
+                      sim::Direction facing) {
+    const Rgba skin{236, 190, 150, 255};
+    const Rgba tunic{70, 110, 200, 255};
+    const Rgba tunic_dark{50, 80, 160, 255};
+    const Rgba legs{60, 60, 80, 255};
+    const Rgba marker{255, 235, 120, 255};
+
+    const int cx = origin_x + kActorFrameW / 2;
+    const int feet_y = origin_y + kActorFrameH - 2;
+
+    fill_shadow(canvas, cx, feet_y, 10, 5);
+
+    // Legs, torso, head, bottom-up.
+    fill_rect(canvas, cx - 6, feet_y - 14, 4, 13, legs);
+    fill_rect(canvas, cx + 2, feet_y - 14, 4, 13, legs);
+    fill_rect(canvas, cx - 8, feet_y - 28, 16, 15, tunic);
+    fill_rect(canvas, cx - 8, feet_y - 16, 16, 3, tunic_dark);
+    fill_circle(canvas, cx, feet_y - 33, 6, skin);
+
+    const sim::TileDelta delta = sim::direction_delta(facing);
+    const iso::ScreenPos offset = iso::tile_to_screen(
+        static_cast<float>(delta.dx), static_cast<float>(delta.dy), 0);
+    const float length =
+        std::sqrt(offset.x * offset.x + offset.y * offset.y);
+    if (length > 0.0F) {
+        const int mx = cx + static_cast<int>(std::lround(offset.x / length * 6.0F));
+        const int my = feet_y - 33 +
+                       static_cast<int>(std::lround(offset.y / length * 6.0F));
+        fill_circle(canvas, mx, my, 2, marker);
+    }
+}
+
+AtlasEntry make_entry(int x, int y, int w, int h, float origin_x,
+                      float origin_y) {
+    const float atlas = static_cast<float>(kAtlasSize);
+    AtlasEntry entry;
+    entry.uv = Rect{static_cast<float>(x) / atlas, static_cast<float>(y) / atlas,
+                    static_cast<float>(w) / atlas, static_cast<float>(h) / atlas};
+    entry.width = static_cast<float>(w);
+    entry.height = static_cast<float>(h);
+    entry.origin_x = origin_x;
+    entry.origin_y = origin_y;
+    entry.valid = true;
+    return entry;
+}
+
+/// Ground sprites cover exactly the tile diamond, so the top-left of the sprite
+/// is half a tile left of the tile's top vertex.
+AtlasEntry ground_entry(int slot) {
+    return make_entry(slot * iso::kTileWidth, kGroundRowY, iso::kTileWidth,
+                      iso::kTileHeight,
+                      -static_cast<float>(iso::kHalfTileWidth), 0.0F);
+}
+
+/// A 64x64 block's base diamond is its bottom 32 rows, so it is lifted by 32.
+AtlasEntry block_entry(int slot) {
+    return make_entry(slot * iso::kTileWidth, kBlockRowY, iso::kTileWidth, 64,
+                      -static_cast<float>(iso::kHalfTileWidth),
+                      -static_cast<float>(iso::kTileHeight));
+}
+
+}  // namespace
+
+Tileset Tileset::build_procedural(Renderer2D& renderer) {
+    Canvas canvas(kAtlasSize, kAtlasSize);
+
+    const Rgba grass{86, 148, 74, 255};
+    const Rgba dirt{146, 116, 82, 255};
+    const Rgba stone{136, 136, 146, 255};
+    const Rgba water{62, 108, 178, 255};
+
+    const int w = iso::kTileWidth;
+    const int h = iso::kTileHeight;
+
+    fill_diamond(canvas, 0 * w, kGroundRowY, w, h, grass, shade(grass, 0.85F));
+    speckle_diamond(canvas, 0 * w, kGroundRowY, w, h, shade(grass, 1.18F), 11, 60);
+
+    fill_diamond(canvas, 1 * w, kGroundRowY, w, h, dirt, shade(dirt, 0.85F));
+    speckle_diamond(canvas, 1 * w, kGroundRowY, w, h, shade(dirt, 1.15F), 22, 45);
+
+    fill_diamond(canvas, 2 * w, kGroundRowY, w, h, stone, shade(stone, 0.82F));
+    speckle_diamond(canvas, 2 * w, kGroundRowY, w, h, shade(stone, 1.12F), 33, 35);
+
+    fill_diamond(canvas, 3 * w, kGroundRowY, w, h, water, shade(water, 0.8F));
+    speckle_diamond(canvas, 3 * w, kGroundRowY, w, h, shade(water, 1.3F), 44, 25);
+
+    draw_diamond_outline(canvas, 0, kHighlightY, w, h,
+                         Rgba{255, 240, 160, 220});
+
+    // Wall: cool grey block. Tree: brown trunk with a green canopy, drawn inside
+    // the same 64x64 cell so both share the block origin.
+    fill_block(canvas, 0 * w, kBlockRowY, Rgba{170, 170, 180, 255},
+               Rgba{104, 104, 116, 255}, Rgba{132, 132, 144, 255}, 32);
+
+    const int tree_x = 1 * w;
+    fill_rect(canvas, tree_x + 29, kBlockRowY + 30, 6, 18,
+              Rgba{104, 74, 48, 255});
+    fill_circle(canvas, tree_x + 32, kBlockRowY + 24, 14, Rgba{54, 118, 60, 255});
+    fill_circle(canvas, tree_x + 23, kBlockRowY + 30, 9, Rgba{44, 100, 52, 255});
+    fill_circle(canvas, tree_x + 41, kBlockRowY + 30, 9, Rgba{66, 132, 68, 255});
+    fill_circle(canvas, tree_x + 30, kBlockRowY + 19, 7, Rgba{74, 142, 76, 255});
+
+    for (int i = 0; i < 8; ++i) {
+        draw_actor_frame(canvas, i * kActorFrameW, kActorRowY,
+                         static_cast<sim::Direction>(i));
+    }
+
+    Tileset tileset;
+    tileset.texture_ =
+        renderer.create_texture(canvas.data(), canvas.width(), canvas.height());
+
+    tileset.ground_[sim::tiles::kGrass] = ground_entry(0);
+    tileset.ground_[sim::tiles::kDirt]  = ground_entry(1);
+    tileset.ground_[sim::tiles::kStone] = ground_entry(2);
+    tileset.ground_[sim::tiles::kWater] = ground_entry(3);
+
+    tileset.object_[sim::tiles::kWall] = block_entry(0);
+    tileset.object_[sim::tiles::kTree] = block_entry(1);
+
+    for (int i = 0; i < 8; ++i) {
+        // Feet land on the tile centre, which is half a tile below its top vertex.
+        tileset.actor_frames_[static_cast<std::size_t>(i)] = make_entry(
+            i * kActorFrameW, kActorRowY, kActorFrameW, kActorFrameH,
+            -static_cast<float>(kActorFrameW) * 0.5F,
+            static_cast<float>(iso::kHalfTileHeight - kActorFrameH));
+    }
+
+    tileset.highlight_ =
+        make_entry(0, kHighlightY, w, h,
+                   -static_cast<float>(iso::kHalfTileWidth), 0.0F);
+
+    return tileset;
+}
+
+const AtlasEntry& Tileset::ground(sim::TileId id) const {
+    const auto it = ground_.find(id);
+    return it == ground_.end() ? invalid_ : it->second;
+}
+
+const AtlasEntry& Tileset::object(sim::TileId id) const {
+    const auto it = object_.find(id);
+    return it == object_.end() ? invalid_ : it->second;
+}
+
+const AtlasEntry& Tileset::actor(sim::Direction facing) const {
+    const auto index = static_cast<std::size_t>(facing);
+    return index < actor_frames_.size() ? actor_frames_[index]
+                                        : actor_frames_[0];
+}
+
+}  // namespace client

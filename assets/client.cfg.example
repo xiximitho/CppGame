@@ -1,0 +1,19 @@
+# Configuração opcional do cliente.
+#
+# Copie para assets/client.cfg para usar. Argumentos de linha de comando têm
+# precedência sobre o que estiver aqui.
+#
+# Lido através de platform::vfs, o mesmo caminho que funciona dentro de um APK.
+
+# Servidor padrão. Aceita "host" ou "host:porta".
+#host=127.0.0.1:7777
+
+# Nome enviado ao servidor no handshake. Máximo 24 caracteres.
+#name=felipe
+
+# Zoom inicial. Tiles são 64x32, então em telas 1080p+ vale usar 2 ou mais.
+#zoom=2
+
+# Tamanho inicial da janela em pontos lógicos.
+#width=1280
+#height=720

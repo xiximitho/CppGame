@@ -1,0 +1,112 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "net/bitstream.hpp"
+#include "sim/snapshot.hpp"
+#include "sim/tile_map.hpp"
+#include "sim/types.hpp"
+
+namespace net {
+
+/// Bumped on any wire-format change. Mismatched clients are rejected at Hello
+/// rather than left to misparse a packet.
+constexpr std::uint32_t kProtocolVersion = 1;
+
+constexpr std::uint16_t kDefaultPort = 7777;
+
+/// Comfortably below the ~1200 byte practical MTU for unreliable traffic and
+/// large enough for a reliable map chunk, which ENet fragments for us.
+constexpr std::size_t kMaxPacketBytes = 4096;
+
+/// Map streaming granularity. Small chunks mean more messages but a smoother
+/// trickle as the player walks; 16x16 keeps one chunk under a kilobyte.
+constexpr int kChunkSize = 16;
+constexpr int kChunkTileCount = kChunkSize * kChunkSize;
+
+constexpr sim::TileId kMaxTileId = 1023;
+constexpr int         kMaxCoord = 4095;
+constexpr int         kMaxFloor = 15;
+
+/// A snapshot carries at most this many actors. The area of interest can in
+/// principle hold more; when it does, the server truncates rather than sending
+/// an oversized packet. Real crowds need per-actor priority, which is the next
+/// thing to build here.
+constexpr std::size_t kMaxActorsPerSnapshot = 255;
+
+constexpr std::size_t kMaxNameLength = 24;
+
+enum class MsgId : std::uint8_t {
+    Invalid = 0,
+
+    // Client to server.
+    C2S_Hello = 1,
+    C2S_Input = 2,
+
+    // Server to client.
+    S2C_Welcome  = 64,
+    S2C_Reject   = 65,
+    S2C_Snapshot = 66,
+    S2C_MapChunk = 67,
+};
+
+struct HelloMsg {
+    std::uint32_t protocol = kProtocolVersion;
+    std::string   name;
+};
+
+/// One player intent for one tick. There is exactly one unit per player, so this
+/// stays tiny; `walk` false with a direction means "turn only".
+struct InputMsg {
+    sim::Tick      client_tick = 0;
+    bool           walk = false;
+    sim::Direction dir = sim::Direction::South;
+};
+
+struct WelcomeMsg {
+    sim::NetId    your_id = sim::kInvalidNetId;
+    sim::Tick     tick = 0;
+    std::uint16_t map_width = 0;
+    std::uint16_t map_height = 0;
+    std::uint8_t  map_floors = 0;
+    sim::TilePos  spawn;
+};
+
+struct RejectMsg {
+    std::string reason;
+};
+
+/// A square of map, sent reliably as the player approaches it. The client holds
+/// only the chunks it has been told about, so the world may be far larger than
+/// anything a client ever sees.
+struct MapChunkMsg {
+    std::int16_t            chunk_x = 0;  ///< in tiles, top-left corner
+    std::int16_t            chunk_y = 0;
+    std::int8_t             z = 0;
+    std::vector<sim::Tile>  tiles;        ///< exactly kChunkTileCount, row major
+};
+
+// --- writing ---------------------------------------------------------------
+void write_hello(BitWriter& writer, const HelloMsg& msg);
+void write_input(BitWriter& writer, const InputMsg& msg);
+void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
+void write_reject(BitWriter& writer, const RejectMsg& msg);
+void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
+void write_map_chunk(BitWriter& writer, const MapChunkMsg& msg);
+
+// --- reading ---------------------------------------------------------------
+/// Returns MsgId::Invalid on an empty or truncated packet.
+MsgId read_msg_id(BitReader& reader);
+
+/// Each returns false when the packet was truncated or malformed. On false the
+/// output struct is left in an unspecified state and must not be used.
+bool read_hello(BitReader& reader, HelloMsg& out);
+bool read_input(BitReader& reader, InputMsg& out);
+bool read_welcome(BitReader& reader, WelcomeMsg& out);
+bool read_reject(BitReader& reader, RejectMsg& out);
+bool read_snapshot(BitReader& reader, sim::Snapshot& out);
+bool read_map_chunk(BitReader& reader, MapChunkMsg& out);
+
+}  // namespace net
