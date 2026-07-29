@@ -147,20 +147,6 @@ void apply_config_file(Options& options) {
     LOG_INFO("applied overrides from client.cfg");
 }
 
-/// Click and touch name a destination tile, not a direction, so translate it into
-/// the single step that gets closest. Real click-to-move needs A* over the tile
-/// grid; this walks into walls, which is honest about what is not built yet.
-void step_toward(client::Session& session, sim::TilePos target) {
-    const client::WorldView& view = session.view();
-    for (const sim::ActorState& actor : view.actors) {
-        if (actor.net_id == view.local_id) {
-            session.request_walk(
-                client::input::direction_towards(actor.tile, target));
-            return;
-        }
-    }
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -316,8 +302,10 @@ int main(int argc, char** argv) {
                 params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
                 params.hover_valid = session->view().map.in_bounds(params.hover);
             }
+            // Only the destination is sent; the simulation plans and walks the
+            // route. In network play that happens server-side.
             if (click_requested && params.hover_valid) {
-                step_toward(*session, params.hover);
+                session->request_move_to(params.hover);
             }
 
             const client::input::ScreenDir held = client::input::held_direction();

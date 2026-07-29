@@ -312,10 +312,31 @@ int main(int argc, char** argv) {
                                 !connection.welcomed) {
                                 break;
                             }
+                            // Manual input takes back control from auto-walking.
+                            world.cancel_path(connection.net_id);
                             if (input.walk) {
                                 world.request_walk(connection.net_id, input.dir);
                             } else {
                                 world.request_turn(connection.net_id, input.dir);
+                            }
+                            break;
+                        }
+
+                        case net::MsgId::C2S_MoveTo: {
+                            net::MoveToMsg move;
+                            if (!net::read_move_to(reader, move) ||
+                                !connection.welcomed) {
+                                break;
+                            }
+                            // The target came off the wire, so it is untrusted:
+                            // request_move_to rejects out-of-bounds and unwalkable
+                            // tiles rather than trusting the client's aim.
+                            if (!world.request_move_to(connection.net_id,
+                                                       move.target)) {
+                                LOG_DEBUG("no route for '%s' to (%d,%d,%d)",
+                                          connection.name.c_str(), move.target.x,
+                                          move.target.y,
+                                          static_cast<int>(move.target.z));
                             }
                             break;
                         }
@@ -355,6 +376,7 @@ int main(int argc, char** argv) {
             accumulator -= kTickNanos;
 
             world.step();
+            sim::update_path_followers(world);
             sim::update_wanderers(world, rng);
 
             if (world.tick() % kSnapshotEveryTicks != 0) {

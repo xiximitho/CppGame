@@ -70,6 +70,34 @@ TEST_CASE("an input packet is tiny") {
     CHECK(packet.size() == 6);
 }
 
+TEST_CASE("move-to round trips") {
+    const auto packet = encode([](net::BitWriter& writer) {
+        net::write_move_to(writer, net::MoveToMsg{sim::TilePos{123, 456, 2}});
+    });
+
+    net::BitReader reader(packet.data(), packet.size());
+    REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_MoveTo);
+
+    net::MoveToMsg decoded;
+    REQUIRE(net::read_move_to(reader, decoded));
+    CHECK(decoded.target == sim::TilePos{123, 456, 2});
+}
+
+TEST_CASE("a move-to packet is small") {
+    // 8 bits id + 12 + 12 + 4 for the tile = 36 bits. Click-to-move must not cost
+    // more on the wire than the thing it replaces.
+    const auto packet = encode([](net::BitWriter& writer) {
+        net::write_move_to(writer, net::MoveToMsg{sim::TilePos{10, 10, 0}});
+    });
+    CHECK(packet.size() == 5);
+}
+
+TEST_CASE("the protocol version is bumped past the pre-move-to format") {
+    // C2S_MoveTo was added after version 1. A client that predates it must be
+    // rejected at Hello rather than left to misparse.
+    CHECK(net::kProtocolVersion >= 2);
+}
+
 TEST_CASE("welcome round trips") {
     const auto packet = encode([](net::BitWriter& writer) {
         net::WelcomeMsg welcome;

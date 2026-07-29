@@ -2,6 +2,7 @@
 
 #include "sim/components.hpp"
 #include "sim/snapshot.hpp"
+#include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
 #include "sim/world.hpp"
 
@@ -35,6 +36,19 @@ void advance(sim::World& world, sim::Tick ticks) {
     for (sim::Tick i = 0; i < ticks; ++i) {
         world.step();
     }
+}
+
+/// The tick order the server and SoloSession both use: advance time, then let
+/// route followers issue their next step.
+void advance_with_systems(sim::World& world, sim::Tick ticks) {
+    for (sim::Tick i = 0; i < ticks; ++i) {
+        world.step();
+        sim::update_path_followers(world);
+    }
+}
+
+sim::TilePos tile_of(const sim::World& world, sim::NetId id) {
+    return world.registry().get<sim::CPosition>(world.lookup(id)).tile;
 }
 
 }  // namespace
@@ -289,6 +303,138 @@ TEST_CASE("a standing actor interpolates to its exact tile") {
     CHECK(pos.x == doctest::Approx(7.0F));
     CHECK(pos.y == doctest::Approx(3.0F));
     CHECK(pos.z == 1);
+}
+
+TEST_CASE("an actor asked to move to a tile actually arrives there") {
+    // The behaviour click-to-move exists for: naming a destination and getting
+    // there, rather than taking a single step in its general direction.
+    sim::World world(open_map());
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 5, 0}, 0);
+
+    const sim::TilePos target{14, 11, 0};
+    REQUIRE(world.request_move_to(id, target));
+    CHECK(world.is_following_path(id));
+
+    advance_with_systems(world, 400);
+
+    CHECK(tile_of(world, id) == target);
+    // The route is dropped on arrival, not left dangling.
+    CHECK_FALSE(world.is_following_path(id));
+}
+
+TEST_CASE("a route walks around a wall instead of into it") {
+    sim::TileMap map = open_map();
+    for (int y = 0; y < 32; ++y) {
+        if (y != 2) {
+            block(map, 10, y);
+        }
+    }
+    sim::World world(std::move(map));
+
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 20, 0}, 0);
+
+    const sim::TilePos target{15, 20, 0};
+    REQUIRE(world.request_move_to(id, target));
+
+    advance_with_systems(world, 2000);
+    CHECK(tile_of(world, id) == target);
+}
+
+TEST_CASE("moving to an unreachable or unwalkable tile is refused up front") {
+    sim::TileMap map = open_map();
+    block(map, 9, 9);
+    sim::World world(std::move(map));
+
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 5, 0}, 0);
+
+    CHECK_FALSE(world.request_move_to(id, sim::TilePos{9, 9, 0}));
+    CHECK_FALSE(world.is_following_path(id));
+
+    // Another floor: there are no stairs yet.
+    CHECK_FALSE(world.request_move_to(id, sim::TilePos{6, 6, 1}));
+}
+
+TEST_CASE("manual input cancels an active route") {
+    // Pressing a direction key while auto-walking has to take back control,
+    // otherwise the two fight each other every tick.
+    sim::World world(open_map());
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 5, 0}, 0);
+
+    REQUIRE(world.request_move_to(id, sim::TilePos{20, 5, 0}));
+    advance_with_systems(world, 20);
+    REQUIRE(world.is_following_path(id));
+
+    world.cancel_path(id);
+    CHECK_FALSE(world.is_following_path(id));
+
+    // The step already in flight completes; the actor is not yanked backwards.
+    const sim::TilePos before = tile_of(world, id);
+    advance_with_systems(world, 200);
+    const sim::TilePos after = tile_of(world, id);
+    CHECK(after.x >= before.x);
+    CHECK(after.x <= before.x + 1);
+}
+
+TEST_CASE("requesting a new route replaces the old one") {
+    sim::World world(open_map());
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 5, 0}, 0);
+
+    REQUIRE(world.request_move_to(id, sim::TilePos{20, 5, 0}));
+    advance_with_systems(world, 30);
+
+    const sim::TilePos second_target{5, 15, 0};
+    REQUIRE(world.request_move_to(id, second_target));
+    advance_with_systems(world, 600);
+
+    CHECK(tile_of(world, id) == second_target);
+}
+
+TEST_CASE("a follower permanently blocked by another actor gives up") {
+    // Routes are planned ignoring actors, so a corridor with someone standing in it
+    // produces a step that is refused every tick. It must abandon the route instead
+    // of shoving forever.
+    sim::TileMap map(32, 3, 1);
+    for (int x = 0; x < 32; ++x) {
+        map.set_ground(sim::TilePos{static_cast<std::int16_t>(x), 1, 0},
+                       sim::tiles::kGrass);
+    }
+    sim::World world(std::move(map));
+
+    const sim::NetId walker = world.allocate_net_id();
+    const sim::NetId blocker = world.allocate_net_id();
+    world.spawn_actor(walker, sim::TilePos{5, 1, 0}, 0);
+    world.spawn_actor(blocker, sim::TilePos{7, 1, 0}, 0);
+
+    REQUIRE(world.request_move_to(walker, sim::TilePos{20, 1, 0}));
+
+    advance_with_systems(world, sim::kDefaultStepTicks + sim::kPathBlockedGiveUpTicks + 10);
+
+    CHECK_FALSE(world.is_following_path(walker));
+    // It got as far as the tile before the blocker and stopped.
+    CHECK(tile_of(world, walker) == sim::TilePos{6, 1, 0});
+    CHECK(tile_of(world, blocker) == sim::TilePos{7, 1, 0});
+}
+
+TEST_CASE("a route requested mid-step is planned from the tile being entered") {
+    // Planning from the tile being left would put the tile the actor is already
+    // walking onto at the head of the route, making it visibly step backwards.
+    sim::World world(open_map());
+    const sim::NetId id = world.allocate_net_id();
+    world.spawn_actor(id, sim::TilePos{5, 5, 0}, 0);
+
+    REQUIRE(world.request_walk(id, sim::Direction::East));
+    advance(world, 2);  // mid-step, heading for (6,5)
+
+    const sim::TilePos target{10, 5, 0};
+    REQUIRE(world.request_move_to(id, target));
+
+    advance_with_systems(world, 400);
+    CHECK(tile_of(world, id) == target);
 }
 
 TEST_CASE("walking off the edge of the world is refused") {

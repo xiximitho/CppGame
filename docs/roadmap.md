@@ -2,6 +2,9 @@
 
 O que **não** existe ainda, em ordem de quanto custa adicionar depois versus agora.
 
+Já feito: **A\* no grid de tiles** (`sim::Pathfinder`) com clique-para-mover
+planejado e executado pela simulação — no multiplayer, pelo servidor.
+
 ## Caro de adiar (faça antes de escrever muito conteúdo)
 
 ### 1. Dear ImGui para ferramentas de debug
@@ -11,13 +14,7 @@ todo bug de render vira `printf`. É a coisa com maior retorno na lista.
 `imgui` + `imgui_impl_sdl3` + `imgui_impl_sdlrenderer3`, no mesmo padrão de SHA
 travado. Ver [dependencies.md](dependencies.md).
 
-### 2. Pathfinding A* no grid
-`input::direction_towards` dá um passo na direção do alvo e **anda direto na
-parede**. Clique-para-mover de verdade precisa de A* sobre tiles, com custo de
-diagonal e cache de caminho. Isso também é pré-requisito para IA de qualquer
-criatura.
-
-### 3. Escadas / rampas — andares superiores são inalcançáveis hoje
+### 2. Escadas / rampas — andares superiores são inalcançáveis hoje
 O mundo tem 3 andares, `TilePos` tem `z`, a projeção compensa altura, a ordenação
 de desenho trata andar como dominante, andares acima do jogador são escondidos e
 andares abaixo são escurecidos. **Mas não existe nenhuma forma de trocar de
@@ -34,7 +31,7 @@ jogo. Falta:
 nada. Enquanto não existir, o código de render multi-andar não foi visto
 funcionando de verdade.
 
-### 4. Persistência
+### 3. Persistência
 Nada é salvo. Ao reiniciar o servidor, todo mundo volta pro spawn. Precisa de:
 - conta e personagem (SQLite local ou Postgres)
 - posição, inventário, stats
@@ -44,7 +41,7 @@ Decidir isso depois de existir inventário e stats é mais barato do que decidir
 antes, **mas** o formato de serialização precisa ser versionado desde o primeiro
 save gravado em disco de jogador real.
 
-### 5. Delta compression nos snapshots
+### 4. Delta compression nos snapshots
 Hoje cada snapshot é completo. Com 20 atores visíveis a 10 Hz dá ~3 KB/s por
 jogador, o que é aceitável — e deixa de ser em uma cidade com 100 jogadores. O
 formato de fio já isola isso (`write_snapshot`), então é uma mudança contida:
@@ -55,14 +52,14 @@ trunca em 255 sem critério nenhum.
 
 ## Média prioridade
 
-### 6. Client-side prediction
+### 5. Client-side prediction
 Não existe. A latência visível é o início de um passo. Em LAN não incomoda; em
 internet com 80 ms, incomoda. Como o movimento é discreto, a predição aqui é mais
 simples que em movimento livre: o cliente começa o passo localmente e o servidor
 confirma ou corrige o tile. Precisa de número de sequência no input e
 reconciliação por tile, não por posição.
 
-### 7. Arte de verdade
+### 6. Arte de verdade
 O atlas é gerado em código (`tileset.cpp`). Trocar por arte exige:
 - decodificador de PNG (`stb_image`)
 - empacotador de atlas offline (`stb_rect_pack`) em `tools/`
@@ -71,30 +68,30 @@ O atlas é gerado em código (`tileset.cpp`). Trocar por arte exige:
 
 `AtlasEntry` já é a interface certa para isso: o renderer não muda.
 
-### 8. Áudio
+### 7. Áudio
 Nada. Recomendação: **miniaudio** (single header, funciona nos 5 targets) em vez de
 SDL3_mixer, que é mais simples mas limita depois.
 
-### 9. Combate, inventário, chat, NPCs
+### 8. Combate, inventário, chat, NPCs
 O conteúdo do jogo. `CHealth` existe e nada usa. `sim::update_wanderers` é um
 placeholder explícito e deve ser deletado quando houver IA real.
 
 ## Baixa prioridade / quando doer
 
-### 10. Renderer em SDL_GPU
+### 9. Renderer em SDL_GPU
 O `SDL_Render` atual não aceita shader customizado. No dia que precisar de luz
 dinâmica, palette swap, outline ou fog of war shaderizado, implemente
 `Renderer2D` sobre SDL_GPU + SDL_shadercross. A interface já está pronta para
 isso.
 
-### 11. Ordenação topológica de sprites
+### 10. Ordenação topológica de sprites
 Objetos maiores que um tile ordenam errado. Ver [architecture.md](architecture.md).
 
-### 12. GameNetworkingSockets
+### 11. GameNetworkingSockets
 Trocar ENet quando precisar de criptografia, IPv6 ou relay da Steam. É uma
 segunda implementação de `net::ITransport`.
 
-### 13. Mobile de verdade
+### 12. Mobile de verdade
 Estrutura preparada, build não verificada. Ver [mobile.md](mobile.md).
 
 ---
@@ -106,10 +103,11 @@ Registradas para não serem descobertas como surpresa:
 | Onde | O quê | Por quê está assim |
 |---|---|---|
 | `iso::depth_key` | objeto >1 tile ordena errado | painter's algorithm; topológico só quando houver prédio |
-| `input::direction_towards` | anda na parede | A* é item 2 |
 | `World::request_walk` | input durante passo é descartado, não enfileirado | fila de 1 slot dá caminhada encadeada mais responsiva; é ajuste de feel |
-| `write_snapshot` | trunca em 255 atores sem critério | precisa de prioridade (item 5) |
+| `write_snapshot` | trunca em 255 atores sem critério | precisa de prioridade (item 4) |
 | `SoloSession` | copia o `TileMap` uma vez | terreno destrutível precisaria de versionamento por chunk |
-| `RemoteSession` | sem predição | item 6 |
-| Andares 1 e 2 | existem no dado e no render, inalcançáveis em jogo | falta escada; item 3 |
+| `RemoteSession` | sem predição | item 5 |
+| Andares 1 e 2 | existem no dado e no render, inalcançáveis em jogo | falta escada; item 2 |
+| `sim::Pathfinder` | planeja ignorando outros atores | atores se movem, então desviar deles produz rota que já está velha quando é andada; bloqueio é tratado no passo, com desistência após 1s |
+| `CPathFollow` | não recalcula rota ao ser bloqueado, desiste | replanejar precisa de limite de tentativas para não virar busca por tick |
 | Custo da diagonal | 1.5× no grid, mas `ScreenRelative` faz `W` ser diagonal | ver comentário em `input.hpp`: escolher esquema e achatar o custo |

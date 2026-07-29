@@ -68,4 +68,27 @@ void TileMap::set_object(TilePos pos, TileId object, bool blocking) {
     tile.blocking = blocking;
 }
 
+bool can_traverse(const TileMap& map, TilePos from, Direction dir) {
+    const TilePos to = tile_step(from, dir);
+
+    if (!map.is_walkable(to)) {
+        return false;
+    }
+
+    // Diagonal moves may not squeeze between two blocking tiles, otherwise actors
+    // slip visibly through the corners of solid walls.
+    if (is_diagonal(dir)) {
+        const TileDelta delta = direction_delta(dir);
+        const TilePos side_x{static_cast<std::int16_t>(from.x + delta.dx), from.y,
+                             from.z};
+        const TilePos side_y{from.x, static_cast<std::int16_t>(from.y + delta.dy),
+                             from.z};
+        if (!map.is_walkable(side_x) || !map.is_walkable(side_y)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }  // namespace sim

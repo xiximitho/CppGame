@@ -76,26 +76,14 @@ NetId World::occupant(TilePos pos) const {
 
 bool World::can_enter(TilePos from, TilePos to, Direction dir,
                       NetId mover) const {
-    if (!map_.is_walkable(to)) {
+    // Static geometry, shared with the pathfinder so the two can never disagree.
+    if (!can_traverse(map_, from, dir)) {
         return false;
     }
 
     const NetId other = occupant(to);
     if (other != kInvalidNetId && other != mover) {
         return false;
-    }
-
-    // Diagonal moves may not squeeze between two blocking tiles, otherwise
-    // actors slip through the corners of walls — the classic tile-game bug.
-    if (is_diagonal(dir)) {
-        const TileDelta delta = direction_delta(dir);
-        const TilePos side_x{static_cast<std::int16_t>(from.x + delta.dx), from.y,
-                             from.z};
-        const TilePos side_y{from.x, static_cast<std::int16_t>(from.y + delta.dy),
-                             from.z};
-        if (!map_.is_walkable(side_x) || !map_.is_walkable(side_y)) {
-            return false;
-        }
     }
 
     return true;
@@ -139,6 +127,47 @@ bool World::request_walk(NetId net_id, Direction dir) {
     occupy(target, net_id);
 
     return true;
+}
+
+bool World::request_move_to(NetId net_id, TilePos target) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return false;
+    }
+    const auto* pos = registry_.try_get<CPosition>(entity);
+    if (pos == nullptr) {
+        return false;
+    }
+
+    // Plan from where the actor will be, not where it is. Planning from the tile
+    // being left would put the tile it is already walking onto at the head of the
+    // route, and the actor would take a visible step backwards to "start" it.
+    TilePos origin = pos->tile;
+    if (const auto* walk = registry_.try_get<CWalk>(entity)) {
+        origin = walk->to;
+    }
+
+    std::vector<TilePos> path;
+    if (!pathfinder_.find(map_, origin, target, path)) {
+        registry_.remove<CPathFollow>(entity);
+        return false;
+    }
+
+    registry_.emplace_or_replace<CPathFollow>(
+        entity, CPathFollow{std::move(path), 0, 0});
+    return true;
+}
+
+void World::cancel_path(NetId net_id) {
+    const entt::entity entity = lookup(net_id);
+    if (entity != entt::null) {
+        registry_.remove<CPathFollow>(entity);
+    }
+}
+
+bool World::is_following_path(NetId net_id) const {
+    const entt::entity entity = lookup(net_id);
+    return entity != entt::null && registry_.all_of<CPathFollow>(entity);
 }
 
 bool World::request_turn(NetId net_id, Direction dir) {

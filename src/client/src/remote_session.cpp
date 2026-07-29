@@ -56,6 +56,25 @@ public:
         pending_dir_ = dir;
     }
 
+    void request_move_to(sim::TilePos target) override {
+        if (transport_ == nullptr || view_.local_id == sim::kInvalidNetId) {
+            return;
+        }
+
+        std::uint8_t buffer[64];
+        net::BitWriter writer(buffer, sizeof(buffer));
+        net::write_move_to(writer, net::MoveToMsg{target});
+        if (writer.overflowed()) {
+            return;
+        }
+
+        // Reliable: a discrete command, not a sampled state. Dropping it means the
+        // player clicks and nothing happens, which is the one outcome to avoid.
+        transport_->send(server_peer_, buffer, writer.bytes_written(),
+                         net::Channel::Reliable);
+        transport_->flush();
+    }
+
     const WorldView& view() const override { return view_; }
 
     std::string status_text() const override {
@@ -187,6 +206,7 @@ private:
 
             case net::MsgId::C2S_Hello:
             case net::MsgId::C2S_Input:
+            case net::MsgId::C2S_MoveTo:
             case net::MsgId::Invalid:
                 // Client-to-server ids arriving here mean a confused or hostile
                 // peer; ignoring is the correct response.

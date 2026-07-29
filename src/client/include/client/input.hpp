@@ -54,28 +54,11 @@ constexpr sim::Direction to_grid(ScreenDir dir, Scheme scheme) {
     return static_cast<sim::Direction>((index + rotation) % sim::kDirectionCount);
 }
 
-/// The single step that moves closest to `to`. Used for click-to-move and touch,
-/// where the player names a destination rather than a direction.
-///
-/// Not a pathfinder: it walks straight into walls. Real click-to-move needs A* over
-/// the tile grid, which is the next thing to build here.
-constexpr sim::Direction direction_towards(sim::TilePos from, sim::TilePos to) {
-    const int dx = to.x - from.x;
-    const int dy = to.y - from.y;
-
-    const int sx = (dx > 0) ? 1 : (dx < 0 ? -1 : 0);
-    const int sy = (dy > 0) ? 1 : (dy < 0 ? -1 : 0);
-
-    for (int i = 0; i < sim::kDirectionCount; ++i) {
-        const auto candidate = static_cast<sim::Direction>(i);
-        const sim::TileDelta delta = sim::direction_delta(candidate);
-        if (delta.dx == sx && delta.dy == sy) {
-            return candidate;
-        }
-    }
-    // Only reachable when from == to, where standing still is the right answer.
-    return sim::Direction::South;
-}
+// A direction_towards() helper used to live here: it picked the single step that
+// pointed at a clicked tile, and walked straight into walls. Click-to-move now
+// sends the destination to the simulation, which plans a real route with
+// sim::Pathfinder, so the helper had no callers left and was deleted rather than
+// kept as a trap for the next person looking for "how movement works".
 
 /// Current keyboard state as a single intent. WASD and the arrow keys, with
 /// opposing keys cancelling out. ScreenDir::None when nothing relevant is held.

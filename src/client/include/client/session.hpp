@@ -43,8 +43,14 @@ public:
     /// Called once per frame: advances the local simulation or pumps the socket.
     virtual void update() = 0;
 
-    /// Player intent. Rejected moves are silently dropped by the simulation.
+    /// Player intent: one step. Cancels any route in progress, because pressing a
+    /// direction key while auto-walking must take back manual control.
     virtual void request_walk(sim::Direction dir) = 0;
+
+    /// Player intent: walk to a tile. The route is planned and followed by the
+    /// simulation — server-side in network play — so the client only names the
+    /// destination and never a path.
+    virtual void request_move_to(sim::TilePos target) = 0;
 
     virtual const WorldView& view() const = 0;
 

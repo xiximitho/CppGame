@@ -73,14 +73,34 @@ enum class Layer : int {
 
 /// Sort key for the render queue.
 ///
-/// Floors dominate absolutely, then depth along the screen's back-to-front axis
-/// (tile_x + tile_y), then the layer. This is a painter's-algorithm key, which is
-/// correct for tiles and single-tile objects. Objects taller or wider than one
-/// tile eventually need a real topological sort — that is a known limit, not an
-/// oversight, and it shows up the day a 2x2 building overlaps an actor.
+/// Floors dominate absolutely. Within a floor, ground is a flat layer underneath
+/// everything, and only objects and actors sort against each other along the
+/// screen's back-to-front axis (tile_x + tile_y), then by layer.
+///
+/// Ground deliberately does NOT take part in positional sorting. A floor tile is
+/// flat: it can never legitimately stand in front of something on a neighbouring
+/// tile. Sorting it positionally made the ground of the tile an actor was walking
+/// *into* sort above that actor — at half a step, an actor leaving (10,10) keys at
+/// 2052 while the ground of (11,10) keys at 2100 — so the destination tile drew
+/// over the sprite's lower half and its diamond edge visibly sliced through the
+/// character for the whole step. Ground tiles tessellate exactly and never overlap
+/// each other, so giving them all one key costs nothing.
+///
+/// This is still a painter's-algorithm key, correct for single-tile objects.
+/// Objects wider or taller than one tile need a real topological sort; that is a
+/// known limit, not an oversight, and it shows up the day a 2x2 building overlaps
+/// an actor.
 inline float depth_key(float tile_x, float tile_y, int floor_z, Layer layer) {
-    return static_cast<float>(floor_z) * 1.0e6F +
-           (tile_x + tile_y) * 100.0F +
+    const float floor_base = static_cast<float>(floor_z) * 1.0e6F;
+
+    if (layer == Layer::Ground) {
+        return floor_base;
+    }
+
+    // The +1 keeps the whole object/actor band strictly above every ground tile of
+    // the same floor, leaving floor_base + 0.5 free for floor decals such as the
+    // cursor highlight.
+    return floor_base + 1.0F + (tile_x + tile_y) * 100.0F +
            static_cast<float>(static_cast<int>(layer));
 }
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "sim/types.hpp"
 
@@ -54,6 +55,19 @@ struct CPlayer {
 /// AI belongs in its own system once behaviour exists.
 struct CWanderer {
     Tick next_decision_tick = 0;
+};
+
+/// An actor walking a precomputed route, one step per tile.
+///
+/// Present only while following a path; its absence means "not going anywhere",
+/// the same way CWalk's absence means "standing still". The path is planned
+/// ignoring other actors, so a step can be refused when someone is in the way —
+/// `blocked_ticks` counts how long that has been true so a permanently blocked
+/// follower gives up instead of shoving forever.
+struct CPathFollow {
+    std::vector<TilePos> path;
+    std::size_t          next = 0;
+    Tick                 blocked_ticks = 0;
 };
 
 }  // namespace sim

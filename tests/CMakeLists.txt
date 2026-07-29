@@ -9,6 +9,7 @@ add_executable(game_tests
     test_bitstream.cpp
     test_protocol.cpp
     test_world.cpp
+    test_pathfind.cpp
     test_input.cpp)
 
 target_link_libraries(game_tests PRIVATE

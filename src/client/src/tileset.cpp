@@ -196,7 +196,12 @@ void draw_actor_frame(Canvas& canvas, int origin_x, int origin_y,
     const int cx = origin_x + kActorFrameW / 2;
     const int feet_y = origin_y + kActorFrameH - 2;
 
-    fill_shadow(canvas, cx, feet_y, 10, 5);
+    // Radii chosen so the ellipse fits inside the frame: centred on feet_y - 2 with
+    // a vertical radius of 3 spans rows 41..47 of a 48-row cell. Drawing it any
+    // lower wrote pixels past the bottom of this cell — they vanished from the
+    // sprite (a shadow with a hard flat edge) and landed loose in the atlas, where
+    // a neighbouring cell could sample them.
+    fill_shadow(canvas, cx, feet_y - 2, 11, 3);
 
     // Legs, torso, head, bottom-up.
     fill_rect(canvas, cx - 6, feet_y - 14, 4, 13, legs);

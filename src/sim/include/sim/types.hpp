@@ -102,6 +102,29 @@ constexpr TilePos tile_step(TilePos from, Direction dir) {
                    from.z};
 }
 
+/// The direction from `from` to an adjacent tile `to`. Returns false when the two
+/// are the same tile, not adjacent, or on different floors — which is how callers
+/// detect that a stored path has gone stale.
+constexpr bool direction_between(TilePos from, TilePos to, Direction& out) {
+    if (from.z != to.z) {
+        return false;
+    }
+    const int dx = to.x - from.x;
+    const int dy = to.y - from.y;
+    if (dx < -1 || dx > 1 || dy < -1 || dy > 1 || (dx == 0 && dy == 0)) {
+        return false;
+    }
+    for (int i = 0; i < kDirectionCount; ++i) {
+        const auto candidate = static_cast<Direction>(i);
+        const TileDelta delta = direction_delta(candidate);
+        if (delta.dx == dx && delta.dy == dy) {
+            out = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Chebyshev distance on the same floor; -1 when the floors differ.
 constexpr int tile_distance(TilePos a, TilePos b) {
     if (a.z != b.z) {

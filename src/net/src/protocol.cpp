@@ -59,6 +59,12 @@ void write_input(BitWriter& writer, const InputMsg& msg) {
     writer.flush();
 }
 
+void write_move_to(BitWriter& writer, const MoveToMsg& msg) {
+    write_msg_id(writer, MsgId::C2S_MoveTo);
+    write_tile_pos(writer, msg.target);
+    writer.flush();
+}
+
 void write_welcome(BitWriter& writer, const WelcomeMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Welcome);
     writer.write_bits(msg.your_id, 32);
@@ -134,6 +140,7 @@ MsgId read_msg_id(BitReader& reader) {
     switch (static_cast<MsgId>(raw)) {
         case MsgId::C2S_Hello:    return MsgId::C2S_Hello;
         case MsgId::C2S_Input:    return MsgId::C2S_Input;
+        case MsgId::C2S_MoveTo:   return MsgId::C2S_MoveTo;
         case MsgId::S2C_Welcome:  return MsgId::S2C_Welcome;
         case MsgId::S2C_Reject:   return MsgId::S2C_Reject;
         case MsgId::S2C_Snapshot: return MsgId::S2C_Snapshot;
@@ -153,6 +160,11 @@ bool read_input(BitReader& reader, InputMsg& out) {
     out.client_tick = reader.read_bits(32);
     out.walk = reader.read_bool();
     out.dir = read_direction(reader);
+    return !reader.overflowed();
+}
+
+bool read_move_to(BitReader& reader, MoveToMsg& out) {
+    out.target = read_tile_pos(reader);
     return !reader.overflowed();
 }
 

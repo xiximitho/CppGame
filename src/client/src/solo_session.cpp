@@ -59,11 +59,26 @@ public:
         while (accumulator_ >= kTickNanos) {
             accumulator_ -= kTickNanos;
             world_.step();
-            sim::update_wanderers(world_, rng_);
-            if (pending_walk_) {
-                world_.request_walk(local_id_, pending_dir_);
-                pending_walk_ = false;
+
+            // Player intent first, so a click or key press taken this frame is
+            // acted on by this tick.
+            if (pending_move_to_) {
+                pending_move_to_ = false;
+                if (!world_.request_move_to(local_id_, pending_target_)) {
+                    LOG_DEBUG("no route to (%d,%d,%d)", pending_target_.x,
+                              pending_target_.y,
+                              static_cast<int>(pending_target_.z));
+                }
             }
+            if (pending_walk_) {
+                pending_walk_ = false;
+                // Manual input takes back control from auto-walking.
+                world_.cancel_path(local_id_);
+                world_.request_walk(local_id_, pending_dir_);
+            }
+
+            sim::update_path_followers(world_);
+            sim::update_wanderers(world_, rng_);
         }
 
         refresh_view();
@@ -76,12 +91,18 @@ public:
         pending_dir_ = dir;
     }
 
+    void request_move_to(sim::TilePos target) override {
+        pending_move_to_ = true;
+        pending_target_ = target;
+    }
+
     const WorldView& view() const override { return view_; }
 
     std::string status_text() const override {
-        char buffer[96];
-        std::snprintf(buffer, sizeof(buffer), "solo | tick %u | %zu actors",
-                      view_.tick, view_.actors.size());
+        char buffer[120];
+        std::snprintf(buffer, sizeof(buffer), "solo | tick %u | %zu actors%s",
+                      view_.tick, view_.actors.size(),
+                      world_.is_following_path(local_id_) ? " | walking" : "");
         return std::string(buffer);
     }
 
@@ -140,6 +161,8 @@ private:
 
     bool           pending_walk_ = false;
     sim::Direction pending_dir_ = sim::Direction::South;
+    bool           pending_move_to_ = false;
+    sim::TilePos   pending_target_;
     int            spawned_wanderers_ = 0;
 };
 

@@ -6,6 +6,7 @@
 #include <entt/entity/registry.hpp>
 
 #include "sim/components.hpp"
+#include "sim/pathfind.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
 
@@ -49,9 +50,28 @@ public:
     /// Starts a step. Returns false when the actor is already stepping or the
     /// destination is not enterable — but the actor still turns to face `dir`,
     /// which is what players expect when they walk into a wall.
+    ///
+    /// A primitive: it does NOT cancel an active path, because the path follower
+    /// itself calls this every step. Callers acting on direct player input must
+    /// call cancel_path() first — see the C2S_Input handler and SoloSession.
     bool request_walk(NetId net_id, Direction dir);
 
     bool request_turn(NetId net_id, Direction dir);
+
+    /// Plans a route and starts following it. Returns false when there is no path,
+    /// when `target` is not walkable, or when it is on another floor.
+    ///
+    /// Replaces any route already in progress. When called mid-step the route is
+    /// planned from the tile being entered, not the one being left, so the actor
+    /// does not turn around at the end of the current step.
+    bool request_move_to(NetId net_id, TilePos target);
+
+    /// Stops following a route. The step already in flight still completes — an
+    /// actor is never yanked backwards off a tile it is halfway onto.
+    void cancel_path(NetId net_id);
+
+    /// Whether the actor is currently following a route.
+    bool is_following_path(NetId net_id) const;
 
     /// Advances exactly one tick. Never called with a variable delta: a fixed
     /// step is what keeps server and client agreeing on what tick 4000 means.
@@ -68,6 +88,10 @@ private:
 
     std::unordered_map<NetId, entt::entity>  by_net_id_;
     std::unordered_map<std::uint64_t, NetId> occupancy_;
+
+    /// Mutable scratch, not logical state: reused across calls so pathfinding does
+    /// not allocate a map-sized working set per request.
+    mutable Pathfinder pathfinder_;
 
     Tick  tick_         = 0;
     NetId next_net_id_  = 1;

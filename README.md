@@ -92,6 +92,11 @@ cmake --preset server-only && cmake --build --preset server-only
   regra estrita de não cortar quina de parede.
 - **Occupancy real**: dois atores não entram no mesmo tile, e o destino é
   reservado no início do passo.
+- **Clique-para-mover com A\***: custos em ticks (diagonal custa mais, então a
+  rota escolhida é a mais rápida e não a de menos tiles), respeitando a mesma
+  regra de quina que o movimento. Quem planeja e anda é a **simulação** — no
+  multiplayer, o servidor: o cliente só manda o tile de destino, porque ele tem
+  apenas os chunks que recebeu e não poderia planejar sozinho.
 - **Servidor autoritativo** headless a 30 Hz, com snapshots a 10 Hz limitados por
   área de interesse (23×17 tiles) e **streaming de mapa por chunks** de 16×16.
 - **Bit packing próprio**: um pacote de input tem 6 bytes; um chunk de mapa,
@@ -104,7 +109,7 @@ cmake --preset server-only && cmake --build --preset server-only
   visual em CI e para alguém te mandar exatamente o que está vendo.
 - **Solo e multiplayer usam o mesmo código de render**, porque o modo solo roda a
   simulação de verdade e monta o mesmo `Snapshot` que o servidor mandaria.
-- **51 casos de teste / ~45k asserções** cobrindo projeção, picking, regras de
+- **72 casos de teste / ~47k asserções** cobrindo projeção, picking, regras de
   movimento, área de interesse e formato de rede, incluindo pacote truncado e id
   desconhecido. Passam também sob AddressSanitizer e UBSan (`--preset asan`).
 
@@ -121,7 +126,7 @@ pequeno.
 | Tecla | Ação |
 |---|---|
 | `WASD` / setas | andar |
-| Clique / toque | dar um passo na direção do tile |
+| Clique / toque | andar até o tile (rota calculada com A\*) |
 | Roda do mouse, `+` / `-` | zoom |
 | `F2` | alterna esquema de teclas (relativo à tela ↔ alinhado ao grid) |
 | `Esc` | sair |

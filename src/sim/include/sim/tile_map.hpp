@@ -54,4 +54,13 @@ private:
     std::vector<Tile> tiles_;
 };
 
+/// Whether the static geometry allows a step from `from` in `dir`. Checks the
+/// destination is walkable and that a diagonal does not clip a wall corner.
+///
+/// Knows nothing about actors. Both World::can_enter and the pathfinder call this,
+/// which is the point: if they used different rules, A* would happily return paths
+/// that the movement code then refuses, and an actor would stall forever on a step
+/// its own path told it to take.
+bool can_traverse(const TileMap& map, TilePos from, Direction dir);
+
 }  // namespace sim

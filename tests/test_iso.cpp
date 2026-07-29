@@ -65,22 +65,76 @@ TEST_CASE("higher floors are drawn further up the screen") {
     CHECK(upper.x == doctest::Approx(ground.x));
 }
 
-TEST_CASE("depth ordering is back to front, then by layer, with floors dominating") {
+TEST_CASE("objects and actors sort back to front, then by layer") {
     // Nearer to the camera means larger tile_x + tile_y.
-    CHECK(depth_key(0.0F, 0.0F, 0, Layer::Ground) <
-          depth_key(1.0F, 0.0F, 0, Layer::Ground));
-    CHECK(depth_key(4.0F, 4.0F, 0, Layer::Ground) <
-          depth_key(5.0F, 4.0F, 0, Layer::Ground));
+    CHECK(depth_key(0.0F, 0.0F, 0, Layer::Object) <
+          depth_key(1.0F, 0.0F, 0, Layer::Object));
+    CHECK(depth_key(4.0F, 4.0F, 0, Layer::Actor) <
+          depth_key(5.0F, 4.0F, 0, Layer::Actor));
 
-    // Within one tile: ground, then objects, then actors.
-    CHECK(depth_key(3.0F, 3.0F, 0, Layer::Ground) <
-          depth_key(3.0F, 3.0F, 0, Layer::Object));
+    // Within one tile: objects, then actors.
     CHECK(depth_key(3.0F, 3.0F, 0, Layer::Object) <
           depth_key(3.0F, 3.0F, 0, Layer::Actor));
 
     // A floor above always draws after everything below it, however far away.
     CHECK(depth_key(500.0F, 500.0F, 0, Layer::Actor) <
           depth_key(0.0F, 0.0F, 1, Layer::Ground));
+}
+
+TEST_CASE("ground is a flat layer and never sorts positionally") {
+    // Every ground tile of a floor shares one key: a flat floor tile cannot stand
+    // in front of anything on a neighbouring tile, so it must not compete.
+    CHECK(depth_key(0.0F, 0.0F, 0, Layer::Ground) ==
+          depth_key(50.0F, 90.0F, 0, Layer::Ground));
+
+    // And it is below everything else on its floor, no matter how far back that
+    // object or actor is.
+    CHECK(depth_key(999.0F, 999.0F, 0, Layer::Ground) <
+          depth_key(0.0F, 0.0F, 0, Layer::Object));
+    CHECK(depth_key(999.0F, 999.0F, 0, Layer::Ground) <
+          depth_key(0.0F, 0.0F, 0, Layer::Actor));
+
+    // Ground of the floor above still covers objects of the floor below.
+    CHECK(depth_key(999.0F, 999.0F, 0, Layer::Actor) <
+          depth_key(0.0F, 0.0F, 1, Layer::Ground));
+}
+
+TEST_CASE("an actor mid-step is never covered by the tile it walks into") {
+    // Regression. Ground used to sort by position, so an actor halfway from (10,10)
+    // to (11,10) keyed at 2052 while the ground of (11,10) keyed at 2100 — the
+    // destination tile drew over the sprite and its diamond edge sliced visibly
+    // through the character for the entire step.
+    for (int step = 0; step <= 10; ++step) {
+        const float progress = static_cast<float>(step) / 10.0F;
+
+        for (int i = 0; i < 8; ++i) {
+            const sim::TileDelta delta =
+                sim::direction_delta(static_cast<sim::Direction>(i));
+
+            const float from_x = 10.0F;
+            const float from_y = 10.0F;
+            const float at_x = from_x + static_cast<float>(delta.dx) * progress;
+            const float at_y = from_y + static_cast<float>(delta.dy) * progress;
+
+            const float actor = depth_key(at_x, at_y, 0, Layer::Actor);
+
+            // Neither the tile being left nor the one being entered may cover it.
+            CHECK(actor > depth_key(from_x, from_y, 0, Layer::Ground));
+            CHECK(actor > depth_key(from_x + static_cast<float>(delta.dx),
+                                    from_y + static_cast<float>(delta.dy), 0,
+                                    Layer::Ground));
+        }
+    }
+}
+
+TEST_CASE("floor decals sit above ground but below anything standing on it") {
+    // world_render draws the cursor highlight at Ground + 0.5; that band has to
+    // stay clear of the object/actor range.
+    const float highlight = depth_key(5.0F, 5.0F, 0, Layer::Ground) + 0.5F;
+
+    CHECK(highlight > depth_key(80.0F, 80.0F, 0, Layer::Ground));
+    CHECK(highlight < depth_key(0.0F, 0.0F, 0, Layer::Object));
+    CHECK(highlight < depth_key(0.0F, 0.0F, 0, Layer::Actor));
 }
 
 TEST_CASE("picking respects the floor offset") {

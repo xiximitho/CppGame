@@ -69,6 +69,29 @@ Não é estética. Três coisas dependem disso: o servidor compila sem lib gráf
 solo não pode divergir do multiplayer. Se precisar de tempo dentro de uma regra,
 use `sim::Tick` — o `World` é avançado um tick fixo por vez por quem o chama.
 
+### Movimento: passo manual e rota
+
+Duas entradas, e a diferença importa:
+
+- `World::request_walk(id, dir)` é um **primitivo**. Não cancela rota, porque o
+  próprio seguidor de rota o chama a cada passo. Quem trata input direto do jogador
+  precisa chamar `World::cancel_path(id)` antes — é o que o handler de `C2S_Input`
+  no servidor e a `SoloSession` fazem.
+- `World::request_move_to(id, tile)` planeja com `sim::Pathfinder` (A*) e guarda um
+  `CPathFollow`. Chamado mid-step, planeja a partir do tile que está sendo
+  **entrado**, senão o ator dá um passo visível para trás.
+
+`sim::update_path_followers(world)` **tem que rodar todo tick, depois de
+`world.step()`**. Se rodar antes, o passo só é emitido no tick seguinte ao término
+do anterior e andar por rota fica visivelmente mais lento que segurar a tecla.
+
+Custos do A* são em **ticks**, não em tiles (`kPathCostCardinal`/`kPathCostDiagonal`),
+para a rota escolhida ser a mais rápida e não a de menos tiles.
+
+Rotas são planejadas **ignorando outros atores**: eles se movem, então desviar deles
+gera rota velha. Bloqueio transitório é tratado no momento do passo, e o seguidor
+desiste após `kPathBlockedGiveUpTicks`.
+
 ### Movimento por tile é o contrato do netcode
 
 Atores não têm posição contínua. Têm `CPosition::tile` (inteiro) e, quando se
@@ -98,8 +121,14 @@ offset que você calcula, não uma posição. Exemplos em `tileset.cpp`: chão `
 bloco 64×64 `(-32, -32)`, ator 32×48 `(-16, -32)` para os pés caírem no centro do
 tile.
 
-Ordem de desenho é painter's algorithm via `iso::depth_key`: andar domina, depois
-`tile_x + tile_y`, depois camada.
+Ordem de desenho é painter's algorithm via `iso::depth_key`: andar domina, e dentro
+de um andar o **chão é uma camada plana embaixo de tudo** — só objetos e atores
+ordenam por `tile_x + tile_y` e depois por camada.
+
+Chão não ordena por posição de propósito. Um tile de piso é plano e nunca pode estar
+legitimamente na frente de algo num tile vizinho; quando ordenava por posição, o chão
+do tile que o ator estava atravessando ficava por cima dele e a borda do losango
+cortava o sprite durante todo o passo. `tests/test_iso.cpp` tem o teste de regressão.
 
 ### Direções: grid ≠ tela
 
@@ -140,9 +169,14 @@ interface.
 
 ## Invariantes que quebram em silêncio
 
-- **Mudou o formato de fio?** Bump em `net::kProtocolVersion`. O servidor rejeita
-  cliente com versão diferente no Hello, o que é a única coisa que impede um
+- **Mudou o formato de fio?** Bump em `net::kProtocolVersion` (hoje 2). O servidor
+  rejeita cliente com versão diferente no Hello, o que é a única coisa que impede um
   misparse silencioso.
+- **`sim::can_traverse` é a única regra de geometria de passo.** Tanto
+  `World::can_enter` quanto o `Pathfinder` a chamam. Se as duas usarem regras
+  diferentes, o A* devolve rotas que o movimento recusa e o ator trava para sempre
+  num passo que a própria rota mandou dar. Mexeu na regra de quina? Mexeu num lugar
+  só.
 - **`BitWriter`/`BitReader` têm overflow grudento.** Escritas além do fim são
   descartadas e `overflowed()` trava em true; leituras além do fim devolvem 0 e
   travam. Confira **uma vez no fim**, não campo a campo. Todo `read_*` de protocolo
@@ -187,8 +221,9 @@ Os que mais confundem:
   tela.
 - `iso::depth_key` ordena errado objeto maior que 1 tile (precisa de sort
   topológico).
-- `input::direction_towards` anda direto na parede (falta A*).
 - `write_snapshot` trunca em 255 atores sem critério (falta prioridade por ator).
+- Rotas não são replanejadas quando outro ator bloqueia: o seguidor espera e
+  desiste.
 - Sem client-side prediction; a latência visível é o início de um passo.
 - `sim::update_wanderers` é placeholder explícito e deve ser deletado quando
   houver IA.

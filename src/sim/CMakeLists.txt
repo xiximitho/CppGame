@@ -9,6 +9,7 @@ add_library(game_sim STATIC
     src/world.cpp
     src/snapshot.cpp
     src/map_gen.cpp
+    src/pathfind.cpp
     src/systems.cpp)
 
 target_include_directories(game_sim PUBLIC include)

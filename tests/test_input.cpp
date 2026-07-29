@@ -5,7 +5,6 @@
 #include "client/input.hpp"
 #include "client/iso.hpp"
 
-using client::input::direction_towards;
 using client::input::Scheme;
 using client::input::ScreenDir;
 using client::input::to_grid;
@@ -91,42 +90,5 @@ TEST_CASE("both schemes are bijections over the eight directions") {
         for (const bool used : seen) {
             CHECK(used);
         }
-    }
-}
-
-TEST_CASE("direction_towards picks the step that closes the gap") {
-    const sim::TilePos from{10, 10, 0};
-
-    CHECK(direction_towards(from, sim::TilePos{15, 10, 0}) == sim::Direction::East);
-    CHECK(direction_towards(from, sim::TilePos{5, 10, 0}) == sim::Direction::West);
-    CHECK(direction_towards(from, sim::TilePos{10, 4, 0}) == sim::Direction::North);
-    CHECK(direction_towards(from, sim::TilePos{10, 40, 0}) == sim::Direction::South);
-
-    CHECK(direction_towards(from, sim::TilePos{20, 20, 0}) ==
-          sim::Direction::SouthEast);
-    CHECK(direction_towards(from, sim::TilePos{0, 0, 0}) ==
-          sim::Direction::NorthWest);
-    CHECK(direction_towards(from, sim::TilePos{20, 0, 0}) ==
-          sim::Direction::NorthEast);
-    CHECK(direction_towards(from, sim::TilePos{0, 20, 0}) ==
-          sim::Direction::SouthWest);
-}
-
-TEST_CASE("direction_towards on the current tile is harmless") {
-    const sim::TilePos here{7, 7, 0};
-    // No crash, no undefined direction; standing still is the sensible answer.
-    CHECK(direction_towards(here, here) == sim::Direction::South);
-}
-
-TEST_CASE("a step in the chosen direction really reduces the distance") {
-    const sim::TilePos from{10, 10, 0};
-    const sim::TilePos targets[] = {
-        {14, 10, 0}, {10, 14, 0}, {6, 6, 0}, {14, 6, 0}, {6, 14, 0}, {13, 12, 0},
-    };
-
-    for (const sim::TilePos& target : targets) {
-        const sim::Direction dir = direction_towards(from, target);
-        const sim::TilePos next = sim::tile_step(from, dir);
-        CHECK(sim::tile_distance(next, target) < sim::tile_distance(from, target));
     }
 }

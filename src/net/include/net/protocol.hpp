@@ -13,7 +13,9 @@ namespace net {
 
 /// Bumped on any wire-format change. Mismatched clients are rejected at Hello
 /// rather than left to misparse a packet.
-constexpr std::uint32_t kProtocolVersion = 1;
+///
+/// 2: added C2S_MoveTo (click-to-move).
+constexpr std::uint32_t kProtocolVersion = 2;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -42,8 +44,9 @@ enum class MsgId : std::uint8_t {
     Invalid = 0,
 
     // Client to server.
-    C2S_Hello = 1,
-    C2S_Input = 2,
+    C2S_Hello  = 1,
+    C2S_Input  = 2,
+    C2S_MoveTo = 3,
 
     // Server to client.
     S2C_Welcome  = 64,
@@ -63,6 +66,16 @@ struct InputMsg {
     sim::Tick      client_tick = 0;
     bool           walk = false;
     sim::Direction dir = sim::Direction::South;
+};
+
+/// Click-to-move: the player names a destination and the server does the walking.
+///
+/// The route is planned server-side on purpose. The client only holds the map
+/// chunks it has been streamed, so it cannot plan across parts of the world it has
+/// never seen — and an authoritative server must not take the client's word for a
+/// route anyway.
+struct MoveToMsg {
+    sim::TilePos target;
 };
 
 struct WelcomeMsg {
@@ -91,6 +104,7 @@ struct MapChunkMsg {
 // --- writing ---------------------------------------------------------------
 void write_hello(BitWriter& writer, const HelloMsg& msg);
 void write_input(BitWriter& writer, const InputMsg& msg);
+void write_move_to(BitWriter& writer, const MoveToMsg& msg);
 void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
 void write_reject(BitWriter& writer, const RejectMsg& msg);
 void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
@@ -104,6 +118,7 @@ MsgId read_msg_id(BitReader& reader);
 /// output struct is left in an unspecified state and must not be used.
 bool read_hello(BitReader& reader, HelloMsg& out);
 bool read_input(BitReader& reader, InputMsg& out);
+bool read_move_to(BitReader& reader, MoveToMsg& out);
 bool read_welcome(BitReader& reader, WelcomeMsg& out);
 bool read_reject(BitReader& reader, RejectMsg& out);
 bool read_snapshot(BitReader& reader, sim::Snapshot& out);
