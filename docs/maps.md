@@ -84,20 +84,26 @@ escreve o mapa de volta com `sim::write_text_map`.
 ./build/debug/bin/game_editor --map assets/maps/dungeon.txt   # rode da raiz do repo
 ```
 
+Uma **barra de paleta** na base mostra todos os brushes (os ids do catálogo que
+têm sprite, mais "apagar objeto" e "vazio"); o selecionado ganha moldura dourada.
+Clique numa célula para escolher, ou use o teclado.
+
 Controles:
 
 | Entrada | Ação |
 |---|---|
 | clique/arrasto esquerdo | coloca o brush atual |
 | clique/arrasto direito | apaga o objeto do tile |
+| clique na barra da paleta | escolhe o brush |
 | `Tab` / `]` / `[` | próximo / anterior brush |
 | `0`–`9` | escolhe brush pelo índice |
+| `Ctrl+Z` / `Ctrl+Y` | desfaz / refaz (um passo por traço) |
 | setas | pan · roda do mouse ou `+`/`-` | zoom |
 | `S` | salvar · `Esc` | sair |
 
 Um "fantasma" do brush é desenhado sob o cursor, então dá para ver o que o clique
 vai colocar. Sem arquivo em `--map`, ele começa numa tela de pedra 48×32 em
-branco.
+branco. Salvar só acontece no `S` — o editor nunca escreve o arquivo sozinho.
 
 Verificação sem display (como o cliente):
 

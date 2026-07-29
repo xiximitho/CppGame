@@ -57,6 +57,10 @@ public:
     /// Diamond outline drawn under the mouse cursor.
     const AtlasEntry& highlight() const { return highlight_; }
 
+    /// A solid white texel. Tinted, it draws filled rectangles (UI panels,
+    /// selection frames) through the same batched path as sprites.
+    const AtlasEntry& solid() const { return solid_; }
+
 private:
     /// Fills `out` from the text metadata; returns false if nothing parsed. Kept
     /// a member so it can populate the private lookup tables.
@@ -68,6 +72,7 @@ private:
     std::unordered_map<sim::TileId, AtlasEntry> object_;
     std::array<AtlasEntry, 8> actor_frames_{};
     AtlasEntry highlight_{};
+    AtlasEntry solid_{};
     AtlasEntry invalid_{};
 };
 

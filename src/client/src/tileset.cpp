@@ -306,6 +306,9 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
                          static_cast<sim::Direction>(i));
     }
 
+    // Solid white swatch for tinted UI fills (see AtlasEntry solid()).
+    fill_rect(canvas, 232, 40, 8, 8, Rgba{255, 255, 255, 255});
+
     Tileset tileset;
     tileset.texture_ =
         renderer.create_texture(canvas.data(), canvas.width(), canvas.height());
@@ -329,6 +332,8 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
     tileset.highlight_ =
         make_entry(0, kHighlightY, w, h,
                    -static_cast<float>(iso::kHalfTileWidth), 0.0F);
+
+    tileset.solid_ = make_entry(234, 42, 4, 4, 0.0F, 0.0F);
 
     return tileset;
 }
@@ -421,6 +426,12 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
                 return false;
             }
             out.highlight_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+            ++bound;
+        } else if (kind == "solid") {
+            if (!(fields >> x >> y >> w >> h)) {
+                return false;
+            }
+            out.solid_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, 0.0F, 0.0F);
             ++bound;
         } else if (kind == "ground" || kind == "object") {
             int id = 0;

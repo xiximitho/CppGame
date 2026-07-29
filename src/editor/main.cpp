@@ -149,6 +149,37 @@ void apply_brush(sim::TileMap& map, const sim::ItemTypeRegistry& registry,
     map.set_object(pos, object, blocking);
 }
 
+// --- palette menu geometry, in window pixels ----------------------------------
+constexpr float kMenuCell = 44.0F;
+constexpr float kMenuPad = 6.0F;
+
+float menu_bar_top(int viewport_h) {
+    return static_cast<float>(viewport_h) - (kMenuCell + 2.0F * kMenuPad);
+}
+
+void menu_cell_rect(std::size_t index, int viewport_h, float& x, float& y) {
+    x = kMenuPad + static_cast<float>(index) * (kMenuCell + kMenuPad);
+    y = menu_bar_top(viewport_h) + kMenuPad;
+}
+
+/// Palette index under a window point, if the point is on a cell.
+std::optional<std::size_t> menu_hit(float mx, float my, int viewport_h,
+                                    std::size_t count) {
+    if (my < menu_bar_top(viewport_h)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+        float cx = 0.0F;
+        float cy = 0.0F;
+        menu_cell_rect(i, viewport_h, cx, cy);
+        if (mx >= cx && mx < cx + kMenuCell && my >= cy &&
+            my < cy + kMenuCell) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -240,7 +271,7 @@ int main(int argc, char** argv) {
             char title[192];
             std::snprintf(title, sizeof title,
                           "game_editor  |  %s%s  |  brush: %s  |  "
-                          "L place  R erase  Tab brush  S save  Esc quit",
+                          "L place  R erase  Ctrl+Z undo  S save  Esc quit",
                           opt.map_path.c_str(), dirty ? " *" : "",
                           palette[brush_i].label.c_str());
             SDL_SetWindowTitle(window, title);
@@ -248,6 +279,86 @@ int main(int argc, char** argv) {
         update_title();
 
         const Brush eraser{Brush::Kind::EraseObject, sim::kItemNone, ""};
+
+        // Snapshot-based undo/redo: one entry per paint stroke.
+        std::vector<sim::TileMap> undo_stack;
+        std::vector<sim::TileMap> redo_stack;
+        constexpr std::size_t kMaxUndo = 64;
+        const auto push_undo = [&]() {
+            undo_stack.push_back(view.map);
+            if (undo_stack.size() > kMaxUndo) {
+                undo_stack.erase(undo_stack.begin());
+            }
+            redo_stack.clear();
+        };
+
+        // Draws an atlas region at a fixed window rectangle regardless of the
+        // camera, by inverting the camera transform. Same batch as the world, so
+        // the whole UI still costs no extra draw call.
+        const auto submit_screen = [&](float sx, float sy, float sw, float sh,
+                                       const client::AtlasEntry& entry,
+                                       client::Color tint, float depth) {
+            float wx = 0.0F;
+            float wy = 0.0F;
+            renderer->window_to_world(sx, sy, wx, wy);
+            client::SpriteCmd cmd;
+            cmd.texture = tileset.texture();
+            cmd.dst = client::Rect{wx, wy, sw / zoom, sh / zoom};
+            cmd.uv = entry.uv;
+            cmd.depth = depth;
+            cmd.tint = tint;
+            renderer->submit(cmd);
+        };
+
+        // The palette menu along the bottom. Depths sit above every world tile
+        // (see iso::depth_key) with steps of 100 so float keeps them ordered.
+        const auto draw_menu = [&]() {
+            const int vw = renderer->viewport_width();
+            const int vh = renderer->viewport_height();
+            const client::AtlasEntry& solid = tileset.solid();
+            constexpr float kUi = 1.0e7F;
+
+            submit_screen(0.0F, menu_bar_top(vh), static_cast<float>(vw),
+                          kMenuCell + 2.0F * kMenuPad, solid,
+                          client::Color{18, 20, 26, 235}, kUi);
+
+            for (std::size_t i = 0; i < palette.size(); ++i) {
+                float cx = 0.0F;
+                float cy = 0.0F;
+                menu_cell_rect(i, vh, cx, cy);
+                if (i == brush_i) {  // gold frame behind the selected cell
+                    submit_screen(cx - 3.0F, cy - 3.0F, kMenuCell + 6.0F,
+                                  kMenuCell + 6.0F, solid,
+                                  client::Color{201, 162, 39, 255}, kUi + 100.0F);
+                }
+                submit_screen(cx, cy, kMenuCell, kMenuCell, solid,
+                              client::Color{45, 48, 56, 255}, kUi + 200.0F);
+
+                const Brush& brush = palette[i];
+                const client::AtlasEntry* entry = nullptr;
+                if (brush.kind == Brush::Kind::Ground) {
+                    entry = &tileset.ground(brush.id);
+                } else if (brush.kind == Brush::Kind::Object) {
+                    entry = &tileset.object(brush.id);
+                }
+                if (entry != nullptr && entry->valid) {
+                    const float scale = std::min(kMenuCell / entry->width,
+                                                 kMenuCell / entry->height);
+                    const float dw = entry->width * scale;
+                    const float dh = entry->height * scale;
+                    submit_screen(cx + (kMenuCell - dw) * 0.5F,
+                                  cy + (kMenuCell - dh) * 0.5F, dw, dh, *entry,
+                                  client::Color{255, 255, 255, 255}, kUi + 300.0F);
+                } else {  // eraser / void: a coloured chip, no sprite
+                    const client::Color chip =
+                        brush.kind == Brush::Kind::EraseObject
+                            ? client::Color{150, 50, 45, 255}
+                            : client::Color{8, 8, 10, 255};
+                    submit_screen(cx + 8.0F, cy + 8.0F, kMenuCell - 16.0F,
+                                  kMenuCell - 16.0F, solid, chip, kUi + 300.0F);
+                }
+            }
+        };
 
         while (running) {
             SDL_Event event;
@@ -265,13 +376,26 @@ int main(int argc, char** argv) {
                             zoom * (event.wheel.y > 0.0F ? 1.1F : 0.9F), 0.5F,
                             4.0F);
                         break;
-                    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                    case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                        const int vh = renderer->viewport_height();
+                        const auto cell =
+                            menu_hit(mouse_x, mouse_y, vh, palette.size());
+                        const bool on_bar = mouse_y >= menu_bar_top(vh);
                         if (event.button.button == SDL_BUTTON_LEFT) {
-                            painting = true;
-                        } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                            if (cell.has_value()) {
+                                brush_i = *cell;  // pick from the menu
+                                update_title();
+                            } else if (!on_bar) {
+                                push_undo();  // start a paint stroke
+                                painting = true;
+                            }
+                        } else if (event.button.button == SDL_BUTTON_RIGHT &&
+                                   !on_bar) {
+                            push_undo();
                             erasing = true;
                         }
                         break;
+                    }
                     case SDL_EVENT_MOUSE_BUTTON_UP:
                         if (event.button.button == SDL_BUTTON_LEFT) {
                             painting = false;
@@ -282,7 +406,24 @@ int main(int argc, char** argv) {
                     case SDL_EVENT_KEY_DOWN: {
                         const SDL_Keycode key = event.key.key;
                         const SDL_Scancode sc = event.key.scancode;
-                        if (key == SDLK_ESCAPE) {
+                        const bool ctrl = (event.key.mod & SDL_KMOD_CTRL) != 0;
+                        if (ctrl && sc == SDL_SCANCODE_Z) {
+                            if (!undo_stack.empty()) {
+                                redo_stack.push_back(view.map);
+                                view.map = std::move(undo_stack.back());
+                                undo_stack.pop_back();
+                                dirty = true;
+                                update_title();
+                            }
+                        } else if (ctrl && sc == SDL_SCANCODE_Y) {
+                            if (!redo_stack.empty()) {
+                                undo_stack.push_back(view.map);
+                                view.map = std::move(redo_stack.back());
+                                redo_stack.pop_back();
+                                dirty = true;
+                                update_title();
+                            }
+                        } else if (key == SDLK_ESCAPE) {
                             running = false;
                         } else if (sc == SDL_SCANCODE_S) {
                             const std::string out =
@@ -346,7 +487,10 @@ int main(int argc, char** argv) {
             params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
             params.hover_valid = view.map.in_bounds(params.hover);
 
-            if ((painting || erasing) && params.hover_valid) {
+            const bool over_menu =
+                mouse_y >= menu_bar_top(renderer->viewport_height());
+
+            if ((painting || erasing) && params.hover_valid && !over_menu) {
                 apply_brush(view.map, registry, params.hover,
                             erasing ? eraser : palette[brush_i]);
                 dirty = true;
@@ -357,7 +501,7 @@ int main(int argc, char** argv) {
             client::render_world(*renderer, tileset, view, params);
 
             // Ghost preview of the current brush under the cursor.
-            if (params.hover_valid) {
+            if (params.hover_valid && !over_menu) {
                 const Brush& brush = palette[brush_i];
                 const client::AtlasEntry* entry = nullptr;
                 if (brush.kind == Brush::Kind::Ground) {
@@ -379,6 +523,8 @@ int main(int argc, char** argv) {
                     renderer->submit(cmd);
                 }
             }
+
+            draw_menu();
 
             renderer->end_frame();
             ++frames;

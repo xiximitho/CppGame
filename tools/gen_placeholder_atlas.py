@@ -177,6 +177,11 @@ def main(out_dir):
     for i in range(8):
         draw_actor(px, i * AFW, ACTOR_Y, i)
 
+    # solid white swatch for UI fills (editor menu backgrounds and frames)
+    for yy in range(40, 48):
+        for xx in range(232, 240):
+            px[xx, yy] = (255, 255, 255, 255)
+
     img.save(f"{out_dir}/atlas.png")
 
     meta = [
@@ -190,6 +195,7 @@ def main(out_dir):
         "object      101     64   64   64  64  -32      -32",
         "object      102     128  64   64  64  -32      -32",
         "highlight           0    32   64  32  -32      0",
+        "solid               234  42   4   4",
     ]
     for i in range(8):
         meta.append(f"actor       {i}       {i*AFW:<4} 128  32  48  -16      -32")
