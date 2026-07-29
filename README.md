@@ -203,6 +203,8 @@ regra está em [docs/architecture.md](docs/architecture.md).
   um sprite a um objeto
 - [docs/maps.md](docs/maps.md) — formato de mapa texto, carregamento e o editor
   `game_editor`
+- [docs/combat.md](docs/combat.md) — vida e combate: o design em fases (auto-attack
+  por alvo, respawn) e o que já está feito
 
 ## Configuração opcional
 

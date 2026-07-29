@@ -78,6 +78,23 @@ void submit_entry(Renderer2D& renderer, TextureHandle texture,
     renderer.submit(sprite);
 }
 
+/// A solid-colour rectangle in world-screen space, using the atlas's white texel.
+/// Used for the health bars; a proper HUD would grow more of these.
+void submit_rect(Renderer2D& renderer, TextureHandle texture,
+                 const AtlasEntry& solid, float x, float y, float w, float h,
+                 float depth, Color tint) {
+    if (!solid.valid || w <= 0.0F) {
+        return;
+    }
+    SpriteCmd sprite;
+    sprite.texture = texture;
+    sprite.uv = solid.uv;
+    sprite.dst = Rect{x, y, w, h};
+    sprite.depth = depth;
+    sprite.tint = tint;
+    renderer.submit(sprite);
+}
+
 /// Floors above the actor are hidden so a roof does not cover the player. The
 /// exception is standing in the open, where the floor above has nothing on it and
 /// showing it costs nothing but reveals bridges and overhangs.
@@ -202,9 +219,33 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
                                    ? Color{255, 244, 205, 255}
                                    : floor_tint;
 
+            const float actor_depth =
+                iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor);
             submit_entry(renderer, texture, tileset.actor(actor.facing), apex,
-                         iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor),
-                         tint);
+                         actor_depth, tint);
+
+            // Health bar above the head. Drawn from the hp already carried in the
+            // snapshot, so it needs nothing server-side beyond what exists.
+            if (actor.max_hp > 0) {
+                const float frac = std::clamp(
+                    static_cast<float>(actor.hp) /
+                        static_cast<float>(actor.max_hp),
+                    0.0F, 1.0F);
+                constexpr float bar_w = 22.0F;
+                constexpr float bar_h = 3.0F;
+                const float bar_x = apex.x - bar_w * 0.5F;
+                const float bar_y = apex.y - 42.0F;
+                submit_rect(renderer, texture, tileset.solid(), bar_x - 1.0F,
+                            bar_y - 1.0F, bar_w + 2.0F, bar_h + 2.0F,
+                            actor_depth + 0.5F, Color{16, 16, 20, 230});
+                const auto red =
+                    static_cast<std::uint8_t>((1.0F - frac) * 210.0F + 30.0F);
+                const auto green =
+                    static_cast<std::uint8_t>(frac * 190.0F + 40.0F);
+                submit_rect(renderer, texture, tileset.solid(), bar_x, bar_y,
+                            bar_w * frac, bar_h, actor_depth + 0.6F,
+                            Color{red, green, 48, 255});
+            }
         }
     }
 }
