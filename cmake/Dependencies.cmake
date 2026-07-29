@@ -27,6 +27,7 @@ endif()
 
 # --- pinned revisions ------------------------------------------------------
 set(GAME_DEP_SDL_REF     "f87239e71e42da91ca317a12eefb82cfbf3393eb") # release-3.4.12
+set(GAME_DEP_SDLIMG_REF  "bec9134a26c7d0f31b36d6083c25296e04cabff5") # release-3.4.4
 set(GAME_DEP_ENTT_REF    "b4e58bdd364ad72246c123a0c28538eab3252672") # v3.16.0
 set(GAME_DEP_GLM_REF     "8d1fd52e5ab5590e2c81768ace50c72bae28f2ed") # 1.0.3
 set(GAME_DEP_ENET_REF    "2662c0de09e36f2a2030ccc2c528a3e4c9e8138a") # v1.3.18
@@ -107,6 +108,41 @@ if(GAME_BUILD_CLIENT)
   endif()
 else()
   set(GAME_SDL_ORIGIN "not needed (client disabled)" CACHE INTERNAL "")
+endif()
+
+# ---------------------------------------------------------------------------
+# SDL_image — decodes the sprite atlas PNG. Client (and later the atlas tools)
+# only; the server links none of it, same as SDL.
+#
+# Built statically with the stb_image backend and PNG-via-stb, so it pulls no
+# external libpng/libjpeg and the client stays one self-contained executable.
+# AVIF/JPG/TIFF/WEBP/JXL are off on purpose: AVIF in particular would vendor
+# dav1d and aom, a huge build we do not want for a placeholder atlas.
+# ---------------------------------------------------------------------------
+if(GAME_BUILD_CLIENT)
+  if(GAME_USE_SYSTEM_SDL)
+    find_package(SDL3_image 3.2 REQUIRED CONFIG)
+  else()
+    set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_SAMPLES     OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_TESTS       OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_INSTALL     OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_VENDORED    OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_DEPS_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_BACKEND_STB ON  CACHE BOOL "" FORCE)
+    set(SDLIMAGE_PNG         ON  CACHE BOOL "" FORCE)
+    set(SDLIMAGE_PNG_LIBPNG  OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_JPG         OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_AVIF        OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_TIF         OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_WEBP        OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_JXL         OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(SDL3_image
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
+        GIT_TAG        ${GAME_DEP_SDLIMG_REF}
+        ${GAME_DEP_SYSTEM})
+    FetchContent_MakeAvailable(SDL3_image)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------

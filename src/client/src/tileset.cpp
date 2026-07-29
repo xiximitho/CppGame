@@ -1,10 +1,18 @@
 #include "client/tileset.hpp"
 
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "client/iso.hpp"
+#include "core/log.hpp"
+#include "platform/vfs.hpp"
 #include "sim/rng.hpp"
 #include "sim/tile_ids.hpp"
 
@@ -323,6 +331,153 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
                    -static_cast<float>(iso::kHalfTileWidth), 0.0F);
 
     return tileset;
+}
+
+namespace {
+
+/// Decodes an in-memory PNG (or any format SDL_image is built with) into a
+/// tightly packed RGBA byte buffer, which is what Renderer2D::create_texture
+/// wants everywhere. Row-copies because the decoded surface's pitch is not
+/// guaranteed to equal width*4.
+bool decode_atlas_rgba(const std::vector<std::uint8_t>& file_bytes,
+                       std::vector<std::uint8_t>& out_pixels, int& out_w,
+                       int& out_h) {
+    SDL_IOStream* io = SDL_IOFromConstMem(file_bytes.data(), file_bytes.size());
+    if (io == nullptr) {
+        return false;
+    }
+    // closeio == true: IMG_Load_IO takes ownership of the stream either way.
+    SDL_Surface* decoded = IMG_Load_IO(io, true);
+    if (decoded == nullptr) {
+        LOG_WARN("IMG_Load_IO failed: %s", SDL_GetError());
+        return false;
+    }
+
+    SDL_Surface* rgba = SDL_ConvertSurface(decoded, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(decoded);
+    if (rgba == nullptr) {
+        LOG_WARN("SDL_ConvertSurface failed: %s", SDL_GetError());
+        return false;
+    }
+
+    out_w = rgba->w;
+    out_h = rgba->h;
+    const auto width = static_cast<std::size_t>(out_w);
+    const auto height = static_cast<std::size_t>(out_h);
+    out_pixels.resize(width * height * 4U);
+
+    const auto* src = static_cast<const std::uint8_t*>(rgba->pixels);
+    const auto pitch = static_cast<std::size_t>(rgba->pitch);
+    for (std::size_t row = 0; row < height; ++row) {
+        std::memcpy(out_pixels.data() + row * width * 4U, src + row * pitch,
+                    width * 4U);
+    }
+
+    SDL_DestroySurface(rgba);
+    return true;
+}
+
+AtlasEntry entry_from_pixels(int atlas_w, int atlas_h, int x, int y, int w,
+                             int h, float origin_x, float origin_y) {
+    AtlasEntry entry;
+    entry.uv = Rect{static_cast<float>(x) / static_cast<float>(atlas_w),
+                    static_cast<float>(y) / static_cast<float>(atlas_h),
+                    static_cast<float>(w) / static_cast<float>(atlas_w),
+                    static_cast<float>(h) / static_cast<float>(atlas_h)};
+    entry.width = static_cast<float>(w);
+    entry.height = static_cast<float>(h);
+    entry.origin_x = origin_x;
+    entry.origin_y = origin_y;
+    entry.valid = true;
+    return entry;
+}
+
+}  // namespace
+
+bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
+                               int atlas_h, Tileset& out) {
+    // Line format, whitespace-separated, '#' starts a comment:
+    //   ground|object <id>    <x> <y> <w> <h> <origin_x> <origin_y>
+    //   actor          <dir>  <x> <y> <w> <h> <origin_x> <origin_y>   (dir 0..7)
+    //   highlight              <x> <y> <w> <h> <origin_x> <origin_y>
+    // The id is the sim TileId; that binding is the whole point of the file.
+    std::istringstream stream(text);
+    std::string line;
+    int bound = 0;
+
+    while (std::getline(stream, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        std::istringstream fields(line);
+        std::string kind;
+        fields >> kind;
+
+        int x = 0, y = 0, w = 0, h = 0;
+        float ox = 0.0F, oy = 0.0F;
+
+        if (kind == "highlight") {
+            if (!(fields >> x >> y >> w >> h >> ox >> oy)) {
+                return false;
+            }
+            out.highlight_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+            ++bound;
+        } else if (kind == "ground" || kind == "object") {
+            int id = 0;
+            if (!(fields >> id >> x >> y >> w >> h >> ox >> oy)) {
+                return false;
+            }
+            const AtlasEntry entry =
+                entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+            if (kind == "ground") {
+                out.ground_[static_cast<sim::TileId>(id)] = entry;
+            } else {
+                out.object_[static_cast<sim::TileId>(id)] = entry;
+            }
+            ++bound;
+        } else if (kind == "actor") {
+            int dir = 0;
+            if (!(fields >> dir >> x >> y >> w >> h >> ox >> oy)) {
+                return false;
+            }
+            if (dir >= 0 && dir < static_cast<int>(out.actor_frames_.size())) {
+                out.actor_frames_[static_cast<std::size_t>(dir)] =
+                    entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+                ++bound;
+            }
+        }
+        // Unknown kinds are skipped so a newer atlas.txt does not break an older
+        // client outright.
+    }
+
+    return bound > 0;
+}
+
+Tileset Tileset::load(Renderer2D& renderer) {
+    std::vector<std::uint8_t> file_bytes;
+    std::string meta;
+    if (platform::vfs::read_asset("tilesets/atlas.png", file_bytes) &&
+        platform::vfs::read_asset_text("tilesets/atlas.txt", meta)) {
+        std::vector<std::uint8_t> pixels;
+        int w = 0;
+        int h = 0;
+        if (decode_atlas_rgba(file_bytes, pixels, w, h)) {
+            Tileset tileset;
+            tileset.texture_ = renderer.create_texture(pixels.data(), w, h);
+            if (tileset.texture_.valid() &&
+                parse_atlas_meta(meta, w, h, tileset)) {
+                LOG_INFO("loaded sprite atlas from tilesets/atlas.png (%dx%d)", w,
+                         h);
+                return tileset;
+            }
+        }
+        LOG_WARN("tilesets/atlas.png present but failed to load; "
+                 "falling back to procedural art");
+    } else {
+        LOG_INFO("no tilesets/atlas.png found; using procedural art");
+    }
+
+    return build_procedural(renderer);
 }
 
 const AtlasEntry& Tileset::ground(sim::TileId id) const {

@@ -192,8 +192,7 @@ int main(int argc, char** argv) {
 
     {
         auto renderer = client::make_sdl_renderer(sdl_renderer);
-        const client::Tileset tileset =
-            client::Tileset::build_procedural(*renderer);
+        const client::Tileset tileset = client::Tileset::load(*renderer);
         if (!tileset.texture().valid()) {
             LOG_ERROR("could not build the tile atlas");
             return 1;

@@ -19,6 +19,7 @@ DEPS_FILE="cmake/Dependencies.cmake"
 # name : cmake variable : repository
 DEPS=(
   "SDL3:GAME_DEP_SDL_REF:libsdl-org/SDL"
+  "SDL3_image:GAME_DEP_SDLIMG_REF:libsdl-org/SDL_image"
   "EnTT:GAME_DEP_ENTT_REF:skypjack/entt"
   "glm:GAME_DEP_GLM_REF:g-truc/glm"
   "ENet:GAME_DEP_ENET_REF:lsalzman/enet"

@@ -6,6 +6,7 @@
 #include <entt/entity/registry.hpp>
 
 #include "sim/components.hpp"
+#include "sim/item_type.hpp"
 #include "sim/pathfind.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
@@ -21,12 +22,17 @@ namespace sim {
 class World {
 public:
     World() = default;
-    explicit World(TileMap map);
+    explicit World(TileMap map, ItemTypeRegistry item_types = {});
 
     Tick tick() const { return tick_; }
 
     TileMap&       map() { return map_; }
     const TileMap& map() const { return map_; }
+
+    /// The item/type catalogue this world was built with. The source of truth
+    /// for gameplay properties (blocking, pickable, ...). Empty by default, which
+    /// is fine for tests that place tiles by hand.
+    const ItemTypeRegistry& item_types() const { return item_types_; }
 
     entt::registry&       registry() { return registry_; }
     const entt::registry& registry() const { return registry_; }
@@ -83,8 +89,9 @@ private:
     void occupy(TilePos pos, NetId net_id);
     void vacate(TilePos pos, NetId net_id);
 
-    TileMap        map_;
-    entt::registry registry_;
+    TileMap          map_;
+    ItemTypeRegistry item_types_;
+    entt::registry   registry_;
 
     std::unordered_map<NetId, entt::entity>  by_net_id_;
     std::unordered_map<std::uint64_t, NetId> occupancy_;

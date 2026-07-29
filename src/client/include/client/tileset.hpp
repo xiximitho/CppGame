@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string>
 #include <unordered_map>
 
 #include "client/renderer2d.hpp"
@@ -35,6 +36,14 @@ public:
     /// texture() is invalid if upload failed.
     static Tileset build_procedural(Renderer2D& renderer);
 
+    /// Loads the packed atlas (tilesets/atlas.png + tilesets/atlas.txt) through
+    /// platform::vfs, or falls back to build_procedural() when the files are
+    /// missing or fail to decode. This is what main() calls: a clone with no art
+    /// still runs, and dropping a real PNG in switches the whole look with no
+    /// code change. atlas.txt is where a sprite is bound to an id — see the file
+    /// itself and docs/content.md.
+    static Tileset load(Renderer2D& renderer);
+
     TextureHandle texture() const { return texture_; }
 
     /// Missing ids return an entry with valid == false, which callers skip.
@@ -49,6 +58,11 @@ public:
     const AtlasEntry& highlight() const { return highlight_; }
 
 private:
+    /// Fills `out` from the text metadata; returns false if nothing parsed. Kept
+    /// a member so it can populate the private lookup tables.
+    static bool parse_atlas_meta(const std::string& text, int atlas_w,
+                                 int atlas_h, Tileset& out);
+
     TextureHandle texture_;
     std::unordered_map<sim::TileId, AtlasEntry> ground_;
     std::unordered_map<sim::TileId, AtlasEntry> object_;

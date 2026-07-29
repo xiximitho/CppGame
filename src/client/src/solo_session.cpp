@@ -3,13 +3,46 @@
 #include "client/session.hpp"
 #include "core/log.hpp"
 #include "core/time.hpp"
+#include <string>
+#include <utility>
+
+#include "platform/vfs.hpp"
 #include "sim/components.hpp"
+#include "sim/item_type.hpp"
 #include "sim/map_gen.hpp"
+#include "sim/map_io.hpp"
 #include "sim/systems.hpp"
 #include "sim/world.hpp"
 
 namespace client {
 namespace {
+
+/// Builds the solo World. Prefers an authored map read through platform::vfs
+/// (so it also works from inside the APK on Android); falls back to the seeded
+/// procedural map when the file is missing or malformed, which keeps a clone
+/// with no map file runnable. The World keeps a copy of the item catalogue so
+/// gameplay systems can query item properties without a global.
+sim::World build_solo_world(std::uint64_t seed, const char* map_path) {
+    const sim::ItemTypeRegistry item_types = sim::build_default_registry();
+
+    std::string text;
+    if (platform::vfs::read_asset_text(map_path, text)) {
+        std::string error;
+        if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
+            LOG_INFO("loaded map '%s' (%dx%d)", map_path, parsed->map.width(),
+                     parsed->map.height());
+            return sim::World(std::move(parsed->map), item_types);
+        }
+        LOG_WARN("map '%s' failed to parse: %s; using generated map", map_path,
+                 error.c_str());
+    } else {
+        LOG_INFO("no map '%s'; using generated map", map_path);
+    }
+
+    return sim::World(
+        sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed}, item_types),
+        item_types);
+}
 
 /// Runs the real simulation in-process at the real tick rate.
 ///
@@ -20,7 +53,7 @@ namespace {
 class SoloSession final : public Session {
 public:
     SoloSession(std::uint64_t seed, int wanderers)
-        : world_(sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed})),
+        : world_(build_solo_world(seed, "maps/dungeon.txt")),
           rng_(seed ^ 0x9E3779B97F4A7C15ULL) {
         const sim::TilePos spawn = sim::find_spawn_tile(world_.map(), rng_);
 

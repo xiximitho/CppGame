@@ -10,6 +10,8 @@ add_executable(game_tests
     test_protocol.cpp
     test_world.cpp
     test_pathfind.cpp
+    test_item_type.cpp
+    test_map_io.cpp
     test_input.cpp)
 
 target_link_libraries(game_tests PRIVATE

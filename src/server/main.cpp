@@ -1,8 +1,11 @@
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "core/log.hpp"
@@ -10,10 +13,52 @@
 #include "net/protocol.hpp"
 #include "net/transport.hpp"
 #include "sim/components.hpp"
+#include "sim/item_type.hpp"
 #include "sim/map_gen.hpp"
+#include "sim/map_io.hpp"
 #include "sim/rng.hpp"
 #include "sim/systems.hpp"
 #include "sim/world.hpp"
+
+namespace {
+
+/// Reads a whole text file. The server links no SDL (server-only preset), so it
+/// cannot use platform::vfs; plain <fstream> is fine because a server never runs
+/// on Android. Returns an empty string when the file cannot be opened.
+std::string read_text_file(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+/// Builds the authoritative World. Same map format and blocking derivation as
+/// the client, so solo and multiplayer never diverge; only how the bytes are
+/// read differs by layer.
+sim::World build_server_world(const std::string& map_path, std::uint64_t seed,
+                              const sim::ItemTypeRegistry& item_types) {
+    const std::string text = read_text_file(map_path);
+    if (!text.empty()) {
+        std::string error;
+        if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
+            LOG_INFO("loaded map '%s' (%dx%d)", map_path.c_str(),
+                     parsed->map.width(), parsed->map.height());
+            return sim::World(std::move(parsed->map), item_types);
+        }
+        LOG_WARN("map '%s' failed to parse: %s; using generated map",
+                 map_path.c_str(), error.c_str());
+    } else {
+        LOG_INFO("no map '%s'; using generated map", map_path.c_str());
+    }
+    return sim::World(
+        sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed}, item_types),
+        item_types);
+}
+
+}  // namespace
 
 // The authoritative server. Links no SDL, no graphics, no audio: it builds and
 // runs on a machine that has none of them installed (see the `server-only`
@@ -236,8 +281,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    sim::World world(
-        sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, options.seed}));
+    const sim::ItemTypeRegistry item_types = sim::build_default_registry();
+    sim::World world =
+        build_server_world("assets/maps/dungeon.txt", options.seed, item_types);
     sim::Rng rng(options.seed ^ 0xA24BAED4963EE407ULL);
 
     for (int i = 0; i < options.wanderers; ++i) {

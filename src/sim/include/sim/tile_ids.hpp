@@ -17,8 +17,9 @@ constexpr TileId kDirt  = 2;
 constexpr TileId kStone = 3;
 constexpr TileId kWater = 4;
 
-constexpr TileId kWall = 100;
-constexpr TileId kTree = 101;
+constexpr TileId kWall  = 100;
+constexpr TileId kTree  = 101;
+constexpr TileId kCrate = 102;
 
 constexpr TileId kActor = 200;
 

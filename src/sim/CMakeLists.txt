@@ -6,6 +6,8 @@
 # sneaks in.
 add_library(game_sim STATIC
     src/tile_map.cpp
+    src/item_type.cpp
+    src/map_io.cpp
     src/world.cpp
     src/snapshot.cpp
     src/map_gen.cpp

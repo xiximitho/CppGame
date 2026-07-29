@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "sim/item_type.hpp"
 #include "sim/rng.hpp"
 #include "sim/tile_map.hpp"
 
@@ -19,7 +20,12 @@ struct MapGenSettings {
 /// generate the same world for solo play that the server generates for network
 /// play — see docs/architecture.md for why that is a scaffold shortcut and not
 /// the shipping design.
-TileMap generate_demo_map(const MapGenSettings& settings);
+///
+/// `item_types` is the source of truth for whether a placed tile blocks: the
+/// generator no longer hardcodes the blocking bool, it derives it from the
+/// BlocksWalk flag of the ground and object it places (see docs/content.md).
+TileMap generate_demo_map(const MapGenSettings& settings,
+                          const ItemTypeRegistry& item_types);
 
 /// A walkable tile on floor 0, chosen deterministically from `rng`. Falls back
 /// to scanning the map when random picks keep landing on water or walls.

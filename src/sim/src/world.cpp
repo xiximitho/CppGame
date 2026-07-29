@@ -4,7 +4,8 @@
 
 namespace sim {
 
-World::World(TileMap map) : map_(std::move(map)) {}
+World::World(TileMap map, ItemTypeRegistry item_types)
+    : map_(std::move(map)), item_types_(std::move(item_types)) {}
 
 std::uint64_t World::tile_key(TilePos pos) {
     // Bias into unsigned so negative coordinates still pack cleanly.
