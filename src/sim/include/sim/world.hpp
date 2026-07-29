@@ -76,6 +76,18 @@ public:
     /// actor is never yanked backwards off a tile it is halfway onto.
     void cancel_path(NetId net_id);
 
+    /// Sets the actor `attacker` auto-attacks; kInvalidNetId clears it. A
+    /// primitive like request_walk — sim::update_combat drives the swings.
+    void set_attack_target(NetId attacker, NetId target);
+
+    /// Applies `amount` damage to an actor. Returns true if it died. A dead actor
+    /// with CRespawn is marked dead and stops occupying its tile; one without is
+    /// despawned. Never lets hp go negative.
+    bool apply_damage(NetId net_id, std::int32_t amount);
+
+    /// Brings a dead (CRespawn) actor back at its respawn point, full health.
+    void respawn_actor(NetId net_id);
+
     /// Whether the actor is currently following a route.
     bool is_following_path(NetId net_id) const;
 

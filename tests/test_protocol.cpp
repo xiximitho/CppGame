@@ -98,6 +98,19 @@ TEST_CASE("the protocol version is bumped past the pre-move-to format") {
     CHECK(net::kProtocolVersion >= 2);
 }
 
+TEST_CASE("attack round trips") {
+    const auto packet = encode([](net::BitWriter& writer) {
+        net::write_attack(writer, net::AttackMsg{4242});
+    });
+
+    net::BitReader reader(packet.data(), packet.size());
+    REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_Attack);
+
+    net::AttackMsg decoded;
+    REQUIRE(net::read_attack(reader, decoded));
+    CHECK(decoded.target == 4242U);
+}
+
 TEST_CASE("welcome round trips") {
     const auto packet = encode([](net::BitWriter& writer) {
         net::WelcomeMsg welcome;

@@ -75,6 +75,22 @@ public:
         transport_->flush();
     }
 
+    void request_attack(sim::NetId target) override {
+        if (transport_ == nullptr || view_.local_id == sim::kInvalidNetId) {
+            return;
+        }
+        std::uint8_t buffer[64];
+        net::BitWriter writer(buffer, sizeof(buffer));
+        net::write_attack(writer, net::AttackMsg{target});
+        if (writer.overflowed()) {
+            return;
+        }
+        // Reliable, like move-to: a discrete command the server must not miss.
+        transport_->send(server_peer_, buffer, writer.bytes_written(),
+                         net::Channel::Reliable);
+        transport_->flush();
+    }
+
     const WorldView& view() const override { return view_; }
 
     std::string status_text() const override {
@@ -207,6 +223,7 @@ private:
             case net::MsgId::C2S_Hello:
             case net::MsgId::C2S_Input:
             case net::MsgId::C2S_MoveTo:
+            case net::MsgId::C2S_Attack:
             case net::MsgId::Invalid:
                 // Client-to-server ids arriving here mean a confused or hostile
                 // peer; ignoring is the correct response.

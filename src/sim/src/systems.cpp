@@ -38,6 +38,66 @@ void update_wanderers(World& world, Rng& rng) {
     }
 }
 
+void update_combat(World& world) {
+    entt::registry& registry = world.registry();
+    const Tick now = world.tick();
+
+    // Respawns first: gather then apply, since respawn_actor mutates pools.
+    std::vector<NetId> respawns;
+    for (auto [entity, dead, actor] : registry.view<CDead, CActor>().each()) {
+        if (now >= dead.respawn_tick) {
+            respawns.push_back(actor.net_id);
+        }
+    }
+    for (const NetId id : respawns) {
+        world.respawn_actor(id);
+    }
+
+    // Resolve targets. Facing and the swing timer are plain field writes (safe
+    // mid-view); the actual hits are collected and applied after, because
+    // apply_damage can despawn an entity and invalidate the view.
+    std::vector<NetId>        hits;
+    std::vector<entt::entity> clear_targets;
+
+    for (auto [entity, target, pos, actor] :
+         registry.view<CTarget, CPosition, CActor>().each()) {
+        if (registry.all_of<CDead>(entity)) {
+            continue;  // the dead do not swing
+        }
+
+        const entt::entity target_entity = world.lookup(target.target);
+        if (target_entity == entt::null ||
+            registry.all_of<CDead>(target_entity) ||
+            !registry.all_of<CPosition>(target_entity)) {
+            clear_targets.push_back(entity);  // target gone or dead
+            continue;
+        }
+
+        const TilePos target_tile = registry.get<CPosition>(target_entity).tile;
+        if (!in_melee_range(pos.tile, target_tile)) {
+            continue;  // keep the target, wait until adjacent
+        }
+
+        Direction facing = pos.facing;
+        if (direction_between(pos.tile, target_tile, facing)) {
+            pos.facing = facing;  // turn to face the target
+        }
+
+        if (now < target.next_swing_tick) {
+            continue;
+        }
+        target.next_swing_tick = now + kAttackCooldownTicks;
+        hits.push_back(target.target);
+    }
+
+    for (const entt::entity entity : clear_targets) {
+        registry.remove<CTarget>(entity);
+    }
+    for (const NetId victim : hits) {
+        world.apply_damage(victim, kBaseMeleeDamage);
+    }
+}
+
 void update_path_followers(World& world) {
     entt::registry& registry = world.registry();
 

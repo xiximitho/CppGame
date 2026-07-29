@@ -301,10 +301,24 @@ int main(int argc, char** argv) {
                 params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
                 params.hover_valid = session->view().map.in_bounds(params.hover);
             }
-            // Only the destination is sent; the simulation plans and walks the
-            // route. In network play that happens server-side.
+            // A click on another actor attacks it; a click on the ground walks
+            // there. Only the intent is sent; the simulation owns fight and route.
             if (click_requested && params.hover_valid) {
-                session->request_move_to(params.hover);
+                const client::WorldView& view = session->view();
+                sim::NetId target = sim::kInvalidNetId;
+                for (const sim::ActorState& actor : view.actors) {
+                    if (actor.net_id != view.local_id && actor.tile == params.hover) {
+                        target = actor.net_id;
+                        break;
+                    }
+                }
+                if (target != sim::kInvalidNetId) {
+                    session->request_attack(target);
+                    // Also close the distance; the server only swings in range.
+                    session->request_move_to(params.hover);
+                } else {
+                    session->request_move_to(params.hover);
+                }
             }
 
             const client::input::ScreenDir held = client::input::held_direction();

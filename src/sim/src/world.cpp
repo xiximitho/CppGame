@@ -184,6 +184,74 @@ bool World::request_turn(NetId net_id, Direction dir) {
     return true;
 }
 
+void World::set_attack_target(NetId attacker, NetId target) {
+    const entt::entity entity = lookup(attacker);
+    if (entity == entt::null) {
+        return;
+    }
+    if (target == kInvalidNetId || target == attacker) {
+        registry_.remove<CTarget>(entity);
+        return;
+    }
+    // Reset the swing timer so a fresh target is hit promptly, not on the old
+    // target's leftover cooldown.
+    registry_.emplace_or_replace<CTarget>(entity, CTarget{target, 0});
+}
+
+bool World::apply_damage(NetId net_id, std::int32_t amount) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return false;
+    }
+    auto* health = registry_.try_get<CHealth>(entity);
+    if (health == nullptr) {
+        return false;
+    }
+
+    health->hp -= amount;
+    if (health->hp > 0) {
+        return false;
+    }
+    health->hp = 0;
+
+    if (registry_.all_of<CRespawn>(entity)) {
+        // Stop occupying and acting; the corpse waits out CDead in place.
+        if (const auto* pos = registry_.try_get<CPosition>(entity)) {
+            vacate(pos->tile, net_id);
+        }
+        if (const auto* walk = registry_.try_get<CWalk>(entity)) {
+            vacate(walk->to, net_id);
+        }
+        registry_.remove<CWalk>(entity);
+        registry_.remove<CPathFollow>(entity);
+        registry_.remove<CTarget>(entity);
+        registry_.emplace_or_replace<CDead>(entity, CDead{tick_ + kRespawnTicks});
+    } else {
+        despawn(net_id);
+    }
+    return true;
+}
+
+void World::respawn_actor(NetId net_id) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return;
+    }
+    const auto* respawn = registry_.try_get<CRespawn>(entity);
+    auto* pos = registry_.try_get<CPosition>(entity);
+    if (respawn == nullptr || pos == nullptr) {
+        return;
+    }
+    // The dead actor did not occupy a tile, so just claim the respawn point.
+    pos->tile = respawn->point;
+    pos->facing = Direction::South;
+    occupy(respawn->point, net_id);
+    if (auto* health = registry_.try_get<CHealth>(entity)) {
+        health->hp = health->max_hp;
+    }
+    registry_.remove<CDead>(entity);
+}
+
 void World::step() {
     ++tick_;
 

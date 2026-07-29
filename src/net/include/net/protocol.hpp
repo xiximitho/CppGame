@@ -15,7 +15,8 @@ namespace net {
 /// rather than left to misparse a packet.
 ///
 /// 2: added C2S_MoveTo (click-to-move).
-constexpr std::uint32_t kProtocolVersion = 2;
+/// 3: added C2S_Attack (auto-attack a target).
+constexpr std::uint32_t kProtocolVersion = 3;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -47,6 +48,7 @@ enum class MsgId : std::uint8_t {
     C2S_Hello  = 1,
     C2S_Input  = 2,
     C2S_MoveTo = 3,
+    C2S_Attack = 4,
 
     // Server to client.
     S2C_Welcome  = 64,
@@ -78,6 +80,13 @@ struct MoveToMsg {
     sim::TilePos target;
 };
 
+/// Auto-attack intent: the player names a target actor and the server swings at
+/// it each cooldown while in range. `target` == kInvalidNetId clears the target.
+/// Like MoveToMsg, only the intent crosses the wire — the server owns the fight.
+struct AttackMsg {
+    sim::NetId target = sim::kInvalidNetId;
+};
+
 struct WelcomeMsg {
     sim::NetId    your_id = sim::kInvalidNetId;
     sim::Tick     tick = 0;
@@ -105,6 +114,7 @@ struct MapChunkMsg {
 void write_hello(BitWriter& writer, const HelloMsg& msg);
 void write_input(BitWriter& writer, const InputMsg& msg);
 void write_move_to(BitWriter& writer, const MoveToMsg& msg);
+void write_attack(BitWriter& writer, const AttackMsg& msg);
 void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
 void write_reject(BitWriter& writer, const RejectMsg& msg);
 void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
@@ -119,6 +129,7 @@ MsgId read_msg_id(BitReader& reader);
 bool read_hello(BitReader& reader, HelloMsg& out);
 bool read_input(BitReader& reader, InputMsg& out);
 bool read_move_to(BitReader& reader, MoveToMsg& out);
+bool read_attack(BitReader& reader, AttackMsg& out);
 bool read_welcome(BitReader& reader, WelcomeMsg& out);
 bool read_reject(BitReader& reader, RejectMsg& out);
 bool read_snapshot(BitReader& reader, sim::Snapshot& out);

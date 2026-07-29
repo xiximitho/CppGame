@@ -23,6 +23,15 @@ void update_wanderers(World& world, Rng& rng);
 /// and gives up after kPathBlockedGiveUpTicks rather than pushing forever.
 void update_path_followers(World& world);
 
+/// Resolves auto-attacks and respawns. Each actor with a CTarget faces its target
+/// and, when in melee range and its cooldown is up, hits it for kBaseMeleeDamage;
+/// dead actors past their respawn timer come back. A stale target (gone or dead)
+/// is dropped.
+///
+/// Must run every tick after World::step(), like update_path_followers, so a
+/// swing lands on the tick its cooldown elapses.
+void update_combat(World& world);
+
 /// How long a follower tolerates being blocked before abandoning its route. One
 /// second is long enough for another actor to finish crossing and short enough that
 /// a permanently blocked player is not left stuck without feedback.

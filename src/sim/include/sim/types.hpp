@@ -32,6 +32,12 @@ constexpr Tick step_ticks_for_diagonal(Tick cardinal_ticks) {
     return (cardinal_ticks * 3U) / 2U;
 }
 
+/// Combat timing and damage. Placeholders to be tuned; damage becomes data-driven
+/// once items carry weapon/armour stats (see docs/combat.md).
+constexpr Tick         kAttackCooldownTicks = static_cast<Tick>(kSimHz);      // ~1 swing/s
+constexpr Tick         kRespawnTicks        = static_cast<Tick>(kSimHz * 3);  // ~3 s
+constexpr std::int32_t kBaseMeleeDamage     = 18;
+
 /// Area of interest half-extents, in tiles. The server only tells a player about
 /// actors inside this box, which is what lets the world be larger than a
 /// snapshot. A 23x17 window matches the classic tile-MMO viewport.
@@ -133,6 +139,13 @@ constexpr int tile_distance(TilePos a, TilePos b) {
     const int dx = a.x > b.x ? a.x - b.x : b.x - a.x;
     const int dy = a.y > b.y ? a.y - b.y : b.y - a.y;
     return dx > dy ? dx : dy;
+}
+
+/// Whether `to` is within melee reach of `from`: adjacent (including diagonal) on
+/// the same floor. One rule so the server and any client range hint never
+/// disagree, the same discipline as sim::can_traverse for stepping.
+constexpr bool in_melee_range(TilePos from, TilePos to) {
+    return tile_distance(from, to) == 1;
 }
 
 }  // namespace sim

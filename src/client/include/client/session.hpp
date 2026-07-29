@@ -52,6 +52,11 @@ public:
     /// destination and never a path.
     virtual void request_move_to(sim::TilePos target) = 0;
 
+    /// Player intent: auto-attack `target` (kInvalidNetId clears it). The
+    /// simulation owns the fight — server-side in network play — so the client
+    /// only names who, never the damage.
+    virtual void request_attack(sim::NetId target) = 0;
+
     virtual const WorldView& view() const = 0;
 
     /// Short human-readable state for the window title / HUD.

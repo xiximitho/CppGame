@@ -57,6 +57,27 @@ struct CWanderer {
     Tick next_decision_tick = 0;
 };
 
+/// The actor this one is auto-attacking, Tibia style. Absent means "not
+/// attacking", the same way CWalk's absence means "standing still". `target` is a
+/// NetId, not an entity, so it survives the target dying and respawning.
+struct CTarget {
+    NetId target          = kInvalidNetId;
+    Tick  next_swing_tick = 0;
+};
+
+/// Marks an actor that respawns instead of vanishing on death, and where. Players
+/// get this (in solo and on the server); monsters do not, so killing a monster
+/// despawns it outright.
+struct CRespawn {
+    TilePos point;
+};
+
+/// Present while an actor is dead and waiting to respawn. It cannot act and does
+/// not occupy its tile. Only actors with CRespawn ever get one.
+struct CDead {
+    Tick respawn_tick = 0;
+};
+
 /// An actor walking a precomputed route, one step per tile.
 ///
 /// Present only while following a path; its absence means "not going anywhere",

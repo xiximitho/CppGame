@@ -12,6 +12,7 @@ add_executable(game_tests
     test_pathfind.cpp
     test_item_type.cpp
     test_map_io.cpp
+    test_combat.cpp
     test_input.cpp)
 
 target_link_libraries(game_tests PRIVATE

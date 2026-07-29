@@ -250,7 +250,9 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
 
     const sim::TilePos spawn = sim::find_spawn_tile(world.map(), rng);
     connection.net_id = world.allocate_net_id();
-    world.spawn_actor(connection.net_id, spawn, 0);
+    const entt::entity entity = world.spawn_actor(connection.net_id, spawn, 0);
+    // Players respawn on death instead of vanishing; monsters do not.
+    world.registry().emplace<sim::CRespawn>(entity, sim::CRespawn{spawn});
     connection.welcomed = true;
 
     net::WelcomeMsg welcome;
@@ -387,6 +389,19 @@ int main(int argc, char** argv) {
                             break;
                         }
 
+                        case net::MsgId::C2S_Attack: {
+                            net::AttackMsg attack;
+                            if (!net::read_attack(reader, attack) ||
+                                !connection.welcomed) {
+                                break;
+                            }
+                            // Untrusted target id; set_attack_target ignores
+                            // unknown ids and self-targeting.
+                            world.set_attack_target(connection.net_id,
+                                                    attack.target);
+                            break;
+                        }
+
                         default:
                             // Server-to-client ids, or garbage. A well-behaved
                             // client never sends these; ignoring is correct and
@@ -423,6 +438,7 @@ int main(int argc, char** argv) {
 
             world.step();
             sim::update_path_followers(world);
+            sim::update_combat(world);
             sim::update_wanderers(world, rng);
 
             if (world.tick() % kSnapshotEveryTicks != 0) {

@@ -58,7 +58,11 @@ public:
         const sim::TilePos spawn = sim::find_spawn_tile(world_.map(), rng_);
 
         local_id_ = world_.allocate_net_id();
-        world_.spawn_actor(local_id_, spawn, 0);
+        const entt::entity local_entity =
+            world_.spawn_actor(local_id_, spawn, 0);
+        // The player respawns on death instead of vanishing; monsters do not.
+        world_.registry().emplace<sim::CRespawn>(local_entity,
+                                                 sim::CRespawn{spawn});
 
         spawn_wanderers(wanderers, spawn);
 
@@ -109,8 +113,13 @@ public:
                 world_.cancel_path(local_id_);
                 world_.request_walk(local_id_, pending_dir_);
             }
+            if (pending_attack_) {
+                pending_attack_ = false;
+                world_.set_attack_target(local_id_, pending_attack_target_);
+            }
 
             sim::update_path_followers(world_);
+            sim::update_combat(world_);
             sim::update_wanderers(world_, rng_);
         }
 
@@ -127,6 +136,11 @@ public:
     void request_move_to(sim::TilePos target) override {
         pending_move_to_ = true;
         pending_target_ = target;
+    }
+
+    void request_attack(sim::NetId target) override {
+        pending_attack_ = true;
+        pending_attack_target_ = target;
     }
 
     const WorldView& view() const override { return view_; }
@@ -196,6 +210,8 @@ private:
     sim::Direction pending_dir_ = sim::Direction::South;
     bool           pending_move_to_ = false;
     sim::TilePos   pending_target_;
+    bool           pending_attack_ = false;
+    sim::NetId     pending_attack_target_ = sim::kInvalidNetId;
     int            spawned_wanderers_ = 0;
 };
 

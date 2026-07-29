@@ -1,8 +1,9 @@
 # Combate e vida
 
-> Status: **em implementação**. Fase 1 (vida visível) primeiro; o resto é design
-> aprovado a construir em fases. Decisões fechadas com o usuário em 2026-07-29:
-> auto-attack por alvo (estilo Tibia), morte = respawn simples.
+> Status: **em implementação**. Fases 1 (vida visível) e 2 (melee auto-attack)
+> feitas; faltam 3 (data-driven) e 4 (feedback/loot). Decisões fechadas com o
+> usuário em 2026-07-29: auto-attack por alvo (estilo Tibia), morte = respawn
+> simples.
 
 ## Princípios (herdados do resto do projeto)
 
@@ -32,9 +33,13 @@ verde→vermelho pela fração `hp/max_hp`. Sem mudança de `sim/` nem de protoc
 tudo já estava no fio. Hoje todos aparecem cheios; a barra passa a cair sozinha
 quando a fase 2 aplicar dano.
 
-## Fase 2 — melee auto-attack (a fazer)
+## Fase 2 — melee auto-attack (feita)
 
 Modelo Tibia: mira um alvo e bate a cada cooldown enquanto ele estiver no alcance.
+Implementado como abaixo: `CTarget`/`CDead`/`CRespawn` em components, `C2S_Attack`
+no protocolo (`kProtocolVersion` 2→3), `sim::update_combat` rodando depois de
+`world.step()` no servidor e na `SoloSession`, `in_melee_range` em types.hpp, e no
+cliente clicar num ator vira ataque (clicar no chão continua sendo andar).
 
 - **Intenção:** `C2S_Attack { target_net_id }` (canal confiável). O handler no
   servidor grava um alvo; `0` limpa. A `SoloSession` faz o mesmo localmente.
