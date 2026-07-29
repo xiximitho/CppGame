@@ -21,13 +21,3 @@ target_link_libraries(game_editor PRIVATE
     SDL3::SDL3
     SDL3_image::SDL3_image
     game_warnings)
-
-# The editor reads and writes maps in the source tree, so it needs the sprite
-# atlas next to it just like the client. Mirror assets after building.
-if(NOT ANDROID)
-  add_custom_command(TARGET game_editor POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              "${CMAKE_SOURCE_DIR}/assets"
-              "$<TARGET_FILE_DIR:game_editor>/assets"
-      COMMENT "Copying assets next to game_editor")
-endif()

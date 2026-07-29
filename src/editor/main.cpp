@@ -43,7 +43,7 @@
 namespace {
 
 struct Options {
-    std::string map_path = "assets/maps/dungeon.txt";
+    std::string map_path;  // empty -> asset_root()/maps/dungeon.txt after init
     float       zoom = 1.0F;
     std::string screenshot_path;      // headless verification, like the client
     int         screenshot_frame = 2;
@@ -184,13 +184,20 @@ std::optional<std::size_t> menu_hit(float mx, float my, int viewport_h,
 
 int main(int argc, char** argv) {
     core::log_set_tag("editor");
-    const Options opt = parse_args(argc, argv);
+    Options opt = parse_args(argc, argv);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
         return 1;
     }
     platform::paths_init("game", "game");
+
+    // Resolve the default map against the asset root, which in a dev build is the
+    // source tree — the exact directory the client reads from. A --map argument
+    // (relative to the working directory) overrides this.
+    if (opt.map_path.empty()) {
+        opt.map_path = platform::asset_root() + "maps/dungeon.txt";
+    }
 
     SDL_Window* window =
         SDL_CreateWindow("game_editor", 1280, 720, SDL_WINDOW_RESIZABLE);

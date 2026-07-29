@@ -40,15 +40,3 @@ if(WIN32)
   set_target_properties(game_client PROPERTIES
       WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>)
 endif()
-
-# Assets live in the source tree but platform::asset_root() looks next to the
-# executable (SDL_GetBasePath). Mirror them into bin/assets after each build so a
-# dev run finds the sprite atlas and client.cfg without an install step. On
-# Android these ship inside the APK instead; see docs/mobile.md.
-if(NOT ANDROID)
-  add_custom_command(TARGET game_client POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              "${CMAKE_SOURCE_DIR}/assets"
-              "$<TARGET_FILE_DIR:game_client>/assets"
-      COMMENT "Copying assets next to game_client")
-endif()
