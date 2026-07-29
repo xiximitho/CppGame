@@ -148,4 +148,94 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
     return out;
 }
 
+std::string write_text_map(const TileMap& map,
+                           const std::optional<TilePos>& spawn) {
+    // Printable glyphs assigned to distinct (ground, object) pairs as they are
+    // first seen. Space and '@' are reserved (void and spawn).
+    const std::string pool = ".#~oTn,-=+:*%wsxde";
+    const auto key = [](TileId g, TileId o) {
+        return (static_cast<std::uint32_t>(g) << 16U) |
+               static_cast<std::uint32_t>(o);
+    };
+
+    const bool has_spawn = spawn.has_value() && map.in_bounds(*spawn);
+    std::uint32_t spawn_key = 0;
+    if (has_spawn) {
+        const Tile& t = map.at(*spawn);
+        spawn_key = key(t.ground, t.object);
+    }
+
+    std::unordered_map<std::uint32_t, char> glyph;
+    std::vector<std::uint32_t> order;
+    std::size_t pool_i = 0;
+
+    const auto at = [&](int x, int y, int z) -> const Tile& {
+        return map.at(TilePos{static_cast<std::int16_t>(x),
+                              static_cast<std::int16_t>(y),
+                              static_cast<std::int8_t>(z)});
+    };
+
+    for (int z = 0; z < map.floors(); ++z) {
+        for (int y = 0; y < map.height(); ++y) {
+            for (int x = 0; x < map.width(); ++x) {
+                const Tile& t = at(x, y, z);
+                if (t.ground == kTileEmpty && t.object == kTileEmpty) {
+                    continue;  // void
+                }
+                const std::uint32_t k = key(t.ground, t.object);
+                if (glyph.find(k) == glyph.end()) {
+                    glyph[k] = pool_i < pool.size() ? pool[pool_i] : '?';
+                    ++pool_i;
+                    order.push_back(k);
+                }
+            }
+        }
+    }
+
+    std::ostringstream out;
+    out << "# saved by game_editor\n";
+    out << "size " << map.width() << ' ' << map.height() << ' ' << map.floors()
+        << '\n';
+    const auto legend_line = [&](char ch, std::uint32_t k) {
+        const auto ground = static_cast<int>(k >> 16U);
+        const auto object = static_cast<int>(k & 0xFFFFU);
+        out << "legend " << ch << ' ' << ground;
+        if (object != 0) {
+            out << ' ' << object;
+        }
+        out << '\n';
+    };
+    for (const std::uint32_t k : order) {
+        legend_line(glyph[k], k);
+    }
+    if (has_spawn) {
+        legend_line('@', spawn_key);
+        out << "spawn @\n";
+    }
+
+    for (int z = 0; z < map.floors(); ++z) {
+        out << "floor " << z << '\n';
+        for (int y = 0; y < map.height(); ++y) {
+            std::string row;
+            for (int x = 0; x < map.width(); ++x) {
+                const Tile& t = at(x, y, z);
+                if (has_spawn && x == spawn->x && y == spawn->y &&
+                    z == spawn->z) {
+                    row += '@';
+                } else if (t.ground == kTileEmpty && t.object == kTileEmpty) {
+                    row += ' ';
+                } else {
+                    row += glyph[key(t.ground, t.object)];
+                }
+            }
+            while (!row.empty() && row.back() == ' ') {  // trim trailing void
+                row.pop_back();
+            }
+            out << row << '\n';
+        }
+    }
+
+    return out.str();
+}
+
 }  // namespace sim

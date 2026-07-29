@@ -83,6 +83,7 @@ add_subdirectory(src/net)
 if(GAME_BUILD_CLIENT)
   add_subdirectory(src/platform)
   add_subdirectory(src/client)
+  add_subdirectory(src/editor)
 endif()
 
 if(GAME_BUILD_SERVER)

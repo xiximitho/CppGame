@@ -114,6 +114,10 @@ public:
     /// Number of registered types (excludes gaps and kItemNone).
     std::size_t count() const { return count_; }
 
+    /// Ids of every registered type, ascending. For tools that enumerate the
+    /// available content (e.g. the map editor's palette).
+    std::vector<ItemTypeId> ids() const;
+
 private:
     std::vector<ItemType> by_id_;  ///< index == id; gaps hold a kItemNone entry
     ItemType              none_{};  ///< returned for unknown ids

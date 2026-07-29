@@ -63,6 +63,47 @@ TEST_CASE("void cells and short rows are unwalkable holes") {
     CHECK_FALSE(parsed->spawn.has_value());
 }
 
+TEST_CASE("write_text_map round-trips through parse") {
+    const ItemTypeRegistry items = build_default_registry();
+    const std::string src =
+        "size 4 3 1\n"
+        "legend . 3\n"
+        "legend # 3 100\n"
+        "legend ~ 4\n"
+        "legend @ 3\n"
+        "spawn @\n"
+        "floor 0\n"
+        "####\n"
+        "#.@~\n"
+        "####\n";
+
+    const auto first = parse_text_map(src, items);
+    REQUIRE(first.has_value());
+
+    const std::string text = write_text_map(first->map, first->spawn);
+    const auto second = parse_text_map(text, items);
+    REQUIRE_MESSAGE(second.has_value(), text);
+
+    CHECK(second->map.width() == first->map.width());
+    CHECK(second->map.height() == first->map.height());
+    CHECK(second->map.floors() == first->map.floors());
+
+    for (int y = 0; y < first->map.height(); ++y) {
+        for (int x = 0; x < first->map.width(); ++x) {
+            const TilePos p{static_cast<std::int16_t>(x),
+                            static_cast<std::int16_t>(y), 0};
+            CAPTURE(x);
+            CAPTURE(y);
+            CHECK(second->map.is_walkable(p) == first->map.is_walkable(p));
+            CHECK(second->map.at(p).object == first->map.at(p).object);
+        }
+    }
+
+    REQUIRE(second->spawn.has_value());
+    CHECK(second->spawn->x == first->spawn->x);
+    CHECK(second->spawn->y == first->spawn->y);
+}
+
 TEST_CASE("malformed maps are rejected with a reason") {
     const ItemTypeRegistry items = build_default_registry();
     std::string err;

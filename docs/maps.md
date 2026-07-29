@@ -72,14 +72,48 @@ python3 tools/gen_dungeon.py assets/maps/dungeon.txt
 O cliente carrega `maps/dungeon.txt` por padrão no solo; o servidor tenta
 `assets/maps/dungeon.txt` relativo ao diretório de execução.
 
-## Rumo ao editor
+## O editor (`game_editor`)
 
-O formato foi escolhido para round-trip fácil: grade de caracteres + legenda. Um
-editor simples é: carregar a grade, pintar caracteres, salvar. Passos naturais
-quando ele chegar:
+Um editor isométrico simples que reusa o renderer e o tileset do cliente.
+Carrega um mapa texto, desenha, e deixa pintar tiles com o mouse; a paleta é
+montada em runtime a partir do `ItemTypeRegistry` e dos sprites presentes no
+atlas — ou seja, mostra exatamente os ids de objeto que dá para colocar. Salvar
+escreve o mapa de volta com `sim::write_text_map`.
+
+```bash
+./build/debug/bin/game_editor --map assets/maps/dungeon.txt   # rode da raiz do repo
+```
+
+Controles:
+
+| Entrada | Ação |
+|---|---|
+| clique/arrasto esquerdo | coloca o brush atual |
+| clique/arrasto direito | apaga o objeto do tile |
+| `Tab` / `]` / `[` | próximo / anterior brush |
+| `0`–`9` | escolhe brush pelo índice |
+| setas | pan · roda do mouse ou `+`/`-` | zoom |
+| `S` | salvar · `Esc` | sair |
+
+Um "fantasma" do brush é desenhado sob o cursor, então dá para ver o que o clique
+vai colocar. Sem arquivo em `--map`, ele começa numa tela de pedra 48×32 em
+branco.
+
+Verificação sem display (como o cliente):
+
+```bash
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
+  --map assets/maps/dungeon.txt --screenshot /tmp/ed.bmp
+```
+
+### Limites atuais / próximos passos
 
 - **Nomes em vez de ids na legenda** — precisa de uma tabela nome→id (hoje
-  `build_default_registry` não guarda nomes; nomes são apresentação, cliente).
-- **Usar o `spawn`** de verdade na sessão (hoje ainda cai no walkable aleatório).
+  `build_default_registry` não guarda nomes; nomes são apresentação, cliente). O
+  editor já rotula com nomes conhecidos, mas o arquivo salva ids numéricos.
+- **Escolher/mover o `spawn`** pelo editor (hoje ele preserva o spawn carregado,
+  mas não deixa recolocá-lo; a sessão ainda usa walkable aleatório).
+- **Multi-andar**: edita só o andar 0 por enquanto (o formato e o writer já
+  suportam vários; falta UI para trocar de andar).
 - **Caminho de asset do servidor** robusto (hoje é relativo ao CWD, com fallback).
 - Eventualmente, assar o `.txt` para o blob binário do content.md.

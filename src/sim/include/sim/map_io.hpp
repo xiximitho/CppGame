@@ -42,4 +42,11 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
                                         const ItemTypeRegistry& items,
                                         std::string* error = nullptr);
 
+/// Serialises a map back to the text format — the inverse of parse_text_map,
+/// used by the editor to save. Pure. Builds a legend automatically (one char per
+/// distinct ground/object pair); `spawn`, when given, is written as '@'. A
+/// parse of the result reproduces the same walkable geometry.
+std::string write_text_map(const TileMap& map,
+                           const std::optional<TilePos>& spawn = std::nullopt);
+
 }  // namespace sim

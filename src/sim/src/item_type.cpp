@@ -30,6 +30,17 @@ const ItemType& ItemTypeRegistry::get(ItemTypeId id) const {
     return none_;
 }
 
+std::vector<ItemTypeId> ItemTypeRegistry::ids() const {
+    std::vector<ItemTypeId> out;
+    out.reserve(count_);
+    for (std::size_t i = 0; i < by_id_.size(); ++i) {
+        if (by_id_[i].id != kItemNone) {
+            out.push_back(static_cast<ItemTypeId>(i));
+        }
+    }
+    return out;
+}
+
 bool ItemTypeRegistry::contains(ItemTypeId id) const {
     const auto index = static_cast<std::size_t>(id);
     return id != kItemNone && index < by_id_.size() &&
