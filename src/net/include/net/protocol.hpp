@@ -18,7 +18,7 @@ namespace net {
 /// 3: added C2S_Attack (auto-attack a target).
 /// 4: added S2C_Effect (attack effect sprite).
 /// 5: added C2S_Equip / C2S_Unequip (interactive inventory).
-constexpr std::uint32_t kProtocolVersion = 5;
+constexpr std::uint32_t kProtocolVersion = 6;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -65,6 +65,15 @@ enum class MsgId : std::uint8_t {
 struct HelloMsg {
     std::uint32_t protocol = kProtocolVersion;
     std::string   name;
+    /// sim::content_hash of the client's item catalogue.
+    ///
+    /// The server reads content from its SQLite database and the client from the
+    /// baked blob, so they can legitimately disagree — someone edits an item and
+    /// forgets to re-bake, and suddenly the two sides disagree about what blocks and
+    /// how hard a sword hits, with nothing reporting it. This is checked exactly like
+    /// the protocol version, and for the same reason: a mismatch caught at the
+    /// handshake is a message, a mismatch missed is a bug hunt.
+    std::uint64_t content_hash = 0;
 };
 
 /// One player intent for one tick. There is exactly one unit per player, so this

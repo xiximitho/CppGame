@@ -14,6 +14,7 @@
 #include "net/protocol.hpp"
 #include "net/transport.hpp"
 #include "sim/components.hpp"
+#include "sim/content_blob.hpp"
 #include "sim/item_type.hpp"
 #include "sim/map_gen.hpp"
 #include "sim/map_io.hpp"
@@ -239,7 +240,8 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
 }
 
 void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
-                  Connection& connection, core::BitReader& reader) {
+                  Connection& connection, core::BitReader& reader,
+                  std::uint64_t content_fingerprint) {
     net::HelloMsg hello;
     if (!net::read_hello(reader, hello)) {
         send_reject(transport, connection.peer, "malformed hello");
@@ -253,6 +255,19 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
     }
     if (connection.welcomed) {
         LOG_WARN("peer %u sent a second hello, ignoring", connection.peer);
+        return;
+    }
+    // Content, checked exactly like the protocol version and for the same reason.
+    // The two sides read content from different places on purpose — this server from
+    // its SQLite database, the client from the baked blob — so proving they agree is
+    // the only thing standing between "someone forgot to re-bake" and a world where
+    // the client and the server disagree about what blocks and how hard a sword hits.
+    if (hello.content_hash != content_fingerprint) {
+        LOG_WARN("peer %u has content %016llx, we have %016llx", connection.peer,
+                 static_cast<unsigned long long>(hello.content_hash),
+                 static_cast<unsigned long long>(content_fingerprint));
+        send_reject(transport, connection.peer,
+                    "content mismatch: re-run game_bake");
         return;
     }
 
@@ -320,8 +335,14 @@ int main(int argc, char** argv) {
                   options.content_path.c_str());
         return 1;
     }
-    LOG_INFO("loaded %zu item types from '%s'", item_types.count(),
-             options.content_path.c_str());
+    // Serialised in memory purely to be hashed: the server never writes a blob, but
+    // hashing the SERIALISED form is what makes this digest comparable with a
+    // client's, which computes it from the blob it read. Hashing the in-memory
+    // structs instead would compare padding bytes.
+    const std::uint64_t content_fingerprint = sim::content_hash(item_types);
+    LOG_INFO("loaded %zu item types from '%s' (content %016llx)",
+             item_types.count(), options.content_path.c_str(),
+             static_cast<unsigned long long>(content_fingerprint));
 
     sim::World world =
         build_server_world("assets/maps/dungeon.txt", options.seed, item_types);
@@ -397,7 +418,7 @@ int main(int argc, char** argv) {
                     switch (net::read_msg_id(reader)) {
                         case net::MsgId::C2S_Hello:
                             handle_hello(world, rng, *transport, connection,
-                                         reader);
+                                         reader, content_fingerprint);
                             break;
 
                         case net::MsgId::C2S_Input: {

@@ -1,10 +1,15 @@
 # Conteúdo: itens, tipos e o pipeline de dados
 
-> Status: **em implementação**. Passos 1–2 da migração feitos (registry puro em
-> `sim/` e derivação de `blocking` na geração), e o carregamento de atlas PNG via
-> SDL_image já existe no cliente (parte dos passos 4–5) — ver
-> [sprites.md](sprites.md). Falta o pipeline SQLite→bake e o editor de mapa. As
-> escolhas aqui tocam invariantes que o `CLAUDE.md` protege de propósito (pureza
+> Status: **implementado**, com uma revisão de decisão no meio do caminho (ver
+> "O pipeline" abaixo). Existe hoje: `content.db` em SQLite como fonte da verdade,
+> lido direto pelo servidor; `tools/bake` gerando o `content.bin` que o cliente lê;
+> o modo item do `game_editor` (`F2`) editando regras e sprite; e o hash de conteúdo
+> no Hello impedindo cliente e servidor de divergirem.
+>
+> Falta: persistência de jogador (o schema existe, nada escreve nele) — ver
+> [pendencias.md](pendencias.md).
+>
+> As escolhas aqui tocam invariantes que o `CLAUDE.md` protege de propósito (pureza
 > do `sim/`, `server-only` sem lib gráfica, determinismo por seed, versão de
 > protocolo).
 
@@ -147,9 +152,13 @@ E por que o servidor **pode**, apesar do `server-only`:
   SQLite é um `.c` amalgamado, sem dependência de sistema. O preset compila e linka
   hoje, com `GAME_BUILD_TOOLS=OFF`.
 - Ler o `.db` direto elimina o passo de bake do loop de dev do servidor.
-- O risco disso seria cliente e servidor divergirem de conteúdo. Não divergem: o
-  servidor serializa em memória com `write_content_blob` **só para hashear**, então
-  o hash trocado no Hello prova igualdade semântica mesmo com fontes diferentes.
+- O risco disso seria cliente e servidor divergirem de conteúdo. Não divergem, e
+  isso está **implementado**: `sim::content_hash()` serializa o registry em memória
+  com `write_content_blob` só para hashear (FNV-1a 64, `core/hash.hpp`), e o
+  `net::HelloMsg` carrega esse digest. O servidor rejeita divergência como rejeita
+  versão de protocolo errada, com a mensagem `content mismatch: re-run game_bake`.
+  Hashear a forma **serializada** e não os structs é o que torna os dois lados
+  comparáveis: bytes de padding no `ItemType` não são especificados.
 
 ### Como o SQLite é pinado
 

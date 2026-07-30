@@ -43,4 +43,18 @@ std::vector<std::uint8_t> write_content_blob(const ItemTypeRegistry& registry);
 bool read_content_blob(const std::uint8_t* data, std::size_t size,
                        ItemTypeRegistry& out);
 
+/// Fingerprint of a catalogue: the hash of the bytes write_content_blob would
+/// produce for it.
+///
+/// This is what lets a client and a server prove they agree about content even
+/// though they read it from different places — the server from the SQLite database,
+/// the client from the baked blob. Both serialise with the same function, so equal
+/// catalogues give equal bytes give equal digests. Without it, an item edited on one
+/// side and not rebaked on the other silently changes what blocks and how hard
+/// things hit, and nothing reports it.
+///
+/// Zero means the catalogue could not be serialised, which callers should treat as
+/// an error rather than as a valid fingerprint.
+std::uint64_t content_hash(const ItemTypeRegistry& registry);
+
 }  // namespace sim

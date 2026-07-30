@@ -1,9 +1,11 @@
 #include <cstdio>
 
+#include "client/content.hpp"
 #include "client/session.hpp"
 #include "core/log.hpp"
 #include "core/time.hpp"
 #include "net/protocol.hpp"
+#include "sim/content_blob.hpp"
 #include "net/transport.hpp"
 
 namespace client {
@@ -140,6 +142,10 @@ private:
         net::HelloMsg hello;
         hello.protocol = net::kProtocolVersion;
         hello.name = player_name_;
+        // The remote session has no use for item rules itself — the server owns
+        // them — but it must prove its content matches, or an item edited on one
+        // side silently changes what blocks and how hard things hit.
+        hello.content_hash = sim::content_hash(load_item_catalogue());
         net::write_hello(writer, hello);
 
         if (writer.overflowed()) {

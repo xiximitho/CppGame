@@ -176,9 +176,14 @@ interface.
 
 ## Invariantes que quebram em silêncio
 
-- **Mudou o formato de fio?** Bump em `net::kProtocolVersion` (hoje 5). O servidor
+- **Mudou o formato de fio?** Bump em `net::kProtocolVersion` (hoje 6). O servidor
   rejeita cliente com versão diferente no Hello, o que é a única coisa que impede um
-  misparse silencioso.
+  misparse silencioso. O Hello também carrega `sim::content_hash` do catálogo de
+  itens, conferido do mesmo jeito: servidor e cliente leem conteúdo de fontes
+  diferentes (banco vs blob), e sem isso um item editado sem rebake muda em silêncio
+  o que bloqueia e quanto ataca. `net::ITransport::disconnect` usa
+  `enet_peer_disconnect_later` de propósito, senão o disconnect corre com o pacote de
+  reject e o cliente só vê "disconnected" sem o motivo.
 - **`sim::can_traverse` é a única regra de geometria de passo.** Tanto
   `World::can_enter` quanto o `Pathfinder` a chamam. Se as duas usarem regras
   diferentes, o A* devolve rotas que o movimento recusa e o ator trava para sempre

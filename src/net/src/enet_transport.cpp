@@ -142,7 +142,12 @@ public:
     void disconnect(PeerId peer) override {
         const auto it = peers_.find(peer);
         if (it != peers_.end()) {
-            enet_peer_disconnect(it->second, 0);
+            // _later, not the immediate form: every caller disconnects in order to
+            // say WHY, and the reason travels as a reliable packet queued just
+            // before this. Disconnecting immediately raced that packet, so a client
+            // rejected for a content or protocol mismatch saw a bare "disconnected"
+            // and had to go read the server's log to find out what to fix.
+            enet_peer_disconnect_later(it->second, 0);
         }
     }
 

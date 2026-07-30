@@ -14,7 +14,8 @@ Os dois já estão atualizados; não confie no `roadmap.md`, que ficou para trá
 | 4 | `content.db`: schema, seed, leitura no servidor e no editor | `788582c` |
 | 8 | `tools/bake`: banco → `content.bin` que o cliente lê | `300b5fb` |
 | 6 | Modo item do `game_editor` (`F2`) | `f3acd1c` |
-| 6b | Seletor de sprite + writer de `atlas.txt` | este commit |
+| 6b | Seletor de sprite + writer de `atlas.txt` | `4554d09` |
+| A | Hash de conteúdo no Hello + `kProtocolVersion` 6 | este commit |
 
 **O laço completo funciona.** `./build/debug/bin/game_editor` → `F2` → `N` cria
 item → setas editam campos → campo `sprite` + `enter` escolhe o recorte no atlas →
@@ -26,23 +27,7 @@ Servidor lê `content.db` direto; cliente lê `content.bin`.
 
 ## Pendências, em ordem de dependência
 
-### A. Hash de conteúdo no Hello + bump de `kProtocolVersion`
-
-Hoje nada impede cliente e servidor rodarem catálogos diferentes: o servidor lê o
-`.db`, o cliente lê o blob, e se alguém editar itens sem rebakear eles divergem em
-silêncio — muda o que bloqueia e quanto ataca.
-
-O truque já decidido: o servidor serializa o registry em memória com
-`sim::write_content_blob` **só para hashear**, então o hash prova igualdade
-semântica mesmo com fontes diferentes.
-
-- `net::HelloMsg` (em `net/protocol.hpp`) ganha o hash; o servidor rejeita
-  divergência como já rejeita versão de protocolo errada.
-- `net::kProtocolVersion` está em **5** (`net/protocol.hpp:21`) → vai para 6.
-- Não existe função de hash no projeto. Um FNV-1a 64 em `core/` resolve; não precisa
-  ser criptográfico, precisa detectar diferença.
-
-### B. Persistência de jogador
+### A. Persistência de jogador
 
 O schema **já existe** (`store/src/schema.cpp`, `kPlayerV1`): `accounts`,
 `characters`, `character_items`, com `user_version` próprio e
@@ -65,7 +50,7 @@ Detalhe que vai morder: `character_items` tem
 `CHECK ((slot IS NULL) <> (bag_index IS NULL))` — exatamente um dos dois é
 preenchido. Equipado usa `slot`, mochila usa `bag_index`.
 
-### C. Limpezas conhecidas
+### B. Limpezas conhecidas
 
 - **`Renderer2D` não tem `destroy_texture`.** Rebindar um sprite recarrega o
   tileset, e cada recarga vaza uma textura de 256×256 (256 KB). Aceitável numa
@@ -83,10 +68,26 @@ preenchido. Equipado usa `slot`, mochila usa `bag_index`.
   duas pessoas editando itens ao mesmo tempo geram conflito que o git não resolve.
   Se incomodar, o caminho é um dump `.sql` diffável ao lado.
 - **`docs/roadmap.md` item 3 ("Persistência")** ainda diz "Nada é salvo" e a tabela
-  de "coisas erradas de propósito" não menciona nada disto. Atualizar quando B
+  de "coisas erradas de propósito" não menciona nada disto. Atualizar quando A
   ficar pronto.
 - **`docs/authoring.md`** tem uma tabela de "ids em uso" que agora é redundante com
   o banco — o editor mostra a lista real. Vale encolher para um ponteiro.
+
+## O que foi verificado no hash de conteúdo
+
+Feito com servidor e cliente de verdade, não só por teste:
+
+- Conteúdo igual → conecta (`welcome: id=3`).
+- Item editado no banco **sem rebakear** → servidor loga
+  `peer 1 has content 51dba41ef4f26f92, we have 5fa67847f2af7dfb` e rejeita, e o
+  cliente mostra `server rejected us: content mismatch: re-run game_bake`.
+- O `fnv1a_64` bate com os vetores de referência publicados, que é o que garante o
+  mesmo digest no Windows.
+
+Ao fazer isso apareceu um bug pré-existente: o cliente só via "disconnected", sem
+motivo, porque o `enet_peer_disconnect` corria com o pacote de reject. Trocado por
+`enet_peer_disconnect_later`. Isso valia para "protocol version mismatch" também —
+qualquer um que já tenha conectado com versão errada viu esse silêncio.
 
 ## O que NÃO foi verificado (e por quê)
 

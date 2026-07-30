@@ -60,6 +60,8 @@ public:
     virtual void broadcast(const void* data, std::size_t length,
                            Channel channel) = 0;
 
+    /// Closes the connection AFTER whatever is already queued for that peer has
+    /// been sent, so a reject message sent immediately before still arrives.
     virtual void disconnect(PeerId peer) = 0;
 
     /// Pushes queued packets out now instead of on the next poll().

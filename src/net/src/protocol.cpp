@@ -48,6 +48,10 @@ void write_hello(core::BitWriter& writer, const HelloMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Hello);
     writer.write_bits(msg.protocol, 16);
     writer.write_string(msg.name, kMaxNameLength);
+    // BitWriter deals in 32-bit values, so the digest goes out as two halves.
+    writer.write_bits(static_cast<std::uint32_t>(msg.content_hash >> 32U), 32);
+    writer.write_bits(static_cast<std::uint32_t>(msg.content_hash & 0xFFFFFFFFU),
+                      32);
     writer.flush();
 }
 
@@ -183,6 +187,9 @@ MsgId read_msg_id(core::BitReader& reader) {
 bool read_hello(core::BitReader& reader, HelloMsg& out) {
     out.protocol = reader.read_bits(16);
     out.name = reader.read_string(kMaxNameLength);
+    const std::uint64_t high = reader.read_bits(32);
+    const std::uint64_t low = reader.read_bits(32);
+    out.content_hash = (high << 32U) | low;
     return !reader.overflowed();
 }
 

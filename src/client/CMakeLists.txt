@@ -8,6 +8,7 @@ set(GAME_CLIENT_SOURCES
     src/main.cpp
     src/sdl_backend.cpp
     src/tileset.cpp
+    src/content.cpp
     src/input.cpp
     src/world_render.cpp
     src/ui.cpp

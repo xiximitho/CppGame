@@ -25,10 +25,15 @@ std::vector<std::uint8_t> encode(WriteFn write_fn) {
 }  // namespace
 
 TEST_CASE("hello round trips and carries the protocol version") {
+    // A digest with both halves populated and neither symmetric, so a swapped or
+    // dropped 32-bit half shows up rather than surviving by luck.
+    constexpr std::uint64_t kHash = 0xDEADBEEF12345678ULL;
+
     const auto packet = encode([](core::BitWriter& writer) {
         net::HelloMsg hello;
         hello.protocol = net::kProtocolVersion;
         hello.name = "felipe";
+        hello.content_hash = kHash;
         net::write_hello(writer, hello);
     });
 
@@ -39,6 +44,7 @@ TEST_CASE("hello round trips and carries the protocol version") {
     REQUIRE(net::read_hello(reader, decoded));
     CHECK(decoded.protocol == net::kProtocolVersion);
     CHECK(decoded.name == "felipe");
+    CHECK(decoded.content_hash == kHash);
 }
 
 TEST_CASE("input round trips") {

@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "core/bitstream.hpp"
+#include "core/hash.hpp"
 
 namespace sim {
 namespace {
@@ -126,6 +127,17 @@ bool read_content_blob(const std::uint8_t* data, std::size_t size,
 
     out = std::move(parsed);
     return true;
+}
+
+std::uint64_t content_hash(const ItemTypeRegistry& registry) {
+    // Hashing the serialised form rather than the in-memory struct is deliberate:
+    // padding bytes in ItemType are unspecified, so hashing the struct would give
+    // two builds different answers for identical content.
+    const std::vector<std::uint8_t> blob = write_content_blob(registry);
+    if (blob.empty()) {
+        return 0U;
+    }
+    return core::fnv1a_64(blob.data(), blob.size());
 }
 
 }  // namespace sim
