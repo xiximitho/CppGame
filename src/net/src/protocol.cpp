@@ -8,17 +8,17 @@ namespace {
 constexpr int kDirectionBits = 3;
 constexpr int kTileIdBits = 10;  // matches kMaxTileId
 
-void write_msg_id(BitWriter& writer, MsgId id) {
+void write_msg_id(core::BitWriter& writer, MsgId id) {
     writer.write_bits(static_cast<std::uint32_t>(id), 8);
 }
 
-void write_tile_pos(BitWriter& writer, sim::TilePos pos) {
+void write_tile_pos(core::BitWriter& writer, sim::TilePos pos) {
     writer.write_ranged(pos.x, 0, kMaxCoord);
     writer.write_ranged(pos.y, 0, kMaxCoord);
     writer.write_ranged(pos.z, 0, kMaxFloor);
 }
 
-sim::TilePos read_tile_pos(BitReader& reader) {
+sim::TilePos read_tile_pos(core::BitReader& reader) {
     sim::TilePos pos;
     pos.x = static_cast<std::int16_t>(reader.read_ranged(0, kMaxCoord));
     pos.y = static_cast<std::int16_t>(reader.read_ranged(0, kMaxCoord));
@@ -26,11 +26,11 @@ sim::TilePos read_tile_pos(BitReader& reader) {
     return pos;
 }
 
-void write_direction(BitWriter& writer, sim::Direction dir) {
+void write_direction(core::BitWriter& writer, sim::Direction dir) {
     writer.write_bits(static_cast<std::uint32_t>(dir), kDirectionBits);
 }
 
-sim::Direction read_direction(BitReader& reader) {
+sim::Direction read_direction(core::BitReader& reader) {
     const std::uint32_t raw = reader.read_bits(kDirectionBits);
     // 3 bits cannot exceed the 8 valid directions, so no clamp is needed — but
     // the cast is stated explicitly so widening the enum does not silently
@@ -44,14 +44,14 @@ sim::Direction read_direction(BitReader& reader) {
 // Writing
 // ---------------------------------------------------------------------------
 
-void write_hello(BitWriter& writer, const HelloMsg& msg) {
+void write_hello(core::BitWriter& writer, const HelloMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Hello);
     writer.write_bits(msg.protocol, 16);
     writer.write_string(msg.name, kMaxNameLength);
     writer.flush();
 }
 
-void write_input(BitWriter& writer, const InputMsg& msg) {
+void write_input(core::BitWriter& writer, const InputMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Input);
     writer.write_bits(msg.client_tick, 32);
     writer.write_bool(msg.walk);
@@ -59,31 +59,31 @@ void write_input(BitWriter& writer, const InputMsg& msg) {
     writer.flush();
 }
 
-void write_move_to(BitWriter& writer, const MoveToMsg& msg) {
+void write_move_to(core::BitWriter& writer, const MoveToMsg& msg) {
     write_msg_id(writer, MsgId::C2S_MoveTo);
     write_tile_pos(writer, msg.target);
     writer.flush();
 }
 
-void write_attack(BitWriter& writer, const AttackMsg& msg) {
+void write_attack(core::BitWriter& writer, const AttackMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Attack);
     writer.write_bits(msg.target, 32);
     writer.flush();
 }
 
-void write_equip(BitWriter& writer, const EquipMsg& msg) {
+void write_equip(core::BitWriter& writer, const EquipMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Equip);
     writer.write_bits(msg.item, 16);
     writer.flush();
 }
 
-void write_unequip(BitWriter& writer, const UnequipMsg& msg) {
+void write_unequip(core::BitWriter& writer, const UnequipMsg& msg) {
     write_msg_id(writer, MsgId::C2S_Unequip);
     writer.write_bits(msg.slot, 8);
     writer.flush();
 }
 
-void write_effect(BitWriter& writer, const EffectMsg& msg) {
+void write_effect(core::BitWriter& writer, const EffectMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Effect);
     write_tile_pos(writer, msg.from);
     write_tile_pos(writer, msg.to);
@@ -91,7 +91,7 @@ void write_effect(BitWriter& writer, const EffectMsg& msg) {
     writer.flush();
 }
 
-void write_welcome(BitWriter& writer, const WelcomeMsg& msg) {
+void write_welcome(core::BitWriter& writer, const WelcomeMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Welcome);
     writer.write_bits(msg.your_id, 32);
     writer.write_bits(msg.tick, 32);
@@ -102,13 +102,13 @@ void write_welcome(BitWriter& writer, const WelcomeMsg& msg) {
     writer.flush();
 }
 
-void write_reject(BitWriter& writer, const RejectMsg& msg) {
+void write_reject(core::BitWriter& writer, const RejectMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Reject);
     writer.write_string(msg.reason, 63);
     writer.flush();
 }
 
-void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot) {
+void write_snapshot(core::BitWriter& writer, const sim::Snapshot& snapshot) {
     write_msg_id(writer, MsgId::S2C_Snapshot);
     writer.write_bits(snapshot.tick, 32);
 
@@ -135,7 +135,7 @@ void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot) {
     writer.flush();
 }
 
-void write_map_chunk(BitWriter& writer, const MapChunkMsg& msg) {
+void write_map_chunk(core::BitWriter& writer, const MapChunkMsg& msg) {
     write_msg_id(writer, MsgId::S2C_MapChunk);
     writer.write_ranged(msg.chunk_x, 0, kMaxCoord);
     writer.write_ranged(msg.chunk_y, 0, kMaxCoord);
@@ -158,7 +158,7 @@ void write_map_chunk(BitWriter& writer, const MapChunkMsg& msg) {
 // Reading
 // ---------------------------------------------------------------------------
 
-MsgId read_msg_id(BitReader& reader) {
+MsgId read_msg_id(core::BitReader& reader) {
     const std::uint32_t raw = reader.read_bits(8);
     if (reader.overflowed()) {
         return MsgId::Invalid;
@@ -180,47 +180,47 @@ MsgId read_msg_id(BitReader& reader) {
     return MsgId::Invalid;
 }
 
-bool read_hello(BitReader& reader, HelloMsg& out) {
+bool read_hello(core::BitReader& reader, HelloMsg& out) {
     out.protocol = reader.read_bits(16);
     out.name = reader.read_string(kMaxNameLength);
     return !reader.overflowed();
 }
 
-bool read_input(BitReader& reader, InputMsg& out) {
+bool read_input(core::BitReader& reader, InputMsg& out) {
     out.client_tick = reader.read_bits(32);
     out.walk = reader.read_bool();
     out.dir = read_direction(reader);
     return !reader.overflowed();
 }
 
-bool read_move_to(BitReader& reader, MoveToMsg& out) {
+bool read_move_to(core::BitReader& reader, MoveToMsg& out) {
     out.target = read_tile_pos(reader);
     return !reader.overflowed();
 }
 
-bool read_attack(BitReader& reader, AttackMsg& out) {
+bool read_attack(core::BitReader& reader, AttackMsg& out) {
     out.target = reader.read_bits(32);
     return !reader.overflowed();
 }
 
-bool read_equip(BitReader& reader, EquipMsg& out) {
+bool read_equip(core::BitReader& reader, EquipMsg& out) {
     out.item = static_cast<sim::ItemTypeId>(reader.read_bits(16));
     return !reader.overflowed();
 }
 
-bool read_unequip(BitReader& reader, UnequipMsg& out) {
+bool read_unequip(core::BitReader& reader, UnequipMsg& out) {
     out.slot = static_cast<std::uint8_t>(reader.read_bits(8));
     return !reader.overflowed();
 }
 
-bool read_effect(BitReader& reader, EffectMsg& out) {
+bool read_effect(core::BitReader& reader, EffectMsg& out) {
     out.from = read_tile_pos(reader);
     out.to = read_tile_pos(reader);
     out.effect = static_cast<std::uint8_t>(reader.read_bits(8));
     return !reader.overflowed();
 }
 
-bool read_welcome(BitReader& reader, WelcomeMsg& out) {
+bool read_welcome(core::BitReader& reader, WelcomeMsg& out) {
     out.your_id = reader.read_bits(32);
     out.tick = reader.read_bits(32);
     out.map_width =
@@ -233,12 +233,12 @@ bool read_welcome(BitReader& reader, WelcomeMsg& out) {
     return !reader.overflowed();
 }
 
-bool read_reject(BitReader& reader, RejectMsg& out) {
+bool read_reject(core::BitReader& reader, RejectMsg& out) {
     out.reason = reader.read_string(63);
     return !reader.overflowed();
 }
 
-bool read_snapshot(BitReader& reader, sim::Snapshot& out) {
+bool read_snapshot(core::BitReader& reader, sim::Snapshot& out) {
     out.tick = reader.read_bits(32);
     const std::uint32_t count = reader.read_bits(8);
 
@@ -270,7 +270,7 @@ bool read_snapshot(BitReader& reader, sim::Snapshot& out) {
     return !reader.overflowed();
 }
 
-bool read_map_chunk(BitReader& reader, MapChunkMsg& out) {
+bool read_map_chunk(core::BitReader& reader, MapChunkMsg& out) {
     out.chunk_x = static_cast<std::int16_t>(reader.read_ranged(0, kMaxCoord));
     out.chunk_y = static_cast<std::int16_t>(reader.read_ranged(0, kMaxCoord));
     out.z = static_cast<std::int8_t>(reader.read_ranged(0, kMaxFloor));

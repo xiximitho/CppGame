@@ -146,7 +146,7 @@ bool parse_args(int argc, char** argv, Options& options) {
 }
 
 void send_message(net::ITransport& transport, net::PeerId peer,
-                  const net::BitWriter& writer, const std::uint8_t* buffer,
+                  const core::BitWriter& writer, const std::uint8_t* buffer,
                   net::Channel channel) {
     if (writer.overflowed()) {
         LOG_ERROR("outgoing packet overflowed, dropping");
@@ -158,7 +158,7 @@ void send_message(net::ITransport& transport, net::PeerId peer,
 void send_reject(net::ITransport& transport, net::PeerId peer,
                  const std::string& reason) {
     std::uint8_t buffer[128];
-    net::BitWriter writer(buffer, sizeof(buffer));
+    core::BitWriter writer(buffer, sizeof(buffer));
     net::write_reject(writer, net::RejectMsg{reason});
     send_message(transport, peer, writer, buffer, net::Channel::Reliable);
     transport.flush();
@@ -219,7 +219,7 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
                 }
 
                 std::uint8_t buffer[net::kMaxPacketBytes];
-                net::BitWriter writer(buffer, sizeof(buffer));
+                core::BitWriter writer(buffer, sizeof(buffer));
                 net::write_map_chunk(writer, chunk);
                 send_message(transport, connection.peer, writer, buffer,
                              net::Channel::Reliable);
@@ -230,7 +230,7 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
 }
 
 void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
-                  Connection& connection, net::BitReader& reader) {
+                  Connection& connection, core::BitReader& reader) {
     net::HelloMsg hello;
     if (!net::read_hello(reader, hello)) {
         send_reject(transport, connection.peer, "malformed hello");
@@ -277,7 +277,7 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
     welcome.spawn = spawn;
 
     std::uint8_t buffer[128];
-    net::BitWriter writer(buffer, sizeof(buffer));
+    core::BitWriter writer(buffer, sizeof(buffer));
     net::write_welcome(writer, welcome);
     send_message(transport, connection.peer, writer, buffer,
                  net::Channel::Reliable);
@@ -367,7 +367,7 @@ int main(int argc, char** argv) {
                     }
                     Connection& connection = it->second;
 
-                    net::BitReader reader(event.data.data(), event.data.size());
+                    core::BitReader reader(event.data.data(), event.data.size());
                     switch (net::read_msg_id(reader)) {
                         case net::MsgId::C2S_Hello:
                             handle_hello(world, rng, *transport, connection,
@@ -514,7 +514,7 @@ int main(int argc, char** argv) {
                         continue;
                     }
                     std::uint8_t effect_buffer[32];
-                    net::BitWriter effect_writer(effect_buffer,
+                    core::BitWriter effect_writer(effect_buffer,
                                                  sizeof(effect_buffer));
                     net::write_effect(effect_writer,
                                       net::EffectMsg{fx.from, fx.to, fx.effect});
@@ -526,7 +526,7 @@ int main(int argc, char** argv) {
                 sim::build_snapshot(world, center, snapshot);
 
                 std::uint8_t buffer[net::kMaxPacketBytes];
-                net::BitWriter writer(buffer, sizeof(buffer));
+                core::BitWriter writer(buffer, sizeof(buffer));
                 net::write_snapshot(writer, snapshot);
                 send_message(*transport, peer, writer, buffer,
                              net::Channel::Unreliable);

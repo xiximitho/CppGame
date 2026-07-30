@@ -3,26 +3,26 @@
 #include <array>
 #include <cstdint>
 
-#include "net/bitstream.hpp"
+#include "core/bitstream.hpp"
 
-using net::bits_required;
-using net::BitReader;
-using net::BitWriter;
+using core::bits_required;
+using core::BitReader;
+using core::BitWriter;
 
-TEST_CASE("bits_required covers the inclusive range") {
-    CHECK(bits_required(0) == 1);
-    CHECK(bits_required(1) == 1);
-    CHECK(bits_required(2) == 2);
-    CHECK(bits_required(3) == 2);
-    CHECK(bits_required(4) == 3);
-    CHECK(bits_required(255) == 8);
-    CHECK(bits_required(256) == 9);
-    CHECK(bits_required(0xFFFFFFFFU) == 32);
+TEST_CASE("core::bits_required covers the inclusive range") {
+    CHECK(core::bits_required(0) == 1);
+    CHECK(core::bits_required(1) == 1);
+    CHECK(core::bits_required(2) == 2);
+    CHECK(core::bits_required(3) == 2);
+    CHECK(core::bits_required(4) == 3);
+    CHECK(core::bits_required(255) == 8);
+    CHECK(core::bits_required(256) == 9);
+    CHECK(core::bits_required(0xFFFFFFFFU) == 32);
 }
 
 TEST_CASE("fields survive a write/read round trip at odd bit widths") {
     std::array<std::uint8_t, 64> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
 
     writer.write_bits(1, 1);
     writer.write_bits(5, 3);
@@ -34,7 +34,7 @@ TEST_CASE("fields survive a write/read round trip at odd bit widths") {
 
     REQUIRE_FALSE(writer.overflowed());
 
-    BitReader reader(buffer.data(), writer.bytes_written());
+    core::BitReader reader(buffer.data(), writer.bytes_written());
     CHECK(reader.read_bits(1) == 1U);
     CHECK(reader.read_bits(3) == 5U);
     CHECK(reader.read_bits(10) == 1000U);
@@ -46,7 +46,7 @@ TEST_CASE("fields survive a write/read round trip at odd bit widths") {
 
 TEST_CASE("ranged values round trip, including negative ranges") {
     std::array<std::uint8_t, 32> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
 
     writer.write_ranged(-100, -1000, 1000);
     writer.write_ranged(0, -1, 1);
@@ -56,7 +56,7 @@ TEST_CASE("ranged values round trip, including negative ranges") {
 
     REQUIRE_FALSE(writer.overflowed());
 
-    BitReader reader(buffer.data(), writer.bytes_written());
+    core::BitReader reader(buffer.data(), writer.bytes_written());
     CHECK(reader.read_ranged(-1000, 1000) == -100);
     CHECK(reader.read_ranged(-1, 1) == 0);
     CHECK(reader.read_ranged(0, 4095) == 4095);
@@ -67,7 +67,7 @@ TEST_CASE("ranged writes use only as many bits as the range needs") {
     // The whole reason this class exists. A direction has 8 states and must not
     // cost more than 3 bits.
     std::array<std::uint8_t, 32> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
     for (int i = 0; i < 8; ++i) {
         writer.write_ranged(i % 8, 0, 7);
     }
@@ -78,27 +78,27 @@ TEST_CASE("ranged writes use only as many bits as the range needs") {
 
 TEST_CASE("values out of range are clamped rather than corrupting later fields") {
     std::array<std::uint8_t, 16> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
 
     writer.write_ranged(9999, 0, 7);  // clamped to 7
     writer.write_bits(0b101, 3);      // must still read back intact
     writer.flush();
 
-    BitReader reader(buffer.data(), writer.bytes_written());
+    core::BitReader reader(buffer.data(), writer.bytes_written());
     CHECK(reader.read_ranged(0, 7) == 7);
     CHECK(reader.read_bits(3) == 0b101U);
 }
 
 TEST_CASE("strings round trip and are truncated to their declared maximum") {
     std::array<std::uint8_t, 128> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
 
     writer.write_string("hello", 24);
     writer.write_string("", 24);
     writer.write_string("this name is far too long to fit in the limit", 8);
     writer.flush();
 
-    BitReader reader(buffer.data(), writer.bytes_written());
+    core::BitReader reader(buffer.data(), writer.bytes_written());
     CHECK(reader.read_string(24) == "hello");
     CHECK(reader.read_string(24).empty());
     CHECK(reader.read_string(8) == "this nam");
@@ -109,7 +109,7 @@ TEST_CASE("writing past the end latches overflow and never exceeds capacity") {
     // the buffer; here we assert the contract the caller relies on.
     std::array<std::uint8_t, 4> buffer{};
 
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
     for (int i = 0; i < 100; ++i) {
         writer.write_bits(0xFFFFFFFFU, 32);
     }
@@ -126,7 +126,7 @@ TEST_CASE("reading past the end latches overflow and yields zeros") {
     buffer[0] = 0xFF;
     buffer[1] = 0xFF;
 
-    BitReader reader(buffer.data(), buffer.size());
+    core::BitReader reader(buffer.data(), buffer.size());
     CHECK(reader.read_bits(16) == 0xFFFFU);
     CHECK_FALSE(reader.overflowed());
 
@@ -136,7 +136,7 @@ TEST_CASE("reading past the end latches overflow and yields zeros") {
 
 TEST_CASE("a reader consumes exactly what the writer produced") {
     std::array<std::uint8_t, 64> buffer{};
-    BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
     writer.write_bits(3, 2);
     writer.write_bits(200, 8);
     writer.write_bits(1, 1);
@@ -145,7 +145,7 @@ TEST_CASE("a reader consumes exactly what the writer produced") {
     // 11 bits rounds up to 2 bytes.
     CHECK(writer.bytes_written() == 2);
 
-    BitReader reader(buffer.data(), writer.bytes_written());
+    core::BitReader reader(buffer.data(), writer.bytes_written());
     CHECK(reader.read_bits(2) == 3U);
     CHECK(reader.read_bits(8) == 200U);
     CHECK(reader.read_bits(1) == 1U);

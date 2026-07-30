@@ -177,10 +177,12 @@ interface.
   diferentes, o A* devolve rotas que o movimento recusa e o ator trava para sempre
   num passo que a própria rota mandou dar. Mexeu na regra de quina? Mexeu num lugar
   só.
-- **`BitWriter`/`BitReader` têm overflow grudento.** Escritas além do fim são
+- **`core::BitWriter`/`BitReader` têm overflow grudento.** Escritas além do fim são
   descartadas e `overflowed()` trava em true; leituras além do fim devolvem 0 e
   travam. Confira **uma vez no fim**, não campo a campo. Todo `read_*` de protocolo
-  retorna `false` nesse caso e o output não pode ser usado.
+  retorna `false` nesse caso e o output não pode ser usado. Moram em `core/`, não em
+  `net/`, porque o blob de conteúdo (`sim/content_blob.hpp`) usa os mesmos
+  primitivos e `sim/` não pode incluir `net/`.
 - **Não use `<random>` em `sim/`.** As distribuições da stdlib não são
   especificadas para dar a mesma sequência entre implementações, e mapa por seed
   precisa ser igual em Linux e Windows. Use `sim::Rng`.

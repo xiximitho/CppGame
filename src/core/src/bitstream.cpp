@@ -1,9 +1,9 @@
-#include "net/bitstream.hpp"
+#include "core/bitstream.hpp"
 
 #include <algorithm>
 #include <cstring>
 
-namespace net {
+namespace core {
 
 void BitWriter::write_bits(std::uint32_t value, int bits) {
     if (bits <= 0 || bits > 32) {
@@ -129,4 +129,4 @@ std::string BitReader::read_string(std::size_t max_length) {
     return result;
 }
 
-}  // namespace net
+}  // namespace core

@@ -141,19 +141,41 @@ compiladas quando `GAME_BUILD_TOOLS=ON` — nunca no `server-only` nem no client
 
 ### Formato do blob
 
-Serializado com o `BitWriter`/`BitReader` que o `net/` já usa (mesma disciplina de
-overflow grudento: confere `overflowed()` **uma vez no fim**). Esboço:
+Implementado em `sim/content_blob.hpp` (`write_content_blob` /
+`read_content_blob`), serializado com o `BitWriter`/`BitReader` (mesma disciplina
+de overflow grudento: confere `overflowed()` **uma vez no fim**).
+
+> **Onde o `bitstream` mora.** Ele saiu de `net/` para `core/`. O registry é dado
+> de `sim/`, e `sim/` **não pode** incluir `net/` — o `check-layering.sh` reprova,
+> porque `net/` depende de `sim/` e não o contrário. Como `BitWriter` não sabe
+> nada de socket nem de pacote (é bytes entra, bytes sai), `core/` é o lugar certo
+> e a rede continua sendo só o seu maior usuário. É `core::BitWriter` hoje.
+
+Escrita e leitura vivem as duas em `sim/`, de propósito: a escrita é o que o
+`tools/bake` chama e a leitura é o que o jogo chama, então um campo nunca é
+escrito num layout e lido em outro. O parse é puro — bytes entram, registry sai,
+sem I/O — igual ao `sim/map_io.hpp`; quem lê arquivo é o chamador.
 
 ```
-[magic "GCNT"][u16 content_version]
-[u16 item_count]
+[magic "GCNT"][u16 content_version][u16 item_count]
   repeat: [u16 id][u32 flags][u16 weight][u8 max_stack]
-[u16 map_count]
-  repeat: [map header][tiles...]
+          [bool equippable][u3 slot][i16 attack][i16 defense]
+          [bool ranged][u8 attack_range][u8 effect]
 ```
 
-`content_version` é irmão do `net::kProtocolVersion`: o runtime rejeita blob de
-versão que não entende, em vez de misparsear em silêncio.
+O esboço original desta seção parou em `max_stack` porque era anterior ao
+combate. A segunda linha e a terceira são os campos de equipamento que o
+`ItemType` ganhou depois (`docs/combat.md`), incluindo o `attack_range` em tiles
+que só faz sentido quando `ranged` — 125 bits por registro no total.
+
+Mapas **não** estão no blob. Continuam no formato de texto do `sim/map_io.hpp`,
+que já existe, é diffável e tem editor. Se algum dia virarem binário, entram como
+uma seção nova aqui com bump de `content_version`.
+
+`content_version` (hoje **1**) é irmão do `net::kProtocolVersion`: o runtime
+rejeita blob de versão que não entende, em vez de misparsear em silêncio. Um blob
+recusado **não** deixa o registry pela metade — o parse monta um registry local e
+só o move para o destino depois de validar tudo.
 
 ## IDs são contrato, como a versão de protocolo
 
@@ -209,6 +231,7 @@ primeiros existirem.
 
 - `sim/include/sim/tile_map.hpp` — `Tile`, `TileMap`, o `blocking` que vira flag.
 - `sim/include/sim/tile_ids.hpp` — as constantes que este design substitui.
-- `net/` `BitWriter`/`BitReader` — serialização do blob.
+- `core/bitstream.hpp` `BitWriter`/`BitReader` — serialização do blob.
+- `sim/content_blob.hpp` — o formato do blob, escrita e leitura.
 - `platform/vfs` — o único caminho de leitura de asset.
 - `docs/roadmap.md` item 6 — arte de verdade (atlas), que anda junto com isto.

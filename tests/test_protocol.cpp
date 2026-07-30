@@ -13,7 +13,7 @@ namespace {
 template <typename WriteFn>
 std::vector<std::uint8_t> encode(WriteFn write_fn) {
     std::array<std::uint8_t, net::kMaxPacketBytes> buffer{};
-    net::BitWriter writer(buffer.data(), buffer.size());
+    core::BitWriter writer(buffer.data(), buffer.size());
     write_fn(writer);
     REQUIRE_FALSE(writer.overflowed());
     return std::vector<std::uint8_t>(buffer.begin(),
@@ -25,14 +25,14 @@ std::vector<std::uint8_t> encode(WriteFn write_fn) {
 }  // namespace
 
 TEST_CASE("hello round trips and carries the protocol version") {
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::HelloMsg hello;
         hello.protocol = net::kProtocolVersion;
         hello.name = "felipe";
         net::write_hello(writer, hello);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_Hello);
 
     net::HelloMsg decoded;
@@ -42,7 +42,7 @@ TEST_CASE("hello round trips and carries the protocol version") {
 }
 
 TEST_CASE("input round trips") {
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::InputMsg input;
         input.client_tick = 123456;
         input.walk = true;
@@ -50,7 +50,7 @@ TEST_CASE("input round trips") {
         net::write_input(writer, input);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_Input);
 
     net::InputMsg decoded;
@@ -64,18 +64,18 @@ TEST_CASE("an input packet is tiny") {
     // 8 bits id + 32 bits tick + 1 bit walk + 3 bits direction = 44 bits.
     // If this ever grows unexpectedly, a field was added without thinking about
     // the per-tick cost.
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::write_input(writer, net::InputMsg{1, true, sim::Direction::East});
     });
     CHECK(packet.size() == 6);
 }
 
 TEST_CASE("move-to round trips") {
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::write_move_to(writer, net::MoveToMsg{sim::TilePos{123, 456, 2}});
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_MoveTo);
 
     net::MoveToMsg decoded;
@@ -86,7 +86,7 @@ TEST_CASE("move-to round trips") {
 TEST_CASE("a move-to packet is small") {
     // 8 bits id + 12 + 12 + 4 for the tile = 36 bits. Click-to-move must not cost
     // more on the wire than the thing it replaces.
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::write_move_to(writer, net::MoveToMsg{sim::TilePos{10, 10, 0}});
     });
     CHECK(packet.size() == 5);
@@ -99,11 +99,11 @@ TEST_CASE("the protocol version is bumped past the pre-move-to format") {
 }
 
 TEST_CASE("attack round trips") {
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::write_attack(writer, net::AttackMsg{4242});
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_Attack);
 
     net::AttackMsg decoded;
@@ -112,19 +112,19 @@ TEST_CASE("attack round trips") {
 }
 
 TEST_CASE("equip and unequip round trip") {
-    const auto equip_packet = encode([](net::BitWriter& writer) {
+    const auto equip_packet = encode([](core::BitWriter& writer) {
         net::write_equip(writer, net::EquipMsg{sim::tiles::kBow});
     });
-    net::BitReader er(equip_packet.data(), equip_packet.size());
+    core::BitReader er(equip_packet.data(), equip_packet.size());
     REQUIRE(net::read_msg_id(er) == net::MsgId::C2S_Equip);
     net::EquipMsg equip;
     REQUIRE(net::read_equip(er, equip));
     CHECK(equip.item == sim::tiles::kBow);
 
-    const auto unequip_packet = encode([](net::BitWriter& writer) {
+    const auto unequip_packet = encode([](core::BitWriter& writer) {
         net::write_unequip(writer, net::UnequipMsg{3});
     });
-    net::BitReader ur(unequip_packet.data(), unequip_packet.size());
+    core::BitReader ur(unequip_packet.data(), unequip_packet.size());
     REQUIRE(net::read_msg_id(ur) == net::MsgId::C2S_Unequip);
     net::UnequipMsg unequip;
     REQUIRE(net::read_unequip(ur, unequip));
@@ -132,7 +132,7 @@ TEST_CASE("equip and unequip round trip") {
 }
 
 TEST_CASE("welcome round trips") {
-    const auto packet = encode([](net::BitWriter& writer) {
+    const auto packet = encode([](core::BitWriter& writer) {
         net::WelcomeMsg welcome;
         welcome.your_id = 42;
         welcome.tick = 9001;
@@ -143,7 +143,7 @@ TEST_CASE("welcome round trips") {
         net::write_welcome(writer, welcome);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_Welcome);
 
     net::WelcomeMsg decoded;
@@ -182,11 +182,11 @@ TEST_CASE("a snapshot round trips walking and standing actors") {
     walking.max_hp = 12;
     original.actors.push_back(walking);
 
-    const auto packet = encode([&original](net::BitWriter& writer) {
+    const auto packet = encode([&original](core::BitWriter& writer) {
         net::write_snapshot(writer, original);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_Snapshot);
 
     sim::Snapshot decoded;
@@ -224,9 +224,9 @@ TEST_CASE("a standing actor costs fewer bits than a walking one") {
     walking.actors.push_back(actor);
 
     const auto standing_packet = encode(
-        [&standing](net::BitWriter& writer) { net::write_snapshot(writer, standing); });
+        [&standing](core::BitWriter& writer) { net::write_snapshot(writer, standing); });
     const auto walking_packet = encode(
-        [&walking](net::BitWriter& writer) { net::write_snapshot(writer, walking); });
+        [&walking](core::BitWriter& writer) { net::write_snapshot(writer, walking); });
 
     CHECK(standing_packet.size() < walking_packet.size());
 }
@@ -236,9 +236,9 @@ TEST_CASE("an empty snapshot is valid") {
     empty.tick = 5;
 
     const auto packet =
-        encode([&empty](net::BitWriter& writer) { net::write_snapshot(writer, empty); });
+        encode([&empty](core::BitWriter& writer) { net::write_snapshot(writer, empty); });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_Snapshot);
 
     sim::Snapshot decoded;
@@ -260,10 +260,10 @@ TEST_CASE("a truncated snapshot is rejected instead of yielding phantom actors")
     }
 
     const auto packet = encode(
-        [&original](net::BitWriter& writer) { net::write_snapshot(writer, original); });
+        [&original](core::BitWriter& writer) { net::write_snapshot(writer, original); });
 
     // Cut the packet in half.
-    net::BitReader reader(packet.data(), packet.size() / 2);
+    core::BitReader reader(packet.data(), packet.size() / 2);
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_Snapshot);
 
     sim::Snapshot decoded;
@@ -271,7 +271,7 @@ TEST_CASE("a truncated snapshot is rejected instead of yielding phantom actors")
 }
 
 TEST_CASE("an empty packet yields an invalid message id rather than misparsing") {
-    net::BitReader reader(nullptr, 0);
+    core::BitReader reader(nullptr, 0);
     CHECK(net::read_msg_id(reader) == net::MsgId::Invalid);
 }
 
@@ -279,7 +279,7 @@ TEST_CASE("an unknown message id is reported as invalid") {
     std::array<std::uint8_t, 4> buffer{};
     buffer[0] = 200;  // not a defined MsgId
 
-    net::BitReader reader(buffer.data(), buffer.size());
+    core::BitReader reader(buffer.data(), buffer.size());
     CHECK(net::read_msg_id(reader) == net::MsgId::Invalid);
 }
 
@@ -297,11 +297,11 @@ TEST_CASE("a map chunk round trips every tile") {
         tile.blocking = (i % 7 == 0);
     }
 
-    const auto packet = encode([&original](net::BitWriter& writer) {
+    const auto packet = encode([&original](core::BitWriter& writer) {
         net::write_map_chunk(writer, original);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_MapChunk);
 
     net::MapChunkMsg decoded;
@@ -326,7 +326,7 @@ TEST_CASE("a map chunk fits in one packet") {
     chunk.tiles.resize(net::kChunkTileCount);
 
     const auto packet =
-        encode([&chunk](net::BitWriter& writer) { net::write_map_chunk(writer, chunk); });
+        encode([&chunk](core::BitWriter& writer) { net::write_map_chunk(writer, chunk); });
     CHECK(packet.size() < net::kMaxPacketBytes);
 }
 
@@ -335,11 +335,11 @@ TEST_CASE("a short tile vector is padded rather than truncating the message") {
     original.tiles.resize(10);
     original.tiles[0].ground = sim::tiles::kStone;
 
-    const auto packet = encode([&original](net::BitWriter& writer) {
+    const auto packet = encode([&original](core::BitWriter& writer) {
         net::write_map_chunk(writer, original);
     });
 
-    net::BitReader reader(packet.data(), packet.size());
+    core::BitReader reader(packet.data(), packet.size());
     REQUIRE(net::read_msg_id(reader) == net::MsgId::S2C_MapChunk);
 
     net::MapChunkMsg decoded;

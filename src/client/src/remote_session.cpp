@@ -62,7 +62,7 @@ public:
         }
 
         std::uint8_t buffer[64];
-        net::BitWriter writer(buffer, sizeof(buffer));
+        core::BitWriter writer(buffer, sizeof(buffer));
         net::write_move_to(writer, net::MoveToMsg{target});
         if (writer.overflowed()) {
             return;
@@ -76,19 +76,19 @@ public:
     }
 
     void request_attack(sim::NetId target) override {
-        send_reliable([&](net::BitWriter& writer) {
+        send_reliable([&](core::BitWriter& writer) {
             net::write_attack(writer, net::AttackMsg{target});
         });
     }
 
     void request_equip(sim::ItemTypeId item) override {
-        send_reliable([&](net::BitWriter& writer) {
+        send_reliable([&](core::BitWriter& writer) {
             net::write_equip(writer, net::EquipMsg{item});
         });
     }
 
     void request_unequip(sim::EquipSlot slot) override {
-        send_reliable([&](net::BitWriter& writer) {
+        send_reliable([&](core::BitWriter& writer) {
             net::write_unequip(
                 writer, net::UnequipMsg{static_cast<std::uint8_t>(slot)});
         });
@@ -100,7 +100,7 @@ public:
             return;
         }
         std::uint8_t buffer[64];
-        net::BitWriter writer(buffer, sizeof(buffer));
+        core::BitWriter writer(buffer, sizeof(buffer));
         write(writer);
         if (writer.overflowed()) {
             return;
@@ -135,7 +135,7 @@ private:
         status_ = "handshaking";
 
         std::uint8_t buffer[net::kMaxPacketBytes];
-        net::BitWriter writer(buffer, sizeof(buffer));
+        core::BitWriter writer(buffer, sizeof(buffer));
 
         net::HelloMsg hello;
         hello.protocol = net::kProtocolVersion;
@@ -167,7 +167,7 @@ private:
         pending_walk_ = false;
 
         std::uint8_t buffer[64];
-        net::BitWriter writer(buffer, sizeof(buffer));
+        core::BitWriter writer(buffer, sizeof(buffer));
 
         net::InputMsg input;
         input.client_tick = view_.tick;
@@ -180,7 +180,7 @@ private:
     }
 
     void handle_packet(const std::vector<std::uint8_t>& data) {
-        net::BitReader reader(data.data(), data.size());
+        core::BitReader reader(data.data(), data.size());
 
         switch (net::read_msg_id(reader)) {
             case net::MsgId::S2C_Welcome: {

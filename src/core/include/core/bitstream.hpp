@@ -5,7 +5,13 @@
 #include <string>
 #include <string_view>
 
-namespace net {
+// Bit-level serialisation. Lives in core/, not net/, despite the wire format
+// being its oldest and heaviest user: the content blob (sim/content_blob.hpp) is
+// serialised with the same primitives, and sim/ may not include net/ —
+// check-layering.sh forbids it, because net/ depends on sim and not the reverse.
+// Nothing here knows about sockets or packets; it is bytes in, bytes out.
+
+namespace core {
 
 /// Bits needed to store any value in [0, max_value].
 constexpr int bits_required(std::uint32_t max_value) {
@@ -84,4 +90,4 @@ private:
     bool                overflow_ = false;
 };
 
-}  // namespace net
+}  // namespace core

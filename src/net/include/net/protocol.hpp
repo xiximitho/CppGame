@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "net/bitstream.hpp"
+#include "core/bitstream.hpp"
 #include "sim/snapshot.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
@@ -134,34 +134,34 @@ struct MapChunkMsg {
 };
 
 // --- writing ---------------------------------------------------------------
-void write_hello(BitWriter& writer, const HelloMsg& msg);
-void write_input(BitWriter& writer, const InputMsg& msg);
-void write_move_to(BitWriter& writer, const MoveToMsg& msg);
-void write_attack(BitWriter& writer, const AttackMsg& msg);
-void write_equip(BitWriter& writer, const EquipMsg& msg);
-void write_unequip(BitWriter& writer, const UnequipMsg& msg);
-void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
-void write_reject(BitWriter& writer, const RejectMsg& msg);
-void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
-void write_map_chunk(BitWriter& writer, const MapChunkMsg& msg);
-void write_effect(BitWriter& writer, const EffectMsg& msg);
+void write_hello(core::BitWriter& writer, const HelloMsg& msg);
+void write_input(core::BitWriter& writer, const InputMsg& msg);
+void write_move_to(core::BitWriter& writer, const MoveToMsg& msg);
+void write_attack(core::BitWriter& writer, const AttackMsg& msg);
+void write_equip(core::BitWriter& writer, const EquipMsg& msg);
+void write_unequip(core::BitWriter& writer, const UnequipMsg& msg);
+void write_welcome(core::BitWriter& writer, const WelcomeMsg& msg);
+void write_reject(core::BitWriter& writer, const RejectMsg& msg);
+void write_snapshot(core::BitWriter& writer, const sim::Snapshot& snapshot);
+void write_map_chunk(core::BitWriter& writer, const MapChunkMsg& msg);
+void write_effect(core::BitWriter& writer, const EffectMsg& msg);
 
 // --- reading ---------------------------------------------------------------
 /// Returns MsgId::Invalid on an empty or truncated packet.
-MsgId read_msg_id(BitReader& reader);
+MsgId read_msg_id(core::BitReader& reader);
 
 /// Each returns false when the packet was truncated or malformed. On false the
 /// output struct is left in an unspecified state and must not be used.
-bool read_hello(BitReader& reader, HelloMsg& out);
-bool read_input(BitReader& reader, InputMsg& out);
-bool read_move_to(BitReader& reader, MoveToMsg& out);
-bool read_attack(BitReader& reader, AttackMsg& out);
-bool read_equip(BitReader& reader, EquipMsg& out);
-bool read_unequip(BitReader& reader, UnequipMsg& out);
-bool read_welcome(BitReader& reader, WelcomeMsg& out);
-bool read_reject(BitReader& reader, RejectMsg& out);
-bool read_snapshot(BitReader& reader, sim::Snapshot& out);
-bool read_map_chunk(BitReader& reader, MapChunkMsg& out);
-bool read_effect(BitReader& reader, EffectMsg& out);
+bool read_hello(core::BitReader& reader, HelloMsg& out);
+bool read_input(core::BitReader& reader, InputMsg& out);
+bool read_move_to(core::BitReader& reader, MoveToMsg& out);
+bool read_attack(core::BitReader& reader, AttackMsg& out);
+bool read_equip(core::BitReader& reader, EquipMsg& out);
+bool read_unequip(core::BitReader& reader, UnequipMsg& out);
+bool read_welcome(core::BitReader& reader, WelcomeMsg& out);
+bool read_reject(core::BitReader& reader, RejectMsg& out);
+bool read_snapshot(core::BitReader& reader, sim::Snapshot& out);
+bool read_map_chunk(core::BitReader& reader, MapChunkMsg& out);
+bool read_effect(core::BitReader& reader, EffectMsg& out);
 
 }  // namespace net

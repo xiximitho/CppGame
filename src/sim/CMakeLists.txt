@@ -7,6 +7,7 @@
 add_library(game_sim STATIC
     src/tile_map.cpp
     src/item_type.cpp
+    src/content_blob.cpp
     src/map_io.cpp
     src/world.cpp
     src/snapshot.cpp
