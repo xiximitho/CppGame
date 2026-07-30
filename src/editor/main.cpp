@@ -13,6 +13,10 @@
 //   0..9                pick brush by index
 //   arrows              pan          wheel or +/-   zoom
 //   S                   save          Esc            quit
+//   F2                  switch between map mode and ITEM mode
+//
+// Item mode (src/editor/item_mode.hpp) edits the content database: it is what
+// makes adding an item authoring instead of a C++ change plus a rebuild.
 
 #include <SDL3/SDL.h>
 
@@ -43,6 +47,8 @@
 #include "store/content.hpp"
 #include "store/db.hpp"
 
+#include "item_mode.hpp"
+
 namespace {
 
 struct Options {
@@ -50,7 +56,11 @@ struct Options {
     float       zoom = 1.0F;
     std::string screenshot_path;      // headless verification, like the client
     std::string content_path = "assets/content.db";
+    std::string blob_path = "assets/content.bin";
     int         screenshot_frame = 2;
+    /// Start in item mode. Exists so the form can be screenshotted
+    /// headlessly (SDL_VIDEODRIVER=dummy delivers no keystrokes).
+    bool        start_in_item_mode = false;
 };
 
 Options parse_args(int argc, char** argv) {
@@ -65,6 +75,10 @@ Options parse_args(int argc, char** argv) {
             opt.screenshot_path = argv[++i];
         } else if (arg == "--content" && i + 1 < argc) {
             opt.content_path = argv[++i];
+        } else if (arg == "--blob" && i + 1 < argc) {
+            opt.blob_path = argv[++i];
+        } else if (arg == "--item-mode") {
+            opt.start_in_item_mode = true;
         }
     }
     return opt;
@@ -275,8 +289,24 @@ int main(int argc, char** argv) {
         }
         view.ready = true;
 
-        const std::vector<Brush> palette = build_palette(item_rows, tileset);
+        std::vector<Brush> palette = build_palette(item_rows, tileset);
         std::size_t brush_i = 0;
+
+        // The item editor. Modal: while it is open, events go to it and the map is
+        // not drawn, because a form over a half-visible map reads as a render bug.
+        editor::ItemMode item_mode(*content, tileset, window, opt.blob_path);
+        bool item_mode_active = opt.start_in_item_mode;
+
+        // Editing an item can change what the palette shows (a new object, a
+        // renamed one), so the palette is rebuilt when leaving item mode rather
+        // than kept as a snapshot from boot.
+        const auto rebuild_palette = [&]() {
+            if (store::load_item_rows(*content, item_rows)) {
+                store::load_item_types(*content, registry);
+                palette = build_palette(item_rows, tileset);
+                brush_i = std::min(brush_i, palette.size() - 1U);
+            }
+        };
         LOG_INFO("palette has %zu brushes:", palette.size());
         for (std::size_t i = 0; i < palette.size(); ++i) {
             LOG_INFO("  [%zu] %s", i, palette[i].label.c_str());
@@ -300,11 +330,17 @@ int main(int argc, char** argv) {
 
         const auto update_title = [&]() {
             char title[192];
-            std::snprintf(title, sizeof title,
-                          "game_editor  |  %s%s  |  brush: %s  |  "
-                          "L place  R erase  Ctrl+Z undo  S save  Esc quit",
-                          opt.map_path.c_str(), dirty ? " *" : "",
-                          palette[brush_i].label.c_str());
+            if (item_mode_active) {
+                std::snprintf(title, sizeof title,
+                              "game_editor  |  ITEM MODE  |  %s  |  F2 back to map",
+                              item_mode.status().c_str());
+            } else {
+                std::snprintf(title, sizeof title,
+                              "game_editor  |  %s%s  |  brush: %s  |  "
+                              "L place  R erase  Ctrl+Z undo  S save  F2 items",
+                              opt.map_path.c_str(), dirty ? " *" : "",
+                              palette[brush_i].label.c_str());
+            }
             SDL_SetWindowTitle(window, title);
         };
         update_title();
@@ -420,6 +456,31 @@ int main(int argc, char** argv) {
         while (running) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
+                // F2 owns the mode switch in both directions and is checked before
+                // anything else, so it cannot be swallowed by a captured keyboard.
+                if (event.type == SDL_EVENT_KEY_DOWN &&
+                    event.key.key == SDLK_F2) {
+                    item_mode_active = !item_mode_active;
+                    if (!item_mode_active) {
+                        item_mode.on_exit();
+                        rebuild_palette();
+                    }
+                    update_title();
+                    continue;
+                }
+                if (item_mode_active && event.type != SDL_EVENT_QUIT) {
+                    if (item_mode.handle_event(event)) {
+                        update_title();
+                        continue;
+                    }
+                    // Unconsumed keys still must not reach the map: painting while a
+                    // form is open would edit the map behind it invisibly.
+                    if (event.type == SDL_EVENT_KEY_DOWN ||
+                        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                        event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                        continue;
+                    }
+                }
                 switch (event.type) {
                     case SDL_EVENT_QUIT:
                         running = false;
@@ -520,19 +581,24 @@ int main(int argc, char** argv) {
                 }
             }
 
-            const bool* keys = SDL_GetKeyboardState(nullptr);
-            const float pan = 12.0F / zoom;
-            if (keys[SDL_SCANCODE_LEFT]) {
-                camera_x -= pan;
-            }
-            if (keys[SDL_SCANCODE_RIGHT]) {
-                camera_x += pan;
-            }
-            if (keys[SDL_SCANCODE_UP]) {
-                camera_y -= pan;
-            }
-            if (keys[SDL_SCANCODE_DOWN]) {
-                camera_y += pan;
+            // Held-key panning reads the keyboard state directly, so it bypasses the
+            // event routing above and has to be suppressed explicitly: in item mode
+            // the arrows change the focused field.
+            if (!item_mode_active) {
+                const bool* keys = SDL_GetKeyboardState(nullptr);
+                const float pan = 12.0F / zoom;
+                if (keys[SDL_SCANCODE_LEFT]) {
+                    camera_x -= pan;
+                }
+                if (keys[SDL_SCANCODE_RIGHT]) {
+                    camera_x += pan;
+                }
+                if (keys[SDL_SCANCODE_UP]) {
+                    camera_y -= pan;
+                }
+                if (keys[SDL_SCANCODE_DOWN]) {
+                    camera_y += pan;
+                }
             }
 
             renderer->set_camera(camera_x, camera_y, zoom);
@@ -547,7 +613,8 @@ int main(int argc, char** argv) {
             const bool over_menu =
                 mouse_y >= menu_bar_top(renderer->viewport_height());
 
-            if ((painting || erasing) && params.hover_valid && !over_menu) {
+            if (!item_mode_active && (painting || erasing) &&
+                params.hover_valid && !over_menu) {
                 apply_brush(view.map, registry, params.hover,
                             erasing ? eraser : palette[brush_i]);
                 dirty = true;
@@ -555,33 +622,37 @@ int main(int argc, char** argv) {
             }
 
             renderer->begin_frame(client::Color{18, 20, 26, 255});
-            client::render_world(*renderer, tileset, view, params);
+            if (item_mode_active) {
+                item_mode.draw(*renderer);
+            } else {
+                client::render_world(*renderer, tileset, view, params);
 
-            // Ghost preview of the current brush under the cursor.
-            if (params.hover_valid && !over_menu) {
-                const Brush& brush = palette[brush_i];
-                const client::AtlasEntry* entry = nullptr;
-                if (brush.kind == Brush::Kind::Ground) {
-                    entry = &tileset.ground(brush.id);
-                } else if (brush.kind == Brush::Kind::Object) {
-                    entry = &tileset.object(brush.id);
+                // Ghost preview of the current brush under the cursor.
+                if (params.hover_valid && !over_menu) {
+                    const Brush& brush = palette[brush_i];
+                    const client::AtlasEntry* entry = nullptr;
+                    if (brush.kind == Brush::Kind::Ground) {
+                        entry = &tileset.ground(brush.id);
+                    } else if (brush.kind == Brush::Kind::Object) {
+                        entry = &tileset.object(brush.id);
+                    }
+                    if (entry != nullptr && entry->valid) {
+                        const client::iso::ScreenPos at =
+                            client::iso::tile_to_screen(params.hover);
+                        client::SpriteCmd cmd;
+                        cmd.texture = tileset.texture();
+                        cmd.dst = client::Rect{at.x + entry->origin_x,
+                                               at.y + entry->origin_y,
+                                               entry->width, entry->height};
+                        cmd.uv = entry->uv;
+                        cmd.depth = 1.0e9F;  // always on top
+                        cmd.tint = client::Color{255, 255, 255, 150};
+                        renderer->submit(cmd);
+                    }
                 }
-                if (entry != nullptr && entry->valid) {
-                    const client::iso::ScreenPos at =
-                        client::iso::tile_to_screen(params.hover);
-                    client::SpriteCmd cmd;
-                    cmd.texture = tileset.texture();
-                    cmd.dst = client::Rect{at.x + entry->origin_x,
-                                           at.y + entry->origin_y, entry->width,
-                                           entry->height};
-                    cmd.uv = entry->uv;
-                    cmd.depth = 1.0e9F;  // always on top
-                    cmd.tint = client::Color{255, 255, 255, 150};
-                    renderer->submit(cmd);
-                }
+
+                draw_menu();
             }
-
-            draw_menu();
 
             renderer->end_frame();
             ++frames;

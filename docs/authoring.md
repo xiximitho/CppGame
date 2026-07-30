@@ -15,13 +15,22 @@ uma, duas ou nas três, dependendo do que quer:
 |---|---|---|
 | **Só trocar a aparência** (redesenhar um sprite existente) | `assets/tilesets/atlas.png` | Não |
 | **Vincular um sprite a um id / mudar recorte** | `assets/tilesets/atlas.txt` | Não |
-| **Um id novo com regra de jogo** (bloqueia, pegável…) | `sim/tile_ids.hpp` + `sim/src/item_type.cpp` | **Sim** (código C++) |
+| **Um id novo com regra de jogo** (bloqueia, pegável, ataque, defesa, alcance…) | `assets/content.db` (pelo `game_editor`, tecla `F2`) | Não |
 | **Colocar coisas no mundo** | `assets/maps/*.txt` (à mão ou pelo `game_editor`) | Não |
 
-Regra de ouro: **arte e mapa são dados** (lidos em runtime, sem rebuild);
-**tipos de item são código** (o servidor precisa deles compilados, e nunca vê a
-arte). Isso é o que mantém o `server-only` sem lib gráfica — ver
+Regra de ouro: **tudo é dado**. Arte e mapa são lidos em runtime da árvore-fonte;
+tipos de item vivem no `assets/content.db` e são editados pelo `game_editor`
+(`F2` abre o modo item). O que continua sendo verdade é a separação: o servidor
+nunca vê a arte, e é isso que mantém o `server-only` sem lib gráfica — ver
 [content.md](content.md).
+
+> Item novo agora é assim: abra o editor, `F2`, `N` para criar, edite os campos,
+> `S` para salvar. O `S` grava no banco **e** regera o `assets/content.bin` que o
+> cliente lê, então não sobra passo de terminal.
+>
+> O que ainda é código: **vincular o sprite** ao id novo (uma linha no
+> `atlas.txt`, receita A abaixo). Um item sem sprite existe e funciona nas regras,
+> mas não entra na paleta do mapa e não aparece na tela.
 
 ## Onde as coisas moram
 
@@ -29,8 +38,10 @@ arte). Isso é o que mantém o `server-only` sem lib gráfica — ver
 assets/tilesets/atlas.png   a folha de sprites (uma textura só)
 assets/tilesets/atlas.txt   liga cada recorte do PNG a um id/direção
 assets/maps/*.txt           mapas autorados
-src/sim/include/sim/tile_ids.hpp   os ids (constantes)
-src/sim/src/item_type.cpp          build_default_registry(): regras de cada id
+assets/content.db           o catálogo de itens (SQLite; editado pelo game_editor)
+assets/content.bin          blob derivado do banco, que o CLIENTE lê (game_bake)
+src/sim/include/sim/tile_ids.hpp   ids que o próprio engine referencia por nome
+src/sim/src/item_type.cpp          build_default_registry(): a SEMENTE do banco
 tools/gen_placeholder_atlas.py     gera o atlas placeholder (PIL)
 tools/gen_dungeon.py               gera o calabouço de exemplo
 ```
@@ -85,35 +96,28 @@ esquerdo do sprite. Valores canônicos: bloco 64×64 → `-32 -32`; chão 64×32
 **Só com os passos 1–2 o cliente já desenha o id 103** — mas a simulação ainda não
 conhece esse id. Se você parar aqui, é uma decoração muda.
 
-### 3. Declarar o id — `sim/tile_ids.hpp`
-
-```cpp
-constexpr TileId kBarrel = 103;
-```
-
-Ids são contrato: uma vez usados num mapa/rede, **não mude o significado** de um id
-já existente (recicle números aposentados, não reatribua). Ground fica na faixa
-baixa, objetos em 100+, por convenção (ver os ids atuais na tabela mais abaixo).
-
-### 4. Dar regras de jogo — `build_default_registry()`
-
-Em `src/sim/src/item_type.cpp`, registre o tipo com suas flags:
-
-```cpp
-registry.add(ItemType{tiles::kBarrel, ItemFlag::BlocksWalk, 0U, 1U});
-```
-
-A partir daqui o barril **bloqueia passagem automaticamente**: o gerador de mapa e
-o parser derivam `Tile::blocking` da flag `BlocksWalk` — você nunca escreve "isto
-bloqueia" à mão. Quer um enfeite que **não** bloqueia (dá pra pisar em cima)? Use
-`ItemFlags{}` (nenhuma flag). Combine com `|`:
-`ItemFlag::BlocksWalk | ItemFlag::Pickable`.
-
-Recompile (mexeu em C++):
+### 3 e 4. Criar o id e dar regras — no editor, sem recompilar
 
 ```bash
-cmake --build --preset debug -j
+./build/debug/bin/game_editor      # F2 abre o modo item
 ```
+
+`N` cria um item novo na faixa de id do item selecionado (selecione uma pedra e
+ganha id de chão; selecione uma espada e ganha id de equipamento). Setas movem
+entre campos e mudam valores (`shift` = passo de 10), dígitos digitam números,
+`enter` no campo `name` edita o nome, `S` salva.
+
+O id é escolhido pelo editor e **nunca é reciclado**: `shift+del` aposenta um
+item, e o número dele fica reservado para sempre, porque mapa salvo e cliente
+antigo referenciam item por número.
+
+Marcando `blocks walk`, o barril **bloqueia passagem automaticamente**: o gerador
+de mapa e o parser derivam `Tile::blocking` dessa flag — você nunca escreve "isto
+bloqueia" à mão. Quer um enfeite que não bloqueia? Deixe a flag em `no`.
+
+`range (tiles)` só fica editável quando `attack kind` é `ranged`; em melee o
+alcance é sempre 1 e o campo aparece esmaecido em vez de aceitar um valor que
+nada leria.
 
 ### 5. Colocar no mundo
 
@@ -138,10 +142,9 @@ Chão é igual, com duas diferenças: a flag `Ground` e o tamanho do sprite (dia
 1. **Sprite**: a linha de chão (`y=0`) já está cheia (4 slots). Use uma região
    livre do atlas (ex.: `y=176`) e desenhe um diamante 64×32 lá.
 2. **`atlas.txt`**: `ground 5 0 176 64 32 -32 0`.
-3. **`tile_ids.hpp`**: `constexpr TileId kSand = 5;`
-4. **Registry**: `registry.add(ItemType{tiles::kSand, ItemFlag::Ground, 0U, 1U});`
-   (`Ground` = pode ser camada de chão; sem `BlocksWalk` = caminhável. Água é o
-   caso raro de chão que bloqueia: `ItemFlag::Ground | ItemFlag::BlocksWalk`.)
+3. **Id e regras**: no modo item do editor, selecione um chão existente e `N`
+   (para o id cair na faixa de chão), marque `is ground` = `yes` e deixe
+   `blocks walk` = `no`. Água é o caso raro de chão que bloqueia: as duas em `yes`.
 5. Pinte com o editor ou use na legenda de um mapa.
 
 ---
@@ -198,7 +201,23 @@ ver outro mapa hoje, salve por cima dele (um seletor de mapa é trabalho futuro)
 | 102 | caixa | objeto (bloqueia, pegável) |
 | 200 | ator | reservado (não é tile) |
 
-Próximo id livre de objeto: **103**. De chão: **5**.
+Equipamento ocupa 300–308 (espada, arco, escudo, elmo, armadura, pernas, botas,
+anel, amuleto). O editor escolhe o próximo id livre por faixa — não escolha à mão,
+e não recicle: `retired_item_ids` no banco guarda os aposentados, e o id 200 do
+ator já está lá reservado.
+
+### Campos do item (modo item do editor)
+
+| Campo | O que é |
+|---|---|
+| `name` | só para humanos e ferramentas; **não** vai no blob nem o servidor vê |
+| `weight` | em centi-oz |
+| `max stack` | só importa com `stackable`; mínimo 1 |
+| `equippable` / `slot` | se dá para vestir, e onde |
+| `attack` / `defense` | somados aos do portador |
+| `attack kind` | `melee` ou `ranged` (só arma) |
+| `range (tiles)` | alcance; editável só quando `ranged` |
+| `effect id` | efeito visual do ataque (1 = brilho melee, 2 = tiro) |
 
 ### Flags de `ItemType` (`sim/item_type.hpp`)
 

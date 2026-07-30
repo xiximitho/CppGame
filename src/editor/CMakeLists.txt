@@ -7,6 +7,7 @@
 # game_render library instead.
 add_executable(game_editor
     main.cpp
+    item_mode.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/sdl_backend.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/tileset.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/ui.cpp
