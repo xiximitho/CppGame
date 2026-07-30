@@ -106,11 +106,15 @@ qualquer um que já tenha conectado com versão errada viu esse silêncio.
   `atlas.txt` (9 casos, 50 asserções) por teste unitário; e o laço completo
   "criar item → vincular sprite → aparecer na paleta" foi exercitado pelo
   `--bind-sprite`, que é a mesma função que o clique chama.
-- **`atlas.png` falhou de carregar uma vez** ("present but failed to load; falling
-  back to procedural art") e eu **não reproduzi** em 3 tentativas seguidas. O
-  arquivo é um PNG normal (8-bit RGBA, sem interlace, chunks padrão). Se voltar a
-  acontecer, suspeitar do backend stb do SDL_image; sem mais evidência não dá para
-  afirmar nada.
+- ~~**`atlas.png` falhou de carregar uma vez**~~ — **resolvido**, e não era o
+  SDL_image. Era bug meu: o `bind_sprite` chamava o recarregamento do tileset
+  enquanto o `ofstream` do `atlas.txt` ainda estava aberto, então o
+  `Tileset::load` lia um arquivo truncado, o parse falhava e caía na arte
+  procedural — o sintoma visível era "os sprites ficaram escuros ao trocar o
+  tile". Corrigido fechando o stream explicitamente antes do reload.
+  **A lição:** minha verificação olhava o CONTEÚDO DO ARQUIVO depois do processo
+  sair, e não o recarregamento em processo. O arquivo estava sempre certo; o que
+  estava errado era o que o reload via.
 
 ## Invariantes que esta trilha adicionou (não quebre de passagem)
 

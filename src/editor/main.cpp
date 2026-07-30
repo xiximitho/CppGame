@@ -358,19 +358,25 @@ int main(int argc, char** argv) {
             int cx = 0;
             int cy = 0;
             std::istringstream parts(opt.bind_command);
-            if (std::getline(parts, kind, ':') && (parts >> id) &&
-                parts.ignore(1) && (parts >> cx) && parts.ignore(1) &&
-                (parts >> cy) &&
-                item_mode.bind_from_command(static_cast<sim::ItemTypeId>(id), kind,
-                                            cx, cy)) {
-                LOG_INFO("bound %s %d to cell %d,%d", kind.c_str(), id, cx, cy);
-                running = false;
-            } else {
-                LOG_ERROR("could not apply --bind-sprite '%s' "
+            // Reported separately from the bind below: lumping "you typed it wrong"
+            // together with "the bind failed" sends you looking in the wrong place.
+            const bool parsed = static_cast<bool>(std::getline(parts, kind, ':')) &&
+                                static_cast<bool>(parts >> id) &&
+                                static_cast<bool>(parts.ignore(1) >> cx) &&
+                                static_cast<bool>(parts.ignore(1) >> cy);
+            if (!parsed) {
+                LOG_ERROR("cannot parse --bind-sprite '%s' "
                           "(expected kind:id:cellx:celly)",
                           opt.bind_command.c_str());
-                running = false;
+            } else if (!item_mode.bind_from_command(
+                           static_cast<sim::ItemTypeId>(id), kind, cx, cy)) {
+                // The specific reason was already logged by bind_from_command.
+                LOG_ERROR("could not bind %s %d to cell %d,%d", kind.c_str(), id,
+                          cx, cy);
+            } else {
+                LOG_INFO("bound %s %d to cell %d,%d", kind.c_str(), id, cx, cy);
             }
+            running = false;
         }
 
         const auto update_title = [&]() {

@@ -112,19 +112,29 @@ bool ItemMode::bind_sprite(int cell_x, int cell_y) {
 
     const std::string updated = upsert_binding(text, binding);
     if (updated == text) {
-        message_ = "atlas.txt unchanged";
-        return false;
+        // Picking the cell it already has is a no-op, not a failure: nothing to
+        // write, nothing to reload, and the picker should still close.
+        message_ = "already bound there";
+        return true;
     }
 
-    std::ofstream out(atlas_path_, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        message_ = "cannot write atlas.txt";
-        return false;
-    }
-    out << updated;
-    if (!out.good()) {
-        message_ = "failed writing atlas.txt";
-        return false;
+    {
+        std::ofstream out(atlas_path_, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            message_ = "cannot write atlas.txt";
+            return false;
+        }
+        out << updated;
+        // Closed HERE, explicitly, before the reload below re-reads this same file.
+        // Letting the destructor do it at the end of the function meant the reload
+        // read a file that had been truncated but not yet written — the atlas failed
+        // to parse, the tileset fell back to procedural art, and every sprite in the
+        // editor suddenly looked wrong.
+        out.close();
+        if (!out.good()) {
+            message_ = "failed writing atlas.txt";
+            return false;
+        }
     }
 
     binding_ = binding;
