@@ -11,7 +11,8 @@
 add_library(game_store STATIC
     src/db.cpp
     src/schema.cpp
-    src/content.cpp)
+    src/content.cpp
+    src/players.cpp)
 
 target_include_directories(game_store PUBLIC include)
 

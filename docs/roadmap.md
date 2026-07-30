@@ -31,15 +31,21 @@ jogo. Falta:
 nada. Enquanto não existir, o código de render multi-andar não foi visto
 funcionando de verdade.
 
-### 3. Persistência
-Nada é salvo. Ao reiniciar o servidor, todo mundo volta pro spawn. Precisa de:
-- conta e personagem (SQLite local ou Postgres)
-- posição, inventário, stats
-- salvamento periódico e no logout
+### 3. Persistência — **feito**
+Posição, facing, hp/max_hp, equipamento e inventário sobrevivem a um restart, em
+`players.db` (SQLite, gitignored, separado do `content.db` que é conteúdo
+commitado). Salva no logout, periodicamente (`--save-every`, 60s por padrão) e no
+desligamento por SIGINT/SIGTERM. Schema versionado por `PRAGMA user_version` desde
+o primeiro save, como esta seção exigia. Ver `store/players.hpp` e
+[content.md](content.md).
 
-Decidir isso depois de existir inventário e stats é mais barato do que decidir
-antes, **mas** o formato de serialização precisa ser versionado desde o primeiro
-save gravado em disco de jogador real.
+O que **não** está feito e é decisão à parte: **autenticação**. O `HelloMsg` carrega
+um nome e nenhuma credencial, então hoje o nome É a identidade — aceitável num
+scaffold em rede confiável, inaceitável fora disso. Precisa de coluna de senha, um
+KDF de verdade e mudança de protocolo.
+
+Também não feito: mais de um personagem por conta (o schema permite, a query não),
+e nenhum stat além de hp.
 
 ### 4. Delta compression nos snapshots
 Hoje cada snapshot é completo. Com 20 atores visíveis a 10 Hz dá ~3 KB/s por

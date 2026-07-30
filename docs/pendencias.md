@@ -15,7 +15,8 @@ Os dois já estão atualizados; não confie no `roadmap.md`, que ficou para trá
 | 8 | `tools/bake`: banco → `content.bin` que o cliente lê | `300b5fb` |
 | 6 | Modo item do `game_editor` (`F2`) | `f3acd1c` |
 | 6b | Seletor de sprite + writer de `atlas.txt` | `4554d09` |
-| A | Hash de conteúdo no Hello + `kProtocolVersion` 6 | este commit |
+| A | Hash de conteúdo no Hello + `kProtocolVersion` 6 | `d6d403b` |
+| B | Persistência de jogador (`players.db`) | este commit |
 
 **O laço completo funciona.** `./build/debug/bin/game_editor` → `F2` → `N` cria
 item → setas editam campos → campo `sprite` + `enter` escolhe o recorte no atlas →
@@ -27,28 +28,20 @@ Servidor lê `content.db` direto; cliente lê `content.bin`.
 
 ## Pendências, em ordem de dependência
 
-### A. Persistência de jogador
+### A. Autenticação  (a pendência que sobrou de verdade)
 
-O schema **já existe** (`store/src/schema.cpp`, `kPlayerV1`): `accounts`,
-`characters`, `character_items`, com `user_version` próprio e
-`apply_player_migrations()` pronta. Nada escreve nelas ainda, e
-`store::open_player_db()` ainda não existe — só `open_content_db()`; siga o mesmo
-formato (`Db::open` + `apply_player_migrations`).
+`net::HelloMsg` carrega `name` e **nenhuma credencial**, então hoje o nome É a
+identidade: qualquer um digita o nome de outro e recebe o personagem dele. Aceitável
+num scaffold em rede confiável e não aceitável fora disso.
 
-Onde plugar, em `src/server/main.cpp`:
+Isso foi deixado de fora de propósito, não por esquecimento: é uma decisão de
+produto (conta separada do personagem? e-mail? recuperação?) e de segurança (KDF de
+verdade — argon2/scrypt/bcrypt, nunca um hash cru), e envolve mudança de protocolo.
+Não é coisa para contrabandear junto com o formato de save.
 
-- O kit inicial hardcoded está no handler de Hello (espada e armadura equipadas,
-  arco e escudo na mochila, por volta da linha 270 depois das mudanças desta
-  sessão). Isso passa a ser o fallback de personagem novo; personagem existente
-  carrega posição, equipamento, inventário e hp do banco.
-- `HelloMsg` tem `protocol` e `name`, **sem senha**. Autenticação de verdade é
-  decisão à parte; hoje o nome é a identidade.
-- Salvar no logout (o `case` de desconexão do peer) e periodicamente.
-- `players.db` já está no `.gitignore`.
-
-Detalhe que vai morder: `character_items` tem
-`CHECK ((slot IS NULL) <> (bag_index IS NULL))` — exatamente um dos dois é
-preenchido. Equipado usa `slot`, mochila usa `bag_index`.
+O que já está preparado: a tabela `accounts` existe separada de `characters`, com
+`account_id` como FK, então "várias contas, vários personagens" é mudança de query e
+não migração. Falta a coluna de credencial e o campo no Hello.
 
 ### B. Limpezas conhecidas
 
@@ -67,11 +60,27 @@ preenchido. Equipado usa `slot`, mochila usa `bag_index`.
 - **`assets/content.db` está commitado** (é conteúdo, fonte da verdade). É binário:
   duas pessoas editando itens ao mesmo tempo geram conflito que o git não resolve.
   Se incomodar, o caminho é um dump `.sql` diffável ao lado.
-- **`docs/roadmap.md` item 3 ("Persistência")** ainda diz "Nada é salvo" e a tabela
-  de "coisas erradas de propósito" não menciona nada disto. Atualizar quando A
-  ficar pronto.
+- **Um personagem por conta.** O schema permite vários (`characters.account_id`), a
+  query não: `save_character` usa o nome do personagem como nome da conta. Crescer
+  para seleção de personagem é mudança de query.
+- **Nenhum stat além de hp.** Sem nível, sem experiência, sem skill. Quando
+  existirem, são colunas novas em `characters` e um bump de `kPlayerSchemaVersion`.
 - **`docs/authoring.md`** tem uma tabela de "ids em uso" que agora é redundante com
   o banco — o editor mostra a lista real. Vale encolher para um ponteiro.
+
+## O que foi verificado na persistência
+
+Com servidor e cliente de verdade:
+
+- Primeiro login → personagem criado com o kit inicial e salvo no logout (espada no
+  slot 0, armadura no slot 3, arco e escudo na mochila).
+- Restart → `'felipe' restored at (18,21,0) with 42/140 hp`, com escudo equipado e
+  3 anéis na mochila sobrevivendo ao ciclo salvar/carregar/re-salvar.
+- Posição salva que virou inválida → `saved at (0,0,0), which is not usable now;
+  spawning fresh`, e o resto do estado (hp, itens) ainda é restaurado.
+- 9 testes unitários cobrindo round-trip, update em vez de duplicar, desequipar
+  virando ausência de linha, isolamento entre dois personagens, facing corrompido, e
+  `ON DELETE CASCADE` (que só funciona porque `store::Db` liga foreign keys).
 
 ## O que foi verificado no hash de conteúdo
 

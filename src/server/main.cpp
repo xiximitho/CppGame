@@ -1,3 +1,4 @@
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -23,9 +24,19 @@
 #include "sim/tile_ids.hpp"
 #include "store/content.hpp"
 #include "store/db.hpp"
+#include "store/players.hpp"
 #include "sim/world.hpp"
 
 namespace {
+
+/// Set by SIGINT/SIGTERM so the loop can exit and save.
+///
+/// A signal handler may do almost nothing safely; writing a volatile sig_atomic_t is
+/// one of the few things it may. Everything else — the final save, the logging —
+/// happens back on the main path where it is allowed to.
+volatile std::sig_atomic_t g_stop = 0;
+
+extern "C" void on_stop_signal(int) { g_stop = 1; }
 
 /// Reads a whole text file. The server links no SDL (server-only preset), so it
 /// cannot use platform::vfs; plain <fstream> is fine because a server never runs
@@ -88,6 +99,11 @@ struct Options {
     std::size_t   max_peers = 64;
     /// Relative to the working directory, same convention as the map path.
     std::string   content_path = "assets/content.db";
+    /// Separate file from content on purpose: content is committed, saves are not.
+    std::string   players_path = "players.db";
+    /// How often connected players are written out, in seconds. A crash loses at
+    /// most this much progress; zero disables periodic saving.
+    int           save_every_seconds = 60;
 };
 
 /// Per-connection state. Deliberately outside sim/: which chunks a socket has
@@ -98,8 +114,67 @@ struct Connection {
     sim::NetId  net_id = sim::kInvalidNetId;
     std::string name;
     bool        welcomed = false;
+    /// rowid of the stored character; 0 until it has been saved once.
+    std::int64_t character_id = 0;
     std::unordered_set<std::uint64_t> sent_chunks;
 };
+
+/// Reads a connected player's state out of the world, ready to be stored.
+///
+/// Returns nullopt when the actor is gone (despawned, or never welcomed), because
+/// writing a default-constructed character over a real save would be worse than not
+/// saving at all.
+std::optional<store::CharacterSave> snapshot_character(const sim::World& world,
+                                                       const Connection& connection) {
+    if (!connection.welcomed || connection.net_id == sim::kInvalidNetId) {
+        return std::nullopt;
+    }
+    const entt::entity entity = world.lookup(connection.net_id);
+    if (entity == entt::null) {
+        return std::nullopt;
+    }
+    const entt::registry& registry = world.registry();
+    if (!registry.all_of<sim::CPosition>(entity)) {
+        return std::nullopt;
+    }
+
+    store::CharacterSave save;
+    save.id = connection.character_id;
+    save.name = connection.name;
+
+    const auto& position = registry.get<sim::CPosition>(entity);
+    save.tile = position.tile;
+    save.facing = position.facing;
+
+    if (const auto* health = registry.try_get<sim::CHealth>(entity)) {
+        save.hp = health->hp;
+        save.max_hp = health->max_hp;
+    }
+    if (const auto* equipment = registry.try_get<sim::CEquipment>(entity)) {
+        save.equipment = equipment->slots;
+    }
+    if (const auto* inventory = registry.try_get<sim::CInventory>(entity)) {
+        save.inventory = inventory->items;
+    }
+    return save;
+}
+
+/// Writes one connected player out. Quiet on success, loud on failure: a save that
+/// silently does nothing is the worst outcome here.
+void persist(store::Db* players, const sim::World& world,
+             const Connection& connection) {
+    if (players == nullptr) {
+        return;
+    }
+    const std::optional<store::CharacterSave> save =
+        snapshot_character(world, connection);
+    if (!save.has_value()) {
+        return;
+    }
+    if (!store::save_character(*players, *save)) {
+        LOG_ERROR("could not save '%s'", connection.name.c_str());
+    }
+}
 
 std::uint64_t chunk_key(int chunk_x, int chunk_y, int z) {
     return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(z)) << 40U) |
@@ -125,6 +200,8 @@ void print_usage() {
         "  --max-peers N    connection limit (default 64)\n"
         "  --content PATH   content database (default assets/content.db,\n"
         "                   created and seeded if absent)\n"
+        "  --players PATH   player save database (default players.db)\n"
+        "  --save-every N   seconds between periodic saves, 0 to disable\n"
         "  --help           this text\n",
         static_cast<unsigned>(net::kDefaultPort));
 }
@@ -148,6 +225,10 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.max_peers = static_cast<std::size_t>(std::atoi(argv[++i]));
         } else if (arg == "--content" && has_value) {
             options.content_path = argv[++i];
+        } else if (arg == "--players" && has_value) {
+            options.players_path = argv[++i];
+        } else if (arg == "--save-every" && has_value) {
+            options.save_every_seconds = std::atoi(argv[++i]);
         } else {
             LOG_WARN("ignoring unknown argument '%s'", arg.c_str());
         }
@@ -241,7 +322,7 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
 
 void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
                   Connection& connection, core::BitReader& reader,
-                  std::uint64_t content_fingerprint) {
+                  std::uint64_t content_fingerprint, store::Db* players) {
     net::HelloMsg hello;
     if (!net::read_hello(reader, hello)) {
         send_reject(transport, connection.peer, "malformed hello");
@@ -273,22 +354,72 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
 
     connection.name = hello.name.empty() ? "anonymous" : hello.name;
 
-    const sim::TilePos spawn = sim::find_spawn_tile(world.map(), rng);
+    // A returning character comes back where it logged out; a new one gets a random
+    // spawn and the starting kit. nullopt is a first login, not a failure.
+    const std::optional<store::CharacterSave> saved =
+        players != nullptr ? store::load_character(*players, connection.name)
+                           : std::nullopt;
+
+    sim::TilePos spawn = sim::find_spawn_tile(world.map(), rng);
+    if (saved.has_value()) {
+        // The saved tile may have become unusable since — the map is authored and
+        // gets edited, and someone may already be standing there. Falling back to a
+        // fresh spawn beats refusing the login or dropping the player inside a wall.
+        const bool usable = world.map().in_bounds(saved->tile) &&
+                            !world.map().at(saved->tile).blocking &&
+                            world.occupant(saved->tile) == sim::kInvalidNetId;
+        if (usable) {
+            spawn = saved->tile;
+        } else {
+            LOG_WARN("'%s' saved at (%d,%d,%d), which is not usable now; "
+                     "spawning fresh",
+                     connection.name.c_str(), saved->tile.x, saved->tile.y,
+                     static_cast<int>(saved->tile.z));
+        }
+    }
+
     connection.net_id = world.allocate_net_id();
     const entt::entity entity = world.spawn_actor(connection.net_id, spawn, 0);
     // Players respawn on death instead of vanishing; monsters do not.
     world.registry().emplace<sim::CRespawn>(entity, sim::CRespawn{spawn});
 
-    // Starting kit, so the player's attack/defense are data-driven from turn one.
-    {
-        auto& equipment = world.registry().emplace<sim::CEquipment>(entity);
-        equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
-            sim::tiles::kSword;
-        equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
-            sim::tiles::kArmor;
+    if (saved.has_value()) {
+        connection.character_id = saved->id;
+
+        auto& position = world.registry().get<sim::CPosition>(entity);
+        position.facing = saved->facing;
+
+        auto& health = world.registry().get<sim::CHealth>(entity);
+        health.max_hp = saved->max_hp > 0 ? saved->max_hp : health.max_hp;
+        // Clamped to at least 1: a character saved at the moment of death would
+        // otherwise log back in as a corpse and never get to act.
+        health.hp = saved->hp > 0 ? saved->hp : health.max_hp;
+        if (health.hp > health.max_hp) {
+            health.hp = health.max_hp;
+        }
+
+        world.registry().emplace<sim::CEquipment>(entity,
+                                                 sim::CEquipment{saved->equipment});
+        world.registry().emplace<sim::CInventory>(
+            entity, sim::CInventory{saved->inventory});
+
+        LOG_INFO("'%s' restored at (%d,%d,%d) with %d/%d hp",
+                 connection.name.c_str(), spawn.x, spawn.y,
+                 static_cast<int>(spawn.z), health.hp, health.max_hp);
+    } else {
+        // Starting kit, so a new player's attack/defense are data-driven from turn
+        // one. This is the fallback now, not the only path.
+        {
+            auto& equipment = world.registry().emplace<sim::CEquipment>(entity);
+            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
+                sim::tiles::kSword;
+            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
+                sim::tiles::kArmor;
+        }
+        world.registry().emplace<sim::CInventory>(
+            entity,
+            sim::CInventory{{{sim::tiles::kBow, 1}, {sim::tiles::kShield, 1}}});
     }
-    world.registry().emplace<sim::CInventory>(
-        entity, sim::CInventory{{{sim::tiles::kBow, 1}, {sim::tiles::kShield, 1}}});
 
     connection.welcomed = true;
 
@@ -344,6 +475,18 @@ int main(int argc, char** argv) {
              item_types.count(), options.content_path.c_str(),
              static_cast<unsigned long long>(content_fingerprint));
 
+    // Player saves live in their own file, never alongside authored content: one is
+    // committed and shared, the other is this server's private state.
+    std::optional<store::Db> players = store::open_player_db(options.players_path);
+    if (!players.has_value()) {
+        LOG_ERROR("cannot open player database '%s'", options.players_path.c_str());
+        return 1;
+    }
+    store::Db* players_db = &*players;
+    LOG_INFO("player database '%s' holds %lld characters",
+             options.players_path.c_str(),
+             static_cast<long long>(store::character_count(*players).value_or(-1)));
+
     sim::World world =
         build_server_world("assets/maps/dungeon.txt", options.seed, item_types);
     sim::Rng rng(options.seed ^ 0xA24BAED4963EE407ULL);
@@ -372,15 +515,19 @@ int main(int argc, char** argv) {
 
     std::unordered_map<net::PeerId, Connection> connections;
 
+    std::signal(SIGINT, on_stop_signal);
+    std::signal(SIGTERM, on_stop_signal);
+
     constexpr std::uint64_t kTickNanos = 1'000'000'000ULL / sim::kSimHz;
     std::uint64_t last_time = core::now_nanos();
     std::uint64_t accumulator = 0;
+    std::uint64_t last_save = core::now_nanos();
 
     LOG_INFO("world %dx%dx%d, %d wanderers, simulating at %d Hz",
              world.map().width(), world.map().height(), world.map().floors(),
              options.wanderers, sim::kSimHz);
 
-    for (;;) {
+    while (g_stop == 0) {
         // Network first: input that arrived since the last tick should be acted
         // on by this tick, not the next one.
         net::Event event;
@@ -398,6 +545,9 @@ int main(int argc, char** argv) {
                 case net::EventType::Disconnected: {
                     const auto it = connections.find(event.peer);
                     if (it != connections.end()) {
+                        // Saved BEFORE the despawn: after it, the actor is gone and
+                        // there is nothing left to read a position out of.
+                        persist(players_db, world, it->second);
                         if (it->second.net_id != sim::kInvalidNetId) {
                             world.despawn(it->second.net_id);
                         }
@@ -418,7 +568,8 @@ int main(int argc, char** argv) {
                     switch (net::read_msg_id(reader)) {
                         case net::MsgId::C2S_Hello:
                             handle_hello(world, rng, *transport, connection,
-                                         reader, content_fingerprint);
+                                         reader, content_fingerprint,
+                                         players_db);
                             break;
 
                         case net::MsgId::C2S_Input: {
@@ -524,6 +675,32 @@ int main(int argc, char** argv) {
         }
         accumulator += elapsed;
 
+        // Periodic save, outside the tick loop: it is wall-clock work, not
+        // simulation work, and a save must not be able to make the world tick more
+        // slowly than it should. A crash loses at most save_every_seconds of
+        // progress; the alternative of saving on every change would write the
+        // database several times a second per player for no benefit.
+        if (options.save_every_seconds > 0) {
+            // Both operands spelled as uint64_t: an ULL literal is a different type
+            // on this platform and -Wsign-conversion rejects the mix.
+            const auto seconds =
+                static_cast<std::uint64_t>(options.save_every_seconds);
+            const std::uint64_t interval = seconds * std::uint64_t{1'000'000'000};
+            if (now - last_save >= interval) {
+                last_save = now;
+                int saved = 0;
+                for (const auto& [peer, connection] : connections) {
+                    if (connection.welcomed) {
+                        persist(players_db, world, connection);
+                        ++saved;
+                    }
+                }
+                if (saved > 0) {
+                    LOG_DEBUG("periodic save wrote %d character(s)", saved);
+                }
+            }
+        }
+
         while (accumulator >= kTickNanos) {
             accumulator -= kTickNanos;
 
@@ -585,4 +762,15 @@ int main(int argc, char** argv) {
         // Yield the core. Without this the loop spins at 100% between ticks.
         core::sleep_nanos(1'000'000ULL);
     }
+
+    // Graceful shutdown. Without this a restart threw away up to save_every_seconds
+    // of everybody's progress, which is the sort of thing players notice long before
+    // anyone reads the log.
+    LOG_INFO("shutting down; saving %zu connected player(s)", connections.size());
+    for (const auto& [peer, connection] : connections) {
+        if (connection.welcomed) {
+            persist(players_db, world, connection);
+        }
+    }
+    return 0;
 }
