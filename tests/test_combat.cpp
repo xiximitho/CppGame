@@ -138,6 +138,28 @@ TEST_CASE("a bow reaches a target three tiles away that a punch cannot") {
     CHECK(world.attack_events().back().effect == kEffectRangedShot);
 }
 
+TEST_CASE("equipping from the backpack swaps gear and changes reach") {
+    World world = make_armed_world();
+    const NetId who = world.allocate_net_id();
+    const entt::entity entity = world.spawn_actor(who, TilePos{5, 5, 0}, 0);
+    world.registry().emplace<CEquipment>(entity).slots[static_cast<std::size_t>(
+        EquipSlot::Weapon)] = tiles::kSword;
+    world.registry().emplace<CInventory>(
+        entity, CInventory{{{tiles::kBow, 1}}});
+
+    CHECK(combat_stats(world, entity).range == 1);  // sword: melee
+
+    REQUIRE(world.equip(who, tiles::kBow));
+    CHECK(combat_stats(world, entity).range == 4);  // bow now reaches farther
+    const auto& inventory = world.registry().get<CInventory>(entity);
+    REQUIRE(inventory.items.size() == 1);
+    CHECK(inventory.items[0].id == tiles::kSword);  // sword swapped back
+
+    REQUIRE(world.unequip(who, EquipSlot::Weapon));
+    CHECK(combat_stats(world, entity).range == 1);  // unarmed again
+    CHECK_FALSE(world.unequip(who, EquipSlot::Weapon));  // already empty
+}
+
 TEST_CASE("a player (CRespawn) dies then respawns at its point") {
     World world = make_open_world();
     const NetId attacker = world.allocate_net_id();

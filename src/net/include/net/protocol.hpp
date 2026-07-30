@@ -17,7 +17,8 @@ namespace net {
 /// 2: added C2S_MoveTo (click-to-move).
 /// 3: added C2S_Attack (auto-attack a target).
 /// 4: added S2C_Effect (attack effect sprite).
-constexpr std::uint32_t kProtocolVersion = 4;
+/// 5: added C2S_Equip / C2S_Unequip (interactive inventory).
+constexpr std::uint32_t kProtocolVersion = 5;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -46,10 +47,12 @@ enum class MsgId : std::uint8_t {
     Invalid = 0,
 
     // Client to server.
-    C2S_Hello  = 1,
-    C2S_Input  = 2,
-    C2S_MoveTo = 3,
-    C2S_Attack = 4,
+    C2S_Hello    = 1,
+    C2S_Input    = 2,
+    C2S_MoveTo   = 3,
+    C2S_Attack   = 4,
+    C2S_Equip    = 5,
+    C2S_Unequip  = 6,
 
     // Server to client.
     S2C_Welcome  = 64,
@@ -89,6 +92,15 @@ struct AttackMsg {
     sim::NetId target = sim::kInvalidNetId;
 };
 
+/// Interactive inventory intents. Equip an item id from the backpack, or clear
+/// an equip slot back to it. Server-validated, like every other intent.
+struct EquipMsg {
+    sim::ItemTypeId item = sim::kItemNone;
+};
+struct UnequipMsg {
+    std::uint8_t slot = 0;  ///< index into EquipSlot; server bounds-checks
+};
+
 struct WelcomeMsg {
     sim::NetId    your_id = sim::kInvalidNetId;
     sim::Tick     tick = 0;
@@ -126,6 +138,8 @@ void write_hello(BitWriter& writer, const HelloMsg& msg);
 void write_input(BitWriter& writer, const InputMsg& msg);
 void write_move_to(BitWriter& writer, const MoveToMsg& msg);
 void write_attack(BitWriter& writer, const AttackMsg& msg);
+void write_equip(BitWriter& writer, const EquipMsg& msg);
+void write_unequip(BitWriter& writer, const UnequipMsg& msg);
 void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
 void write_reject(BitWriter& writer, const RejectMsg& msg);
 void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
@@ -142,6 +156,8 @@ bool read_hello(BitReader& reader, HelloMsg& out);
 bool read_input(BitReader& reader, InputMsg& out);
 bool read_move_to(BitReader& reader, MoveToMsg& out);
 bool read_attack(BitReader& reader, AttackMsg& out);
+bool read_equip(BitReader& reader, EquipMsg& out);
+bool read_unequip(BitReader& reader, UnequipMsg& out);
 bool read_welcome(BitReader& reader, WelcomeMsg& out);
 bool read_reject(BitReader& reader, RejectMsg& out);
 bool read_snapshot(BitReader& reader, sim::Snapshot& out);

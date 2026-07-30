@@ -310,23 +310,38 @@ int main(int argc, char** argv) {
                 params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
                 params.hover_valid = session->view().map.in_bounds(params.hover);
             }
-            // A click on another actor attacks it; a click on the ground walks
-            // there. Only the intent is sent; the simulation owns fight and route.
-            if (click_requested && params.hover_valid) {
-                const client::WorldView& view = session->view();
-                sim::NetId target = sim::kInvalidNetId;
-                for (const sim::ActorState& actor : view.actors) {
-                    if (actor.net_id != view.local_id && actor.tile == params.hover) {
-                        target = actor.net_id;
-                        break;
+            // A click goes to the inventory panel first (when open), then to the
+            // world: on another actor it attacks, on the ground it walks. Only
+            // the intent is sent; the simulation owns fight, route and inventory.
+            if (click_requested) {
+                bool consumed = false;
+                if (show_inventory) {
+                    const client::InventoryAction action = client::inventory_hit(
+                        *renderer, session->view(), mouse_x, mouse_y);
+                    if (action.kind == client::InventoryAction::Kind::Equip) {
+                        session->request_equip(action.item);
+                        consumed = true;
+                    } else if (action.kind ==
+                               client::InventoryAction::Kind::Unequip) {
+                        session->request_unequip(action.slot);
+                        consumed = true;
                     }
                 }
-                if (target != sim::kInvalidNetId) {
-                    session->request_attack(target);
-                    // Also close the distance; the server only swings in range.
+
+                if (!consumed && params.hover_valid) {
+                    const client::WorldView& view = session->view();
+                    sim::NetId target = sim::kInvalidNetId;
+                    for (const sim::ActorState& actor : view.actors) {
+                        if (actor.net_id != view.local_id &&
+                            actor.tile == params.hover) {
+                            target = actor.net_id;
+                            break;
+                        }
+                    }
                     session->request_move_to(params.hover);
-                } else {
-                    session->request_move_to(params.hover);
+                    if (target != sim::kInvalidNetId) {
+                        session->request_attack(target);  // close in, then swing
+                    }
                 }
             }
 

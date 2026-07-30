@@ -132,6 +132,14 @@ public:
                 pending_attack_ = false;
                 world_.set_attack_target(local_id_, pending_attack_target_);
             }
+            if (pending_equip_ != sim::kItemNone) {
+                world_.equip(local_id_, pending_equip_);
+                pending_equip_ = sim::kItemNone;
+            }
+            if (has_pending_unequip_) {
+                has_pending_unequip_ = false;
+                world_.unequip(local_id_, pending_unequip_);
+            }
 
             sim::update_path_followers(world_);
             sim::update_combat(world_);
@@ -162,6 +170,12 @@ public:
     void request_attack(sim::NetId target) override {
         pending_attack_ = true;
         pending_attack_target_ = target;
+    }
+
+    void request_equip(sim::ItemTypeId item) override { pending_equip_ = item; }
+    void request_unequip(sim::EquipSlot slot) override {
+        pending_unequip_ = slot;
+        has_pending_unequip_ = true;
     }
 
     const WorldView& view() const override { return view_; }
@@ -250,6 +264,9 @@ private:
     sim::TilePos   pending_target_;
     bool           pending_attack_ = false;
     sim::NetId     pending_attack_target_ = sim::kInvalidNetId;
+    sim::ItemTypeId pending_equip_ = sim::kItemNone;
+    bool           has_pending_unequip_ = false;
+    sim::EquipSlot pending_unequip_ = sim::EquipSlot::Weapon;
     std::vector<sim::AttackEvent> effects_buffer_;
     int            spawned_wanderers_ = 0;
 };

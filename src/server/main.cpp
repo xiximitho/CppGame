@@ -415,6 +415,30 @@ int main(int argc, char** argv) {
                             break;
                         }
 
+                        case net::MsgId::C2S_Equip: {
+                            net::EquipMsg equip;
+                            if (!net::read_equip(reader, equip) ||
+                                !connection.welcomed) {
+                                break;
+                            }
+                            world.equip(connection.net_id, equip.item);
+                            break;
+                        }
+
+                        case net::MsgId::C2S_Unequip: {
+                            net::UnequipMsg unequip;
+                            if (!net::read_unequip(reader, unequip) ||
+                                !connection.welcomed) {
+                                break;
+                            }
+                            if (unequip.slot < sim::kEquipSlotCount) {
+                                world.unequip(
+                                    connection.net_id,
+                                    static_cast<sim::EquipSlot>(unequip.slot));
+                            }
+                            break;
+                        }
+
                         default:
                             // Server-to-client ids, or garbage. A well-behaved
                             // client never sends these; ignoring is correct and

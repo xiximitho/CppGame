@@ -76,16 +76,36 @@ public:
     }
 
     void request_attack(sim::NetId target) override {
+        send_reliable([&](net::BitWriter& writer) {
+            net::write_attack(writer, net::AttackMsg{target});
+        });
+    }
+
+    void request_equip(sim::ItemTypeId item) override {
+        send_reliable([&](net::BitWriter& writer) {
+            net::write_equip(writer, net::EquipMsg{item});
+        });
+    }
+
+    void request_unequip(sim::EquipSlot slot) override {
+        send_reliable([&](net::BitWriter& writer) {
+            net::write_unequip(
+                writer, net::UnequipMsg{static_cast<std::uint8_t>(slot)});
+        });
+    }
+
+    template <typename Write>
+    void send_reliable(Write&& write) {
         if (transport_ == nullptr || view_.local_id == sim::kInvalidNetId) {
             return;
         }
         std::uint8_t buffer[64];
         net::BitWriter writer(buffer, sizeof(buffer));
-        net::write_attack(writer, net::AttackMsg{target});
+        write(writer);
         if (writer.overflowed()) {
             return;
         }
-        // Reliable, like move-to: a discrete command the server must not miss.
+        // Reliable: a discrete command the server must not miss.
         transport_->send(server_peer_, buffer, writer.bytes_written(),
                          net::Channel::Reliable);
         transport_->flush();
@@ -239,6 +259,8 @@ private:
             case net::MsgId::C2S_Input:
             case net::MsgId::C2S_MoveTo:
             case net::MsgId::C2S_Attack:
+            case net::MsgId::C2S_Equip:
+            case net::MsgId::C2S_Unequip:
             case net::MsgId::Invalid:
                 // Client-to-server ids arriving here mean a confused or hostile
                 // peer; ignoring is the correct response.

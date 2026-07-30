@@ -65,6 +65,11 @@ public:
     /// only names who, never the damage.
     virtual void request_attack(sim::NetId target) = 0;
 
+    /// Player intent: equip an item from the backpack, or clear an equip slot
+    /// back to it. Server-validated, like every other intent.
+    virtual void request_equip(sim::ItemTypeId item) = 0;
+    virtual void request_unequip(sim::EquipSlot slot) = 0;
+
     virtual const WorldView& view() const = 0;
 
     /// Attack effects that occurred since the last call, for the client to

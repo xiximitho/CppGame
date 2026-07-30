@@ -60,19 +60,28 @@ mostra os slots de equipamento com o ícone do que está vestido e a mochila aba
 lendo de `WorldView::equipment/inventory`. É desenhado como overlay fixo (mesmo
 truque de câmera-inversa do editor).
 
+## Equipar/desequipar (interativo)
+
+Com o painel aberto (`I`): **clicar num item da mochila equipa** (mandando
+`C2S_Equip{item}`); **clicar num slot de equipamento cheio desequipa** de volta
+pra mochila (`C2S_Unequip{slot}`). Server-autoritativo: `World::equip/unequip`
+validam (item existe? é equipável?), trocam o que já estava no slot, e mexem em
+`CInventory`/`CEquipment`. O cliente só manda a intenção. `kProtocolVersion` foi a
+**5**. Um clique sobre o painel não vira andar/atacar no mundo.
+
 ## O que já roda
 
 - Stats/slots/tipos no `ItemType`; `CInventory`/`CEquipment`; `combat_stats`;
   dano data-driven e alcance ranged no `update_combat`; itens iniciais; jogador
   nasce equipado (espada + armadura, arco/escudo na mochila). Testado em
   `tests/test_combat.cpp`.
-- `S2C_Effect` no fio (protocolo 4); servidor envia, remoto recebe.
+- `S2C_Effect` no fio; servidor envia, remoto recebe.
 - `EffectFeed` (brilho melee / projétil ranged) e o painel de inventário.
+- **Equipar/desequipar clicando** no painel (`C2S_Equip`/`C2S_Unequip`,
+  protocolo 5), validado no servidor.
 
 ## Limitações atuais (próximos passos)
 
-- **Equipar/desequipar interativo** (arrastar itens entre mochila e slots) ainda
-  não existe: o kit inicial é fixo. Precisa de comandos `C2S` de equipar.
 - **Inventário do jogador remoto** não vai pro fio ainda — o painel só tem dados
   no solo (`WorldView::equipment/inventory` fica vazio em rede). É um TODO
   marcado no `session`.

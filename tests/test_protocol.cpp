@@ -111,6 +111,26 @@ TEST_CASE("attack round trips") {
     CHECK(decoded.target == 4242U);
 }
 
+TEST_CASE("equip and unequip round trip") {
+    const auto equip_packet = encode([](net::BitWriter& writer) {
+        net::write_equip(writer, net::EquipMsg{sim::tiles::kBow});
+    });
+    net::BitReader er(equip_packet.data(), equip_packet.size());
+    REQUIRE(net::read_msg_id(er) == net::MsgId::C2S_Equip);
+    net::EquipMsg equip;
+    REQUIRE(net::read_equip(er, equip));
+    CHECK(equip.item == sim::tiles::kBow);
+
+    const auto unequip_packet = encode([](net::BitWriter& writer) {
+        net::write_unequip(writer, net::UnequipMsg{3});
+    });
+    net::BitReader ur(unequip_packet.data(), unequip_packet.size());
+    REQUIRE(net::read_msg_id(ur) == net::MsgId::C2S_Unequip);
+    net::UnequipMsg unequip;
+    REQUIRE(net::read_unequip(ur, unequip));
+    CHECK(unequip.slot == 3U);
+}
+
 TEST_CASE("welcome round trips") {
     const auto packet = encode([](net::BitWriter& writer) {
         net::WelcomeMsg welcome;

@@ -3,6 +3,8 @@
 #include "client/renderer2d.hpp"
 #include "client/session.hpp"
 #include "client/tileset.hpp"
+#include "sim/item_type.hpp"
+#include "sim/types.hpp"
 
 namespace client {
 
@@ -11,5 +13,20 @@ namespace client {
 /// between begin_frame and end_frame when the panel is toggled on.
 void draw_inventory(Renderer2D& renderer, const Tileset& tileset,
                     const WorldView& view);
+
+/// What a click on the panel means. Equip = a backpack item clicked; Unequip = a
+/// filled equipment slot clicked; None = the click missed the panel (so it should
+/// fall through to the world).
+struct InventoryAction {
+    enum class Kind { None, Equip, Unequip };
+    Kind            kind = Kind::None;
+    sim::ItemTypeId item = sim::kItemNone;         ///< for Equip
+    sim::EquipSlot  slot = sim::EquipSlot::Weapon;  ///< for Unequip
+};
+
+/// Hit-tests a window-pixel point against the panel using the same geometry as
+/// draw_inventory.
+InventoryAction inventory_hit(const Renderer2D& renderer, const WorldView& view,
+                              float mouse_x, float mouse_y);
 
 }  // namespace client

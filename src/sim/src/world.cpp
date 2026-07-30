@@ -184,6 +184,79 @@ bool World::request_turn(NetId net_id, Direction dir) {
     return true;
 }
 
+namespace {
+
+void add_to_inventory(CInventory& inventory, ItemTypeId id) {
+    for (ItemStack& stack : inventory.items) {
+        if (stack.id == id) {
+            ++stack.count;
+            return;
+        }
+    }
+    inventory.items.push_back(ItemStack{id, 1});
+}
+
+bool remove_from_inventory(CInventory& inventory, ItemTypeId id) {
+    for (auto it = inventory.items.begin(); it != inventory.items.end(); ++it) {
+        if (it->id == id) {
+            if (--it->count == 0) {
+                inventory.items.erase(it);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+bool World::equip(NetId net_id, ItemTypeId item) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return false;
+    }
+    auto* inventory = registry_.try_get<CInventory>(entity);
+    auto* equipment = registry_.try_get<CEquipment>(entity);
+    if (inventory == nullptr || equipment == nullptr) {
+        return false;
+    }
+    const ItemType& type = item_types_.get(item);
+    if (!type.equippable) {
+        return false;
+    }
+    if (!remove_from_inventory(*inventory, item)) {
+        return false;  // the actor does not actually have it
+    }
+
+    const auto index = static_cast<std::size_t>(type.slot);
+    const ItemTypeId previous = equipment->slots[index];
+    equipment->slots[index] = item;
+    if (previous != kItemNone) {
+        add_to_inventory(*inventory, previous);  // swap the old one back
+    }
+    return true;
+}
+
+bool World::unequip(NetId net_id, EquipSlot slot) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return false;
+    }
+    auto* inventory = registry_.try_get<CInventory>(entity);
+    auto* equipment = registry_.try_get<CEquipment>(entity);
+    if (inventory == nullptr || equipment == nullptr) {
+        return false;
+    }
+    const auto index = static_cast<std::size_t>(slot);
+    const ItemTypeId current = equipment->slots[index];
+    if (current == kItemNone) {
+        return false;
+    }
+    equipment->slots[index] = kItemNone;
+    add_to_inventory(*inventory, current);
+    return true;
+}
+
 void World::set_attack_target(NetId attacker, NetId target) {
     const entt::entity entity = lookup(attacker);
     if (entity == entt::null) {

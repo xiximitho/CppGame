@@ -89,6 +89,15 @@ public:
     /// Brings a dead (CRespawn) actor back at its respawn point, full health.
     void respawn_actor(NetId net_id);
 
+    /// Moves `item` from the actor's backpack into its equip slot, swapping any
+    /// item already there back to the backpack. False if the actor does not have
+    /// the item or it is not equippable. Untrusted input: validated here.
+    bool equip(NetId net_id, ItemTypeId item);
+
+    /// Moves whatever is in `slot` back to the backpack. False if the slot is
+    /// empty.
+    bool unequip(NetId net_id, EquipSlot slot);
+
     /// Attacks that landed since the last clear. update_combat appends here; the
     /// server sends them as S2C_Effect and the solo session feeds them to the
     /// client, then clears.
