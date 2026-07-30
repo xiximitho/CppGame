@@ -38,7 +38,14 @@ ctest --preset debug
 # Rodar
 ./build/debug/bin/game_client                          # solo
 ./scripts/run-local.sh                                 # sobe servidor + cliente
-./build/debug/bin/game_client --connect 127.0.0.1:7777
+./build/debug/bin/game_client --connect 127.0.0.1:7777 --name felipe
+
+# Autorar conteúdo — F2 alterna mapa <-> modo item
+./build/debug/bin/game_editor
+./build/debug/bin/game_bake                            # content.db -> content.bin
+
+# Servidor com persistência
+./build/debug/bin/game_server --players players.db --save-every 60
 ```
 
 `-Werror` é **off** por padrão e **on** no preset `ci`. Antes de dizer que uma
@@ -47,10 +54,31 @@ mudança está pronta, compile com `-DGAME_WERROR=ON`: os avisos são agressivos
 esse código é limpo hoje — mantenha assim. Em particular, passar `float` para
 `printf`/`LOG_*` exige `static_cast<double>` explícito.
 
+### Conteúdo é dado, não código
+
+Tipo de item novo (ou ajuste de attack/defense/alcance) **não é mudança de C++**:
+é uma linha no `assets/content.db`, editada pelo `game_editor` (`F2` abre o modo
+item; `N` cria, setas editam, campo `sprite` + `enter` escolhe o recorte no atlas,
+`S` salva). O `S` grava no banco **e** regera o `assets/content.bin`. Receitas em
+`docs/authoring.md`, o porquê em `docs/content.md`.
+
+Quem lê o quê: **servidor lê o `content.db` direto**; **cliente lê o `content.bin`**
+(no Android os assets ficam dentro do pacote e não são arquivos, e SQLite precisa de
+caminho real). Editou fora do editor — SQL na mão, script? **Rode `game_bake`**, ou
+o servidor rejeita o cliente com `content mismatch: re-run game_bake`. Isso é o
+comportamento correto, não bug: ver o invariante do hash de conteúdo mais abaixo.
+
+`assets/content.db` é commitado (é conteúdo); `assets/content.bin` é derivado e
+gitignored; `players.db` é save de jogador e nunca vai para o git.
+
 ## Arquitetura
 
 Documentação de fundo em `docs/architecture.md`, `docs/dependencies.md`,
-`docs/mobile.md`, `docs/roadmap.md`. O que segue é o mínimo para não quebrar nada.
+`docs/mobile.md`, `docs/roadmap.md`. Para conteúdo e autoria: `docs/content.md` (o
+pipeline e o porquê das decisões), `docs/authoring.md` (as receitas),
+`docs/sprites.md`. **`docs/pendencias.md` é o handoff**: o que está pronto, o que
+falta, e o que foi verificado de que jeito. O que segue é o mínimo para não quebrar
+nada.
 
 ### A regra de camadas
 
@@ -212,6 +240,15 @@ interface.
 - **`main.cpp` parseia argumentos duas vezes** de propósito: antes do SDL (para
   `--help` funcionar sem display) e depois do `client.cfg` (para linha de comando
   ganhar do arquivo).
+- **Id de item é contrato.** Uma vez shippado, o significado de um id não muda e o
+  número nunca é reciclado: mapa salvo e cliente antigo referenciam item por número,
+  então reemitir o 1723 transforma um mapa antigo em outra coisa sem ninguém notar.
+  `retired_item_ids` guarda os aposentados e `next_free_item_id` tira o máximo das
+  **duas** tabelas. Aposentar é `shift+del` no editor, não `DELETE`.
+- **Salvar jogador ANTES do despawn.** No handler de desconexão, `persist()` vem
+  antes de `world.despawn()`: depois dele não existe mais ator de onde ler posição, e
+  o save gravaria um personagem default por cima de um real. Mesma razão pela qual
+  `snapshot_character` devolve `nullopt` em vez de um `CharacterSave{}`.
 - **Assets só por `platform::vfs`.** No Android eles ficam dentro do APK e não são
   arquivos; `<fstream>` funciona no desktop e falha no device, meses depois.
 
@@ -225,11 +262,38 @@ SDL_VIDEODRIVER=dummy ./build/debug/bin/game_client --solo --seed 23 --zoom 1 \
 Grava um BMP e sai. É como conferir mudança de render nesta máquina, e como pedir
 para alguém mandar exatamente o que está vendo.
 
+O `game_editor` aceita o mesmo `--screenshot`, e loga o número de draw calls junto —
+headless é o único lugar onde isso é observável (o cliente põe no título da janela).
+Um atlas só, cena inteira em **1 draw call**, texto incluído; se subir, o batch
+quebrou.
+
+```bash
+# O modo item e o seletor de sprite, sem janela: o driver dummy não entrega teclas,
+# então estas flags existem para alcançá-los.
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --item-mode      --screenshot /tmp/f.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --sprite-picker  --screenshot /tmp/p.bmp
+
+# Vincular sprite sem clicar — kind:id:coluna:linha, em células. Também serve para
+# vincular em lote quando chega uma folha de arte nova.
+./build/debug/bin/game_editor --bind-sprite object:103:3:1
+```
+
+**O que isso NÃO cobre:** digitar no formulário. O driver dummy não entrega teclas,
+então o caminho teclado→banco nunca foi exercitado automaticamente — os caminhos de
+banco têm teste unitário e o `--bind-sprite` chama a mesma função que o clique, mas o
+input em si é território não testado. Ver `docs/pendencias.md`.
+
 ## Limites conhecidos — não são bugs para consertar de passagem
 
 `docs/roadmap.md` tem a tabela completa ("Coisas que estão erradas de propósito").
 Os que mais confundem:
 
+- **Não existe autenticação.** O `HelloMsg` carrega um nome e nenhuma credencial, então
+  o nome **é** a identidade: qualquer um digita o nome de outro e recebe o personagem
+  dele. Aceitável em rede confiável, inaceitável fora dela. Foi deixado de fora de
+  propósito (precisa de KDF de verdade, decisão de produto e mudança de protocolo) —
+  ver `docs/pendencias.md`.
+- **Um personagem por conta.** O schema permite vários; a query não.
 - **Andares 1 e 2 são inalcançáveis**: não existe escada nem rampa, e o spawn é
   sempre `z=0`. Toda a infra multi-andar existe e é testada, mas nunca foi vista na
   tela.
