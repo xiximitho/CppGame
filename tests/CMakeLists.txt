@@ -32,7 +32,7 @@ target_include_directories(game_tests PRIVATE
 # conditional rather than assumed. It uses ":memory:" databases, keeping the suite
 # free of any need for a writable directory.
 if(TARGET game_store)
-  target_sources(game_tests PRIVATE test_store.cpp)
+  target_sources(game_tests PRIVATE test_store.cpp test_content_store.cpp)
   target_link_libraries(game_tests PRIVATE game_store)
 endif()
 

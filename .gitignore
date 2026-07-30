@@ -11,6 +11,14 @@ cmake-build-*/
 # Local, machine-specific preset overrides. Intentionally not committed.
 CMakeUserPresets.json
 
+# SQLite write-ahead sidecars. Transient by definition and never committed.
+# The DATABASES themselves are treated differently on purpose:
+#   assets/content.db  IS authored content and may be committed (see below).
+#   players.db         is server-local state and must never be.
+*.db-wal
+*.db-shm
+players.db
+
 # Editors / tooling
 .vscode/
 .idea/

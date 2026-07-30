@@ -40,6 +40,8 @@
 #include "sim/tile_ids.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
+#include "store/content.hpp"
+#include "store/db.hpp"
 
 namespace {
 
@@ -47,6 +49,7 @@ struct Options {
     std::string map_path;  // empty -> asset_root()/maps/dungeon.txt after init
     float       zoom = 1.0F;
     std::string screenshot_path;      // headless verification, like the client
+    std::string content_path = "assets/content.db";
     int         screenshot_frame = 2;
 };
 
@@ -60,6 +63,8 @@ Options parse_args(int argc, char** argv) {
             opt.zoom = std::strtof(argv[++i], nullptr);
         } else if (arg == "--screenshot" && i + 1 < argc) {
             opt.screenshot_path = argv[++i];
+        } else if (arg == "--content" && i + 1 < argc) {
+            opt.content_path = argv[++i];
         }
     }
     return opt;
@@ -84,19 +89,6 @@ bool write_file(const std::string& path, const std::string& data) {
     return out.good();
 }
 
-const char* tile_name(sim::ItemTypeId id) {
-    switch (id) {
-        case sim::tiles::kGrass: return "grass";
-        case sim::tiles::kDirt:  return "dirt";
-        case sim::tiles::kStone: return "stone";
-        case sim::tiles::kWater: return "water";
-        case sim::tiles::kWall:  return "wall";
-        case sim::tiles::kTree:  return "tree";
-        case sim::tiles::kCrate: return "crate";
-        default:                 return "item";
-    }
-}
-
 struct Brush {
     enum class Kind { Ground, Object, EraseObject, Void };
     Kind            kind = Kind::Ground;
@@ -106,21 +98,28 @@ struct Brush {
 
 /// The palette: every catalogue id that has a sprite, split into ground vs object
 /// by ItemFlag::Ground, followed by the two eraser brushes.
-std::vector<Brush> build_palette(const sim::ItemTypeRegistry& registry,
+///
+/// Names come from the content database, which is why this takes rows rather than
+/// a registry: the simulation has no notion of an item's name, and the hardcoded
+/// switch that used to live here could only ever name the seven ids someone had
+/// remembered to add to it.
+std::vector<Brush> build_palette(const std::vector<store::ItemRow>& rows,
                                  const client::Tileset& tileset) {
     std::vector<Brush> palette;
-    char label[64];
-    for (const sim::ItemTypeId id : registry.ids()) {
-        const sim::ItemType& type = registry.get(id);
-        if (type.is_ground() && tileset.ground(id).valid) {
-            std::snprintf(label, sizeof label, "ground %s (%u)", tile_name(id),
-                          static_cast<unsigned>(id));
-            palette.push_back({Brush::Kind::Ground, id, label});
-        } else if (!type.is_ground() && tileset.object(id).valid) {
-            std::snprintf(label, sizeof label, "object %s (%u)", tile_name(id),
-                          static_cast<unsigned>(id));
-            palette.push_back({Brush::Kind::Object, id, label});
+    char label[80];
+    for (const store::ItemRow& row : rows) {
+        const sim::ItemTypeId id = row.type.id;
+        const char* kind = row.type.is_ground() ? "ground" : "object";
+        const bool has_sprite = row.type.is_ground() ? tileset.ground(id).valid
+                                                     : tileset.object(id).valid;
+        if (!has_sprite) {
+            continue;
         }
+        std::snprintf(label, sizeof label, "%s %s (%u)", kind, row.name.c_str(),
+                      static_cast<unsigned>(id));
+        palette.push_back({row.type.is_ground() ? Brush::Kind::Ground
+                                                : Brush::Kind::Object,
+                           id, label});
     }
     palette.push_back({Brush::Kind::EraseObject, sim::kItemNone, "erase object"});
     palette.push_back({Brush::Kind::Void, sim::kItemNone, "void (hole)"});
@@ -218,7 +217,31 @@ int main(int argc, char** argv) {
     {
         auto renderer = client::make_sdl_renderer(sdl_renderer);
         const client::Tileset tileset = client::Tileset::load(*renderer);
-        const sim::ItemTypeRegistry registry = sim::build_default_registry();
+
+        // The editor reads the content database directly — it is a tool, not the
+        // client, and it is the thing that WRITES items. The connection stays open
+        // for the session because the item mode saves through it.
+        std::optional<store::Db> content =
+            store::open_content_db(opt.content_path);
+        if (!content.has_value()) {
+            LOG_ERROR("cannot open content database '%s'",
+                      opt.content_path.c_str());
+            SDL_DestroyRenderer(sdl_renderer);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        std::vector<store::ItemRow> item_rows;
+        sim::ItemTypeRegistry registry;
+        if (!store::load_item_rows(*content, item_rows) ||
+            !store::load_item_types(*content, registry)) {
+            LOG_ERROR("cannot load item types from '%s'",
+                      opt.content_path.c_str());
+            SDL_DestroyRenderer(sdl_renderer);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
 
         client::WorldView view;
         std::optional<sim::TilePos> spawn;
@@ -252,7 +275,7 @@ int main(int argc, char** argv) {
         }
         view.ready = true;
 
-        const std::vector<Brush> palette = build_palette(registry, tileset);
+        const std::vector<Brush> palette = build_palette(item_rows, tileset);
         std::size_t brush_i = 0;
         LOG_INFO("palette has %zu brushes:", palette.size());
         for (std::size_t i = 0; i < palette.size(); ++i) {

@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -19,6 +20,8 @@
 #include "sim/rng.hpp"
 #include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
+#include "store/content.hpp"
+#include "store/db.hpp"
 #include "sim/world.hpp"
 
 namespace {
@@ -82,6 +85,8 @@ struct Options {
     std::uint64_t seed = 1337;
     int           wanderers = 60;
     std::size_t   max_peers = 64;
+    /// Relative to the working directory, same convention as the map path.
+    std::string   content_path = "assets/content.db";
 };
 
 /// Per-connection state. Deliberately outside sim/: which chunks a socket has
@@ -117,6 +122,8 @@ void print_usage() {
         "  --seed N         world seed (default 1337)\n"
         "  --wanderers N    wandering actors to spawn (default 60)\n"
         "  --max-peers N    connection limit (default 64)\n"
+        "  --content PATH   content database (default assets/content.db,\n"
+        "                   created and seeded if absent)\n"
         "  --help           this text\n",
         static_cast<unsigned>(net::kDefaultPort));
 }
@@ -138,6 +145,8 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.wanderers = std::atoi(argv[++i]);
         } else if (arg == "--max-peers" && has_value) {
             options.max_peers = static_cast<std::size_t>(std::atoi(argv[++i]));
+        } else if (arg == "--content" && has_value) {
+            options.content_path = argv[++i];
         } else {
             LOG_WARN("ignoring unknown argument '%s'", arg.c_str());
         }
@@ -296,7 +305,24 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const sim::ItemTypeRegistry item_types = sim::build_default_registry();
+    // Content comes from the database, not from compiled-in tables: adding an item
+    // is authoring, not a rebuild (docs/content.md). The connection stays open for
+    // the process lifetime because player persistence uses the same file.
+    std::optional<store::Db> content = store::open_content_db(options.content_path);
+    if (!content.has_value()) {
+        LOG_ERROR("cannot open content database '%s'",
+                  options.content_path.c_str());
+        return 1;
+    }
+    sim::ItemTypeRegistry item_types;
+    if (!store::load_item_types(*content, item_types)) {
+        LOG_ERROR("cannot load item types from '%s'",
+                  options.content_path.c_str());
+        return 1;
+    }
+    LOG_INFO("loaded %zu item types from '%s'", item_types.count(),
+             options.content_path.c_str());
+
     sim::World world =
         build_server_world("assets/maps/dungeon.txt", options.seed, item_types);
     sim::Rng rng(options.seed ^ 0xA24BAED4963EE407ULL);

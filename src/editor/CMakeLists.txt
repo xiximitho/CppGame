@@ -19,6 +19,7 @@ target_link_libraries(game_editor PRIVATE
     game_core
     game_sim
     game_platform
+    game_store
     SDL3::SDL3
     SDL3_image::SDL3_image
     game_warnings)
