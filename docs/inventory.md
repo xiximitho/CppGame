@@ -60,6 +60,19 @@ mostra os slots de equipamento com o ícone do que está vestido e a mochila aba
 lendo de `WorldView::equipment/inventory`. É desenhado como overlay fixo (mesmo
 truque de câmera-inversa do editor).
 
+## Loot e itens no chão
+
+Um monstro solta seu inventário/equipamento no tile onde morre (`World::apply_damage`
+chama `drop_item` antes do despawn). Itens no chão vivem num mapa esparso em
+`World` (`ground_piles()`, por tile), separado do `TileMap` denso. Quem tem
+mochila **pega automaticamente ao pisar** no tile (em `World::step`, na chegada do
+passo). O cliente desenha o ícone do item no chão (`world_render`, abaixo dos
+atores) a partir de `WorldView::ground_items`.
+
+Jogadores (com `CRespawn`) **não** soltam loot ao morrer por ora — o design
+hardcore do Grimhold (soltar item + penalidade) é um passo à frente. Monstros
+nascem com um item de loot (`solo`/`server`).
+
 ## Equipar/desequipar (interativo)
 
 Com o painel aberto (`I`): **clicar num item da mochila equipa** (mandando
@@ -79,6 +92,8 @@ validam (item existe? é equipável?), trocam o que já estava no slot, e mexem 
 - `EffectFeed` (brilho melee / projétil ranged) e o painel de inventário.
 - **Equipar/desequipar clicando** no painel (`C2S_Equip`/`C2S_Unequip`,
   protocolo 5), validado no servidor.
+- **Loot no chão**: monstro dropa ao morrer, pega-se andando por cima, e o ícone
+  aparece no piso (display no solo).
 
 ## Limitações atuais (próximos passos)
 
@@ -86,4 +101,6 @@ validam (item existe? é equipável?), trocam o que já estava no slot, e mexem 
   no solo (`WorldView::equipment/inventory` fica vazio em rede). É um TODO
   marcado no `session`.
 - **Paperdoll**: a arma/armadura equipada não aparece no boneco, só no painel.
-- Sem itens no chão / loot / peso limitando a mochila.
+- **Loot no chão só é visto no solo** (o `ground_items` do remoto não vai pro fio
+  ainda); a mecânica de drop/pickup roda no servidor de qualquer forma.
+- Loot de jogador na morte (hardcore) e peso limitando a mochila ainda não.

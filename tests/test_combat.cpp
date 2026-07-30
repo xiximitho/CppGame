@@ -160,6 +160,39 @@ TEST_CASE("equipping from the backpack swaps gear and changes reach") {
     CHECK_FALSE(world.unequip(who, EquipSlot::Weapon));  // already empty
 }
 
+TEST_CASE("a slain monster drops loot, picked up by walking over it") {
+    World world = make_armed_world();
+    const NetId hero = world.allocate_net_id();
+    world.spawn_actor(hero, TilePos{5, 5, 0}, 0);
+    world.registry().emplace<CInventory>(world.lookup(hero));  // empty pack
+
+    const NetId mob = world.allocate_net_id();
+    const entt::entity mob_entity = world.spawn_actor(mob, TilePos{6, 5, 0}, 0);
+    world.registry().emplace<CInventory>(
+        mob_entity, CInventory{{{tiles::kShield, 1}}});  // carries loot
+
+    world.set_attack_target(hero, mob);
+    for (int i = 0; i < 220; ++i) {  // beat it down
+        tick(world);
+    }
+    REQUIRE((world.lookup(mob) == entt::null));  // no CRespawn -> despawned
+
+    const std::vector<ItemStack>* pile = world.ground_items_at(TilePos{6, 5, 0});
+    REQUIRE(pile != nullptr);
+    REQUIRE(pile->size() == 1);
+    CHECK(pile->front().id == tiles::kShield);
+
+    // Walk the hero onto the loot tile; step() picks it up on arrival.
+    world.request_walk(hero, Direction::East);
+    for (int i = 0; i < static_cast<int>(kDefaultStepTicks) + 3; ++i) {
+        tick(world);
+    }
+    CHECK(world.ground_items_at(TilePos{6, 5, 0}) == nullptr);
+    const auto& pack = world.registry().get<CInventory>(world.lookup(hero));
+    REQUIRE(pack.items.size() == 1);
+    CHECK(pack.items[0].id == tiles::kShield);
+}
+
 TEST_CASE("a player (CRespawn) dies then respawns at its point") {
     World world = make_open_world();
     const NetId attacker = world.allocate_net_id();

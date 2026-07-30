@@ -13,6 +13,12 @@
 
 namespace client {
 
+/// One tile's loot as the renderer sees it: where, and which icon to draw.
+struct GroundItemView {
+    sim::TilePos    tile;
+    sim::ItemTypeId id = sim::kItemNone;
+};
+
 /// Everything the renderer is allowed to know about the world.
 ///
 /// Note what is absent: no entt::registry, no World. The renderer draws a list of
@@ -32,6 +38,10 @@ struct WorldView {
     /// over the wire (a known TODO).
     std::array<sim::ItemTypeId, sim::kEquipSlotCount> equipment{};
     std::vector<sim::ItemStack>                       inventory;
+
+    /// Loot lying on the ground (one entry per tile, the top item), for drawing.
+    /// Solo fills it; remote leaves it empty until it is sent over the wire.
+    std::vector<GroundItemView> ground_items;
 };
 
 /// Where the world comes from. Solo runs the simulation in-process; Remote

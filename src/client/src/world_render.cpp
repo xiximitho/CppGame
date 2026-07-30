@@ -206,6 +206,29 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
                          Color{255, 255, 255, 255});
         }
 
+        // Loot on the floor: the item icon at the tile centre, above the ground
+        // but below anything standing on it, so an actor walks over it.
+        for (const GroundItemView& loot : view.ground_items) {
+            if (loot.tile.z != z) {
+                continue;
+            }
+            const AtlasEntry& icon = tileset.icon(loot.id);
+            if (!icon.valid) {
+                continue;
+            }
+            const iso::ScreenPos apex = iso::tile_to_screen(loot.tile);
+            const iso::ScreenPos at{
+                apex.x - icon.width * 0.5F,
+                apex.y + static_cast<float>(iso::kHalfTileHeight) -
+                    icon.height * 0.5F};
+            submit_entry(renderer, texture, icon, at,
+                         iso::depth_key(static_cast<float>(loot.tile.x),
+                                        static_cast<float>(loot.tile.y), z,
+                                        iso::Layer::Ground) +
+                             0.6F,
+                         Color{255, 255, 255, 255});
+        }
+
         for (const sim::ActorState& actor : view.actors) {
             if (actor.tile.z != z) {
                 continue;

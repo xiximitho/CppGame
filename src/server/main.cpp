@@ -309,6 +309,13 @@ int main(int argc, char** argv) {
         const sim::NetId id = world.allocate_net_id();
         const entt::entity entity = world.spawn_actor(id, at, 0);
         world.registry().emplace<sim::CWanderer>(entity, sim::CWanderer{0});
+        // Loot to drop on death.
+        static const sim::TileId kLoot[] = {
+            sim::tiles::kShield, sim::tiles::kHelmet, sim::tiles::kBoots,
+            sim::tiles::kRing, sim::tiles::kAmulet};
+        world.registry().emplace<sim::CInventory>(
+            entity,
+            sim::CInventory{{{kLoot[static_cast<std::size_t>(id % 5)], 1}}});
     }
 
     auto transport = net::create_server(options.port, options.max_peers);

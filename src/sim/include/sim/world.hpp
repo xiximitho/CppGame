@@ -14,6 +14,13 @@
 
 namespace sim {
 
+/// Items lying on one tile. Kept with its TilePos so the client can render it
+/// without reversing the packed occupancy key.
+struct GroundPile {
+    TilePos                tile;
+    std::vector<ItemStack> items;
+};
+
 /// The authoritative game state and the only thing that advances time.
 ///
 /// Contains no rendering, no sockets, no file access and no wall-clock reads.
@@ -98,6 +105,17 @@ public:
     /// empty.
     bool unequip(NetId net_id, EquipSlot slot);
 
+    /// Drops an item stack onto a tile (merging with what is already there).
+    void drop_item(TilePos tile, ItemStack stack);
+
+    /// The item stacks lying on a tile, or nullptr if the tile is bare.
+    const std::vector<ItemStack>* ground_items_at(TilePos tile) const;
+
+    /// All ground piles, for the client to render. Keyed by packed tile.
+    const std::unordered_map<std::uint64_t, GroundPile>& ground_piles() const {
+        return ground_;
+    }
+
     /// Attacks that landed since the last clear. update_combat appends here; the
     /// server sends them as S2C_Effect and the solo session feeds them to the
     /// client, then clears.
@@ -125,8 +143,9 @@ private:
     entt::registry           registry_;
     std::vector<AttackEvent> attack_events_;
 
-    std::unordered_map<NetId, entt::entity>  by_net_id_;
-    std::unordered_map<std::uint64_t, NetId> occupancy_;
+    std::unordered_map<NetId, entt::entity>       by_net_id_;
+    std::unordered_map<std::uint64_t, NetId>      occupancy_;
+    std::unordered_map<std::uint64_t, GroundPile> ground_;
 
     /// Mutable scratch, not logical state: reused across calls so pathfinding does
     /// not allocate a map-sized working set per request.

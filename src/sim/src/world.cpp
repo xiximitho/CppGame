@@ -208,7 +208,32 @@ bool remove_from_inventory(CInventory& inventory, ItemTypeId id) {
     return false;
 }
 
+void merge_stack(std::vector<ItemStack>& into, ItemStack stack) {
+    for (ItemStack& existing : into) {
+        if (existing.id == stack.id) {
+            existing.count = static_cast<std::uint16_t>(existing.count +
+                                                        stack.count);
+            return;
+        }
+    }
+    into.push_back(stack);
+}
+
 }  // namespace
+
+void World::drop_item(TilePos tile, ItemStack stack) {
+    if (stack.id == kItemNone || stack.count == 0) {
+        return;
+    }
+    GroundPile& pile = ground_[tile_key(tile)];
+    pile.tile = tile;
+    merge_stack(pile.items, stack);
+}
+
+const std::vector<ItemStack>* World::ground_items_at(TilePos tile) const {
+    const auto it = ground_.find(tile_key(tile));
+    return it == ground_.end() ? nullptr : &it->second.items;
+}
 
 bool World::equip(NetId net_id, ItemTypeId item) {
     const entt::entity entity = lookup(net_id);
@@ -300,6 +325,22 @@ bool World::apply_damage(NetId net_id, std::int32_t amount) {
         registry_.remove<CTarget>(entity);
         registry_.emplace_or_replace<CDead>(entity, CDead{tick_ + kRespawnTicks});
     } else {
+        // A monster spills its loot where it fell, then vanishes.
+        if (const auto* pos = registry_.try_get<CPosition>(entity)) {
+            const TilePos where = pos->tile;
+            if (const auto* inventory = registry_.try_get<CInventory>(entity)) {
+                for (const ItemStack& stack : inventory->items) {
+                    drop_item(where, stack);
+                }
+            }
+            if (const auto* equipment = registry_.try_get<CEquipment>(entity)) {
+                for (const ItemTypeId id : equipment->slots) {
+                    if (id != kItemNone) {
+                        drop_item(where, ItemStack{id, 1});
+                    }
+                }
+            }
+        }
         despawn(net_id);
     }
     return true;
@@ -342,6 +383,19 @@ void World::step() {
         auto& pos = registry_.get<CPosition>(entity);
         pos.tile = walk.to;
         registry_.erase<CWalk>(entity);
+
+        // Walk over loot to pick it up (actors with a backpack only).
+        if (auto* inventory = registry_.try_get<CInventory>(entity)) {
+            const auto pile = ground_.find(tile_key(pos.tile));
+            if (pile != ground_.end()) {
+                for (const ItemStack& stack : pile->second.items) {
+                    for (std::uint16_t n = 0; n < stack.count; ++n) {
+                        add_to_inventory(*inventory, stack.id);
+                    }
+                }
+                ground_.erase(pile);
+            }
+        }
     }
 }
 

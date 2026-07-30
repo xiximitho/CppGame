@@ -220,6 +220,13 @@ private:
             const sim::NetId id = world_.allocate_net_id();
             const entt::entity entity = world_.spawn_actor(id, at, 0);
             world_.registry().emplace<sim::CWanderer>(entity, sim::CWanderer{0});
+            // A little loot to drop on death, so the loop is visible.
+            static const sim::TileId kLoot[] = {
+                sim::tiles::kShield, sim::tiles::kHelmet, sim::tiles::kBoots,
+                sim::tiles::kRing, sim::tiles::kAmulet};
+            world_.registry().emplace<sim::CInventory>(
+                entity, sim::CInventory{{{kLoot[static_cast<std::size_t>(id % 5)],
+                                          1}}});
             ++spawned_wanderers_;
         }
     }
@@ -247,6 +254,14 @@ private:
         if (const auto* inventory =
                 world_.registry().try_get<sim::CInventory>(local)) {
             view_.inventory = inventory->items;
+        }
+
+        view_.ground_items.clear();
+        for (const auto& [key, pile] : world_.ground_piles()) {
+            if (!pile.items.empty()) {
+                view_.ground_items.push_back(
+                    GroundItemView{pile.tile, pile.items.front().id});
+            }
         }
     }
 
