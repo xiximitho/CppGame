@@ -13,11 +13,17 @@ CMakeUserPresets.json
 
 # SQLite write-ahead sidecars. Transient by definition and never committed.
 # The DATABASES themselves are treated differently on purpose:
-#   assets/content.db  IS authored content and may be committed (see below).
+#   assets/content.db  IS authored content and is committed: it is the source of
+#                      truth an editor writes and a team shares.
 #   players.db         is server-local state and must never be.
 *.db-wal
 *.db-shm
 players.db
+
+# The baked content blob is DERIVED from assets/content.db by tools/bake, the same
+# way an object file is derived from a .cpp. Regenerate it with `game_bake` after
+# editing items; a client with no blob falls back to the built-in catalogue.
+assets/content.bin
 
 # Editors / tooling
 .vscode/

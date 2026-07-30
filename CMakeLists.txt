@@ -105,10 +105,13 @@ if(GAME_BUILD_CLIENT)
   add_subdirectory(src/client)
 endif()
 
-if(GAME_BUILD_TOOLS AND GAME_BUILD_CLIENT)
-  # The editor draws, so it needs the client's renderer and SDL. The content baker
-  # does not and will live under tools/ when it exists.
-  add_subdirectory(src/editor)
+if(GAME_BUILD_TOOLS)
+  # The baker needs no SDL: it is a database read and a byte write.
+  add_subdirectory(tools)
+  # The editor draws, so it also needs the client's renderer and SDL.
+  if(GAME_BUILD_CLIENT)
+    add_subdirectory(src/editor)
+  endif()
 endif()
 
 if(GAME_BUILD_SERVER)

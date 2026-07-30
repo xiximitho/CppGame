@@ -114,6 +114,12 @@ struct ItemType {
     std::uint8_t  attack_range = 1;   ///< tiles; melee = 1
     std::uint8_t  effect       = 0;   ///< client attack-effect id for this weapon
 
+    /// Defaulted member-wise comparison. Exists so a round-trip (database → blob →
+    /// registry) can be checked as a whole rather than field by field at every call
+    /// site — a check that only compares the fields someone remembered to list is
+    /// exactly how a dropped field survives review.
+    friend bool operator==(const ItemType&, const ItemType&) = default;
+
     constexpr bool blocks_walk()  const { return flags.has(ItemFlag::BlocksWalk); }
     constexpr bool blocks_sight() const { return flags.has(ItemFlag::BlocksSight); }
     constexpr bool is_ground()    const { return flags.has(ItemFlag::Ground); }
