@@ -1,0 +1,9 @@
+# O compile_commands.json é gerado pelo CMake dentro do build dir
+# (CMAKE_EXPORT_COMPILE_COMMANDS, ver CMakeLists.txt). Apontar o clangd para cá
+# evita ter que simlinkar o arquivo na raiz — ele é gitignored de propósito,
+# porque contém caminhos absolutos desta máquina.
+#
+# Se você trabalha em outro preset, sobrescreva com um .clangd fora do git ou
+# ajuste esta linha localmente. `debug` é o preset do dia a dia.
+CompileFlags:
+  CompilationDatabase: build/debug

@@ -33,6 +33,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Base de compilação para o language server (clangd e qualquer outro que a leia).
+# Sem ela o editor não conhece os -I de cada módulo: marca `sim/...` como "file
+# not found" e todo tipo que vem de header some, mesmo com o build passando. O
+# `.clangd` na raiz aponta para build/debug.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Everything lands in one place so shipping a build is "copy build/bin".
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
