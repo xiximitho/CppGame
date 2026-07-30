@@ -61,6 +61,11 @@ Regere o PNG:
 python3 tools/gen_placeholder_atlas.py assets/tilesets
 ```
 
+O gerador precisa do Pillow, que os `scripts/setup-*.sh` não instalam (o atlas
+vai commitado, então quem não mexe em arte nunca precisa dele). Se faltar:
+`python3 -m venv .venv && .venv/bin/pip install Pillow`, e rode pelo
+`.venv/bin/python`.
+
 > Trabalhando com arte de verdade em vez do gerador? Basta pintar o recorte no
 > `atlas.png` no mesmo lugar; o gerador é só um placeholder.
 
@@ -217,6 +222,21 @@ Próximo id livre de objeto: **103**. De chão: **5**.
 | `actor` | `dir(0-7) x y w h origin_x origin_y` |
 | `highlight` | `x y w h origin_x origin_y` (cursor) |
 | `solid` | `x y w h` (texel branco pra fundos de UI) |
+| `font` | `first_ascii count x y cell_w cell_h per_row` (fonte bitmap) |
+
+A linha `font` descreve a **grade inteira** de glifos numa linha só: as células
+saem de `first_ascii` em ordem ASCII, `per_row` por faixa, quebrando para a
+faixa seguinte. Hoje é `font 32 95 0 224 6 8 42` — os 95 ASCII imprimíveis em
+células 6×8 (glifo 5×7 + 1px de espaçamento), ocupando a última faixa livre do
+atlas (`y=224..248`). Para corrigir ou adicionar um glifo, edite as 7 linhas
+dele na tabela `FONT` do `tools/gen_placeholder_atlas.py` (`#` é pixel aceso) e
+regere o PNG — não precisa recompilar. **Crescer o conjunto de glifos exige
+crescer o atlas**, porque não sobra mais faixa livre.
+
+Quem desenha texto é `client::ui::text()` (`src/client/include/client/ui.hpp`),
+junto de `ui::fill()` e `ui::sprite()`. Os glifos saem da mesma textura de todo
+o resto, então texto **não custa draw call nenhum** — a cena inteira continua em
+1 (o `game_editor` loga o número junto do `--screenshot`).
 
 Origins canônicos: chão `-32 0`, bloco 64×64 `-32 -32`, ator 32×48 `-16 -32`.
 

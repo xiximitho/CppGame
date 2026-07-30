@@ -9,6 +9,7 @@ add_executable(game_editor
     main.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/sdl_backend.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/tileset.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/src/ui.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/world_render.cpp)
 
 target_include_directories(game_editor PRIVATE

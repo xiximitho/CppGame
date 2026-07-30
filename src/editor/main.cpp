@@ -31,6 +31,7 @@
 #include "client/sdl_backend.hpp"
 #include "client/session.hpp"
 #include "client/tileset.hpp"
+#include "client/ui.hpp"
 #include "client/world_render.hpp"
 #include "core/log.hpp"
 #include "platform/paths.hpp"
@@ -300,21 +301,13 @@ int main(int argc, char** argv) {
         };
 
         // Draws an atlas region at a fixed window rectangle regardless of the
-        // camera, by inverting the camera transform. Same batch as the world, so
-        // the whole UI still costs no extra draw call.
+        // camera. client::ui does the camera inversion; the argument order here is
+        // kept as it was so the menu code below reads unchanged.
         const auto submit_screen = [&](float sx, float sy, float sw, float sh,
                                        const client::AtlasEntry& entry,
                                        client::Color tint, float depth) {
-            float wx = 0.0F;
-            float wy = 0.0F;
-            renderer->window_to_world(sx, sy, wx, wy);
-            client::SpriteCmd cmd;
-            cmd.texture = tileset.texture();
-            cmd.dst = client::Rect{wx, wy, sw / zoom, sh / zoom};
-            cmd.uv = entry.uv;
-            cmd.depth = depth;
-            cmd.tint = tint;
-            renderer->submit(cmd);
+            client::ui::sprite(*renderer, tileset, entry, sx, sy, sw, sh, tint,
+                               depth);
         };
 
         // The palette menu along the bottom. Depths sit above every world tile
@@ -323,7 +316,7 @@ int main(int argc, char** argv) {
             const int vw = renderer->viewport_width();
             const int vh = renderer->viewport_height();
             const client::AtlasEntry& solid = tileset.solid();
-            constexpr float kUi = 1.0e7F;
+            constexpr float kUi = client::ui::kDepth;
 
             submit_screen(0.0F, menu_bar_top(vh), static_cast<float>(vw),
                           kMenuCell + 2.0F * kMenuPad, solid,
@@ -365,6 +358,40 @@ int main(int argc, char** argv) {
                                   kMenuCell - 16.0F, solid, chip, kUi + 300.0F);
                 }
             }
+
+            // Labels. These used to live in the window title, which meant the
+            // brush you were painting with was readable everywhere except the
+            // window you were painting in.
+            const client::Color dim{150, 156, 170, 255};
+            const client::Color bright{236, 240, 248, 255};
+
+            const std::string status = opt.map_path + (dirty ? " *" : "");
+            client::ui::fill(*renderer, tileset, 0.0F, 0.0F,
+                             client::ui::text_width(tileset, status, 2.0F) +
+                                 2.0F * kMenuPad,
+                             client::ui::text_height(tileset, 2.0F) +
+                                 2.0F * kMenuPad,
+                             client::Color{18, 20, 26, 200}, kUi);
+            client::ui::text(*renderer, tileset, status, kMenuPad, kMenuPad,
+                             bright, 2.0F);
+
+            client::ui::text(*renderer, tileset, palette[brush_i].label,
+                             kMenuPad, menu_bar_top(vh) - 18.0F, bright, 2.0F);
+
+            // To the RIGHT of the last palette cell, not below it: the bar is only
+            // as wide as its cells, and anything drawn under them lands behind the
+            // cell quads (which sort at kUi + 200).
+            const float hint_x =
+                kMenuPad + static_cast<float>(palette.size()) *
+                               (kMenuCell + kMenuPad) + kMenuPad;
+            client::ui::text(*renderer, tileset,
+                             "L place   R erase   Tab brush   Ctrl+Z undo   "
+                             "S save   Esc quit",
+                             hint_x,
+                             menu_bar_top(vh) + kMenuPad +
+                                 (kMenuCell - client::ui::text_height(tileset)) *
+                                     0.5F,
+                             dim, 1.0F, kUi + 400.0F);
         };
 
         while (running) {
@@ -541,8 +568,13 @@ int main(int argc, char** argv) {
                 SDL_Surface* shot = SDL_RenderReadPixels(sdl_renderer, nullptr);
                 if (shot != nullptr) {
                     if (SDL_SaveBMP(shot, opt.screenshot_path.c_str())) {
-                        LOG_INFO("wrote screenshot to '%s'",
-                                 opt.screenshot_path.c_str());
+                        // Draw calls go with it: headless is the only place this
+                        // is observable (the client puts it in the window title),
+                        // and one call for the whole scene + UI + text is the
+                        // batching invariant worth noticing when it breaks.
+                        LOG_INFO("wrote screenshot to '%s' (%d draw calls)",
+                                 opt.screenshot_path.c_str(),
+                                 renderer->last_draw_calls());
                     } else {
                         LOG_ERROR("SDL_SaveBMP failed: %s", SDL_GetError());
                     }

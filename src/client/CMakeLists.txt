@@ -10,6 +10,7 @@ set(GAME_CLIENT_SOURCES
     src/tileset.cpp
     src/input.cpp
     src/world_render.cpp
+    src/ui.cpp
     src/damage_feed.cpp
     src/effect_feed.cpp
     src/inventory_ui.cpp

@@ -3,6 +3,7 @@
 #include <array>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "client/renderer2d.hpp"
 #include "sim/tile_map.hpp"
@@ -67,6 +68,17 @@ public:
     /// Attack-effect sprite by id (see sim ItemType::effect); invalid if absent.
     const AtlasEntry& effect(std::uint8_t id) const;
 
+    /// One glyph of the bitmap font. Characters outside the table (and every
+    /// atlas without a `font` line, including the procedural fallback) return an
+    /// invalid entry, so text silently draws nothing rather than garbage.
+    const AtlasEntry& glyph(char c) const;
+
+    /// Font cell size in atlas pixels. The cell includes the 1px spacing, so
+    /// advancing the pen by glyph_advance() needs no kerning table.
+    float glyph_advance() const { return glyph_advance_; }
+    float glyph_height()  const { return glyph_height_; }
+    bool  has_font()      const { return !glyphs_.empty(); }
+
 private:
     /// Fills `out` from the text metadata; returns false if nothing parsed. Kept
     /// a member so it can populate the private lookup tables.
@@ -81,6 +93,12 @@ private:
     AtlasEntry solid_{};
     std::unordered_map<sim::TileId, AtlasEntry>      icons_;
     std::unordered_map<std::uint8_t, AtlasEntry>     effects_;
+    /// Dense, indexed by `character - glyph_first_`; empty when the atlas has no
+    /// font. Dense because text costs one lookup per character per frame.
+    std::vector<AtlasEntry> glyphs_;
+    int   glyph_first_   = 0;
+    float glyph_advance_ = 0.0F;
+    float glyph_height_  = 0.0F;
     AtlasEntry invalid_{};
 };
 

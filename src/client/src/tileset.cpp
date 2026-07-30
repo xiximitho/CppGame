@@ -469,6 +469,29 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
                     entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
                 ++bound;
             }
+        } else if (kind == "font") {
+            // One line describes the whole glyph grid: cells run in ASCII order
+            // from `first`, `per_row` of them, then wrap to the next band.
+            // Deriving every rect here is what keeps the layout out of both the
+            // renderer and the callers.
+            int first = 0, count = 0, per_row = 0;
+            if (!(fields >> first >> count >> x >> y >> w >> h >> per_row)) {
+                return false;
+            }
+            if (count <= 0 || per_row <= 0 || w <= 0 || h <= 0) {
+                return false;
+            }
+            out.glyph_first_   = first;
+            out.glyph_advance_ = static_cast<float>(w);
+            out.glyph_height_  = static_cast<float>(h);
+            out.glyphs_.assign(static_cast<std::size_t>(count), AtlasEntry{});
+            for (int i = 0; i < count; ++i) {
+                const int gx = x + (i % per_row) * w;
+                const int gy = y + (i / per_row) * h;
+                out.glyphs_[static_cast<std::size_t>(i)] = entry_from_pixels(
+                    atlas_w, atlas_h, gx, gy, w, h, 0.0F, 0.0F);
+            }
+            ++bound;
         }
         // Unknown kinds are skipped so a newer atlas.txt does not break an older
         // client outright.
@@ -522,6 +545,17 @@ const AtlasEntry& Tileset::icon(sim::TileId id) const {
 const AtlasEntry& Tileset::effect(std::uint8_t id) const {
     const auto it = effects_.find(id);
     return it == effects_.end() ? invalid_ : it->second;
+}
+
+const AtlasEntry& Tileset::glyph(char c) const {
+    // Widened through unsigned char on purpose: a signed char would wrap on any
+    // byte >= 0x80 from a UTF-8 string, and a negative index is worse than a miss.
+    const auto code  = static_cast<int>(static_cast<unsigned char>(c));
+    const auto index = static_cast<std::size_t>(code - glyph_first_);
+    if (code < glyph_first_ || index >= glyphs_.size()) {
+        return invalid_;
+    }
+    return glyphs_[index];
 }
 
 const AtlasEntry& Tileset::actor(sim::Direction facing) const {
