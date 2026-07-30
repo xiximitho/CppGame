@@ -61,6 +61,9 @@ struct Options {
     /// Start in item mode. Exists so the form can be screenshotted
     /// headlessly (SDL_VIDEODRIVER=dummy delivers no keystrokes).
     bool        start_in_item_mode = false;
+    bool        start_in_picker = false;
+    /// "kind:id:cellx:celly" — bind a sprite and exit, no window needed.
+    std::string bind_command;
 };
 
 Options parse_args(int argc, char** argv) {
@@ -79,6 +82,11 @@ Options parse_args(int argc, char** argv) {
             opt.blob_path = argv[++i];
         } else if (arg == "--item-mode") {
             opt.start_in_item_mode = true;
+        } else if (arg == "--bind-sprite" && i + 1 < argc) {
+            opt.bind_command = argv[++i];
+        } else if (arg == "--sprite-picker") {
+            opt.start_in_item_mode = true;
+            opt.start_in_picker = true;
         }
     }
     return opt;
@@ -230,7 +238,7 @@ int main(int argc, char** argv) {
 
     {
         auto renderer = client::make_sdl_renderer(sdl_renderer);
-        const client::Tileset tileset = client::Tileset::load(*renderer);
+        client::Tileset tileset = client::Tileset::load(*renderer);
 
         // The editor reads the content database directly — it is a tool, not the
         // client, and it is the thing that WRITES items. The connection stays open
@@ -294,8 +302,23 @@ int main(int argc, char** argv) {
 
         // The item editor. Modal: while it is open, events go to it and the map is
         // not drawn, because a form over a half-visible map reads as a render bug.
-        editor::ItemMode item_mode(*content, tileset, window, opt.blob_path);
+        // Rebinding a sprite rewrites atlas.txt, and the tileset holds both the
+        // uploaded texture and the id->rect table, so it has to be rebuilt for the
+        // change to be visible. The old texture is not freed: Renderer2D has no
+        // destroy_texture, so each reload leaks one 256x256 atlas. Acceptable in a
+        // tool, noted in docs/pendencias.md.
+        // Deliberately not overridable by a flag: Tileset::load reads atlas.txt
+        // through platform::vfs from the asset root, so a writer pointed anywhere
+        // else would edit one file while the editor kept showing another.
+        const std::string atlas_path =
+            platform::asset_root() + "tilesets/atlas.txt";
+        editor::ItemMode item_mode(
+            *content, tileset, window, opt.blob_path, atlas_path,
+            [&]() { tileset = client::Tileset::load(*renderer); });
         bool item_mode_active = opt.start_in_item_mode;
+        if (opt.start_in_picker) {
+            item_mode.open_picker();
+        }
 
         // Editing an item can change what the palette shows (a new object, a
         // renamed one), so the palette is rebuilt when leaving item mode rather
@@ -327,6 +350,28 @@ int main(int argc, char** argv) {
         bool erasing = false;
         bool dirty = false;
         bool running = true;
+
+        if (!opt.bind_command.empty()) {
+            // kind:id:cellx:celly
+            std::string kind;
+            int id = 0;
+            int cx = 0;
+            int cy = 0;
+            std::istringstream parts(opt.bind_command);
+            if (std::getline(parts, kind, ':') && (parts >> id) &&
+                parts.ignore(1) && (parts >> cx) && parts.ignore(1) &&
+                (parts >> cy) &&
+                item_mode.bind_from_command(static_cast<sim::ItemTypeId>(id), kind,
+                                            cx, cy)) {
+                LOG_INFO("bound %s %d to cell %d,%d", kind.c_str(), id, cx, cy);
+                running = false;
+            } else {
+                LOG_ERROR("could not apply --bind-sprite '%s' "
+                          "(expected kind:id:cellx:celly)",
+                          opt.bind_command.c_str());
+                running = false;
+            }
+        }
 
         const auto update_title = [&]() {
             char title[192];
@@ -469,7 +514,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
                 if (item_mode_active && event.type != SDL_EVENT_QUIT) {
-                    if (item_mode.handle_event(event)) {
+                    if (item_mode.handle_event(event, *renderer)) {
                         update_title();
                         continue;
                     }

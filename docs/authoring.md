@@ -28,9 +28,14 @@ nunca vê a arte, e é isso que mantém o `server-only` sem lib gráfica — ver
 > `S` para salvar. O `S` grava no banco **e** regera o `assets/content.bin` que o
 > cliente lê, então não sobra passo de terminal.
 >
-> O que ainda é código: **vincular o sprite** ao id novo (uma linha no
-> `atlas.txt`, receita A abaixo). Um item sem sprite existe e funciona nas regras,
-> mas não entra na paleta do mapa e não aparece na tela.
+> **Vincular o sprite também é pelo editor**: no campo `sprite`, `enter` abre um
+> seletor que desenha o `atlas.png` com uma grade do tamanho certo; clique numa
+> célula e a linha do `atlas.txt` é escrita (com os origins canônicos) e o tileset
+> recarrega na hora. O campo `sprite kind` escolhe se está vinculando chão, objeto
+> de mapa ou ícone de inventário — um item pode precisar de mais de um.
+>
+> O que ainda é trabalho de arte: **desenhar** o recorte no `atlas.png`. O seletor
+> escolhe entre células existentes; ele não pinta.
 
 ## Onde as coisas moram
 
@@ -80,9 +85,14 @@ vai commitado, então quem não mexe em arte nunca precisa dele). Se faltar:
 > Trabalhando com arte de verdade em vez do gerador? Basta pintar o recorte no
 > `atlas.png` no mesmo lugar; o gerador é só um placeholder.
 
-### 2. Vincular o id ao recorte — `atlas.txt`
+### 2. Vincular o id ao recorte
 
-Adicione **uma linha** (é isto que responde "qual sprite é o objeto 103?"):
+**Pelo editor** (recomendado): no modo item, campo `sprite`, `enter`. O seletor
+desenha o atlas com grade de 64×64 para objeto (64×32 para chão, 16×16 para ícone),
+a célula já vinculada aparece em verde, e o clique escreve a linha. Os origins são
+calculados, não digitados.
+
+**À mão**, é uma linha (é isto que responde "qual sprite é o objeto 103?"):
 
 ```
 object      103     192  64   64  64  -32      -32
@@ -92,6 +102,10 @@ object      103     192  64   64  64  -32      -32
 `origin` é o deslocamento do **vértice de cima do tile** até o canto superior
 esquerdo do sprite. Valores canônicos: bloco 64×64 → `-32 -32`; chão 64×32 →
 `-32 0`; ator 32×48 → `-16 -32`. Ver [sprites.md](sprites.md).
+
+Para vincular em lote (uma folha de arte nova, dezenas de ids), existe também
+`game_editor --bind-sprite object:103:3:1` — `kind:id:coluna:linha` em células,
+sem abrir janela.
 
 **Só com os passos 1–2 o cliente já desenha o id 103** — mas a simulação ainda não
 conhece esse id. Se você parar aqui, é uma decoração muda.

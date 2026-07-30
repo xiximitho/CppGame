@@ -312,6 +312,8 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
     Tileset tileset;
     tileset.texture_ =
         renderer.create_texture(canvas.data(), canvas.width(), canvas.height());
+    tileset.atlas_width_ = canvas.width();
+    tileset.atlas_height_ = canvas.height();
 
     tileset.ground_[sim::tiles::kGrass] = ground_entry(0);
     tileset.ground_[sim::tiles::kDirt]  = ground_entry(1);
@@ -406,6 +408,9 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
     //   actor          <dir>  <x> <y> <w> <h> <origin_x> <origin_y>   (dir 0..7)
     //   highlight              <x> <y> <w> <h> <origin_x> <origin_y>
     // The id is the sim TileId; that binding is the whole point of the file.
+    out.atlas_width_ = atlas_w;
+    out.atlas_height_ = atlas_h;
+
     std::istringstream stream(text);
     std::string line;
     int bound = 0;

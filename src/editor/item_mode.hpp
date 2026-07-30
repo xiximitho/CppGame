@@ -3,11 +3,14 @@
 #include <SDL3/SDL.h>
 
 #include <cstddef>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "client/renderer2d.hpp"
 #include "client/tileset.hpp"
+#include "atlas_meta.hpp"
 #include "store/content.hpp"
 #include "store/db.hpp"
 
@@ -29,14 +32,21 @@ namespace editor {
 /// map. Nothing here touches the map.
 class ItemMode {
 public:
+    /// `on_atlas_changed` is called after atlas.txt is written, so the editor can
+    /// reload the tileset and have the new sprite show up immediately instead of on
+    /// the next launch.
     ItemMode(store::Db& db, const client::Tileset& tileset, SDL_Window* window,
-             std::string blob_path);
+             std::string blob_path, std::string atlas_path,
+             std::function<void()> on_atlas_changed);
 
     /// Re-reads every row from the database, discarding unsaved edits.
     bool reload();
 
     /// Returns true when the event was consumed and must not reach the map editor.
-    bool handle_event(const SDL_Event& event);
+    /// Needs the renderer because the sprite picker's hit test and its drawing must
+    /// use one geometry, and that geometry depends on the viewport size.
+    bool handle_event(const SDL_Event& event,
+                      const client::Renderer2D& renderer);
 
     void draw(client::Renderer2D& renderer) const;
 
@@ -52,6 +62,16 @@ public:
 
     /// Text for the editor's title bar / status line.
     std::string status() const;
+
+    /// Opens the sprite picker. Exists so a headless screenshot can reach it:
+    /// the dummy video driver delivers no keystrokes.
+    void open_picker() { picking_ = true; }
+
+    /// Binds a cell without going through the picker. Two uses: verifying the write
+    /// path headlessly, and scripting a batch of bindings when a sheet of real art
+    /// arrives and clicking 40 cells by hand is the wrong tool.
+    bool bind_from_command(sim::ItemTypeId id, const std::string& kind, int cell_x,
+                           int cell_y);
 
 private:
     /// One editable property. Order is the order they are drawn and navigated in.
@@ -72,6 +92,8 @@ private:
         AttackKind,
         AttackRange,
         Effect,
+        SpriteKind,
+        Sprite,
         Count,
     };
 
@@ -93,6 +115,24 @@ private:
     void type_digit(int digit);
 
     void select(std::size_t index);
+
+    /// Which atlas.txt line kind this item's sprite is written as. Derived from the
+    /// item, then overridable — an item can legitimately need both a map sprite and
+    /// an inventory icon, and only the author knows which one is being set.
+    std::string derived_sprite_kind() const;
+    /// Re-reads the binding for the current item and sprite kind from atlas.txt.
+    void refresh_binding();
+    /// Writes the picked cell into atlas.txt and reloads the tileset.
+    bool bind_sprite(int cell_x, int cell_y);
+
+    void draw_form(client::Renderer2D& renderer) const;
+    void draw_picker(client::Renderer2D& renderer) const;
+    /// Atlas cell under a window point, if the point is on the sheet.
+    bool picker_cell_at(const client::Renderer2D& renderer, float mx, float my,
+                        int& cell_x, int& cell_y) const;
+    /// Where the atlas sheet is drawn, and at what magnification.
+    void picker_geometry(const client::Renderer2D& renderer, float& x, float& y,
+                         float& scale) const;
     bool create_new();
     bool retire_selected();
 
@@ -115,6 +155,15 @@ private:
     bool                        editing_name_ = false;
     bool                        dirty_ = false;
     std::string                 message_;
+
+    std::string                           atlas_path_;
+    std::function<void()>                 on_atlas_changed_;
+    /// Overrides derived_sprite_kind() when non-empty.
+    std::string                           sprite_kind_;
+    std::optional<AtlasBinding>           binding_;
+    bool                                  picking_ = false;
+    float                                 mouse_x_ = 0.0F;
+    float                                 mouse_y_ = 0.0F;
 };
 
 }  // namespace editor

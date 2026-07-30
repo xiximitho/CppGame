@@ -68,6 +68,12 @@ public:
     /// Attack-effect sprite by id (see sim ItemType::effect); invalid if absent.
     const AtlasEntry& effect(std::uint8_t id) const;
 
+    /// Atlas size in pixels. The editor's sprite picker needs it to draw the sheet
+    /// and to lay a cell grid over it; nothing in the render path does, because every
+    /// AtlasEntry already carries normalised uv.
+    int atlas_width()  const { return atlas_width_; }
+    int atlas_height() const { return atlas_height_; }
+
     /// One glyph of the bitmap font. Characters outside the table (and every
     /// atlas without a `font` line, including the procedural fallback) return an
     /// invalid entry, so text silently draws nothing rather than garbage.
@@ -86,6 +92,8 @@ private:
                                  int atlas_h, Tileset& out);
 
     TextureHandle texture_;
+    int atlas_width_ = 0;
+    int atlas_height_ = 0;
     std::unordered_map<sim::TileId, AtlasEntry> ground_;
     std::unordered_map<sim::TileId, AtlasEntry> object_;
     std::array<AtlasEntry, 8> actor_frames_{};

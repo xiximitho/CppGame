@@ -8,6 +8,7 @@
 add_executable(game_editor
     main.cpp
     item_mode.cpp
+    atlas_meta.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/sdl_backend.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/tileset.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/ui.cpp

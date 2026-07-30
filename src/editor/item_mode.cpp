@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <fstream>
 #include <optional>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -52,12 +53,103 @@ sim::ItemFlags toggled(sim::ItemFlags flags, sim::ItemFlag flag) {
 }  // namespace
 
 ItemMode::ItemMode(store::Db& db, const client::Tileset& tileset,
-                   SDL_Window* window, std::string blob_path)
+                   SDL_Window* window, std::string blob_path,
+                   std::string atlas_path,
+                   std::function<void()> on_atlas_changed)
     : db_(&db),
       tileset_(&tileset),
       window_(window),
-      blob_path_(std::move(blob_path)) {
+      blob_path_(std::move(blob_path)),
+      atlas_path_(std::move(atlas_path)),
+      on_atlas_changed_(std::move(on_atlas_changed)) {
     reload();
+    refresh_binding();
+}
+
+std::string ItemMode::derived_sprite_kind() const {
+    if (!sprite_kind_.empty()) {
+        return sprite_kind_;
+    }
+    // Semantic, not id-band based: something you stand on is ground, something you
+    // wear shows as an inventory icon, everything else is scenery on the map.
+    if (draft_.type.is_ground()) {
+        return "ground";
+    }
+    return draft_.type.equippable ? "item" : "object";
+}
+
+void ItemMode::refresh_binding() {
+    binding_.reset();
+    std::ifstream in(atlas_path_, std::ios::binary);
+    if (!in) {
+        return;
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    binding_ = find_binding(buffer.str(), derived_sprite_kind(), draft_.type.id);
+}
+
+bool ItemMode::bind_sprite(int cell_x, int cell_y) {
+    std::string text;
+    {
+        std::ifstream in(atlas_path_, std::ios::binary);
+        if (!in) {
+            message_ = "cannot read atlas.txt";
+            return false;
+        }
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        text = buffer.str();
+    }
+
+    AtlasBinding binding;
+    binding.kind = derived_sprite_kind();
+    binding.id = draft_.type.id;
+    cell_size_for(binding.kind, binding.w, binding.h);
+    binding.x = cell_x * binding.w;
+    binding.y = cell_y * binding.h;
+    apply_canonical_origin(binding);
+
+    const std::string updated = upsert_binding(text, binding);
+    if (updated == text) {
+        message_ = "atlas.txt unchanged";
+        return false;
+    }
+
+    std::ofstream out(atlas_path_, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        message_ = "cannot write atlas.txt";
+        return false;
+    }
+    out << updated;
+    if (!out.good()) {
+        message_ = "failed writing atlas.txt";
+        return false;
+    }
+
+    binding_ = binding;
+    // The tileset holds the uploaded texture and the id->rect table, so it has to be
+    // rebuilt for the new binding to be visible anywhere in this process.
+    if (on_atlas_changed_) {
+        on_atlas_changed_();
+    }
+    message_ = "bound sprite at " + std::to_string(binding.x) + "," +
+               std::to_string(binding.y);
+    return true;
+}
+
+bool ItemMode::bind_from_command(sim::ItemTypeId id, const std::string& kind,
+                                 int cell_x, int cell_y) {
+    for (std::size_t i = 0; i < rows_.size(); ++i) {
+        if (rows_[i].type.id == id) {
+            select(i);
+            sprite_kind_ = kind;
+            refresh_binding();
+            return bind_sprite(cell_x, cell_y);
+        }
+    }
+    LOG_ERROR("no item %u in the catalogue", static_cast<unsigned>(id));
+    return false;
 }
 
 bool ItemMode::reload() {
@@ -88,6 +180,8 @@ void ItemMode::select(std::size_t index) {
     dirty_ = false;
     editing_name_ = false;
     message_.clear();
+    sprite_kind_.clear();  // back to the kind derived from the item
+    refresh_binding();
 }
 
 bool ItemMode::applicable(Field field) const {
@@ -197,6 +291,28 @@ void ItemMode::adjust(int delta, bool coarse) {
             t.effect = static_cast<std::uint8_t>(
                 clamp_i64(static_cast<std::int64_t>(t.effect) + step, 0, 255));
             break;
+        case Field::SpriteKind: {
+            // Cycles independently of the item's own nature, because an item can
+            // legitimately need both a map sprite and an inventory icon and only the
+            // author knows which is being bound right now.
+            static const char* const kKinds[] = {"ground", "object", "item"};
+            const std::string current = derived_sprite_kind();
+            int index = 0;
+            for (int i = 0; i < 3; ++i) {
+                if (current == kKinds[i]) {
+                    index = i;
+                    break;
+                }
+            }
+            index = ((index + delta) % 3 + 3) % 3;
+            sprite_kind_ = kKinds[index];
+            refresh_binding();
+            // Not a change to the item, so nothing to save.
+            return;
+        }
+        case Field::Sprite:
+            picking_ = true;
+            return;
         case Field::Count:
             return;
     }
@@ -371,7 +487,71 @@ void ItemMode::on_exit() {
     }
 }
 
-bool ItemMode::handle_event(const SDL_Event& event) {
+bool ItemMode::picker_cell_at(const client::Renderer2D& renderer, float mx,
+                              float my, int& cell_x, int& cell_y) const {
+    int cell_w = 0;
+    int cell_h = 0;
+    cell_size_for(derived_sprite_kind(), cell_w, cell_h);
+    if (cell_w <= 0 || cell_h <= 0 || tileset_->atlas_width() <= 0) {
+        return false;
+    }
+
+    float ox = 0.0F;
+    float oy = 0.0F;
+    float scale = 1.0F;
+    picker_geometry(renderer, ox, oy, scale);
+
+    const float rel_x = (mx - ox) / scale;
+    const float rel_y = (my - oy) / scale;
+    if (rel_x < 0.0F || rel_y < 0.0F ||
+        rel_x >= static_cast<float>(tileset_->atlas_width()) ||
+        rel_y >= static_cast<float>(tileset_->atlas_height())) {
+        return false;
+    }
+    cell_x = static_cast<int>(rel_x) / cell_w;
+    cell_y = static_cast<int>(rel_y) / cell_h;
+    return cell_x < tileset_->atlas_width() / cell_w &&
+           cell_y < tileset_->atlas_height() / cell_h;
+}
+
+bool ItemMode::handle_event(const SDL_Event& event,
+                            const client::Renderer2D& renderer) {
+    // The picker is a sub-mode and takes everything while it is up.
+    if (picking_) {
+        switch (event.type) {
+            case SDL_EVENT_MOUSE_MOTION:
+                mouse_x_ = event.motion.x;
+                mouse_y_ = event.motion.y;
+                return true;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                int cell_x = 0;
+                int cell_y = 0;
+                if (event.button.button == SDL_BUTTON_LEFT &&
+                    picker_cell_at(renderer, mouse_x_, mouse_y_, cell_x, cell_y)) {
+                    if (bind_sprite(cell_x, cell_y)) {
+                        picking_ = false;
+                    }
+                }
+                return true;
+            }
+            case SDL_EVENT_KEY_DOWN:
+                if (event.key.key == SDLK_ESCAPE ||
+                    event.key.key == SDLK_F2) {
+                    picking_ = false;
+                    message_.clear();
+                }
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        mouse_x_ = event.motion.x;
+        mouse_y_ = event.motion.y;
+        return false;  // the map editor keeps its own copy too
+    }
+
     // While the name is being typed, text input owns the keyboard: otherwise typing
     // "n" in a name would create a new item.
     if (editing_name_) {
@@ -478,6 +658,8 @@ std::string ItemMode::label_of(Field field) const {
         case Field::AttackKind:      return "attack kind";
         case Field::AttackRange:     return "range (tiles)";
         case Field::Effect:          return "effect id";
+        case Field::SpriteKind:      return "sprite kind";
+        case Field::Sprite:          return "sprite";
         case Field::Count:           break;
     }
     return "";
@@ -510,6 +692,14 @@ std::string ItemMode::value_of(Field field) const {
             return t.attack_kind == sim::AttackKind::Ranged ? "ranged" : "melee";
         case Field::AttackRange: return std::to_string(t.attack_range);
         case Field::Effect:      return std::to_string(t.effect);
+        case Field::SpriteKind:  return derived_sprite_kind();
+        case Field::Sprite:
+            if (!binding_.has_value()) {
+                return "none - enter to pick";
+            }
+            return std::to_string(binding_->x) + "," + std::to_string(binding_->y) +
+                   "  " + std::to_string(binding_->w) + "x" +
+                   std::to_string(binding_->h);
         case Field::Count:       break;
     }
     return "";
@@ -523,7 +713,130 @@ std::string ItemMode::status() const {
            (dirty_ ? " *" : "");
 }
 
+void ItemMode::picker_geometry(const client::Renderer2D& renderer, float& x,
+                               float& y, float& scale) const {
+    // Magnify by whole numbers only: a 16x16 icon at a fractional scale lands the
+    // grid lines between pixels and the cells stop lining up with what you see.
+    const float aw = static_cast<float>(tileset_->atlas_width());
+    const float ah = static_cast<float>(tileset_->atlas_height());
+    scale = 2.0F;
+    if (aw > 0.0F && ah > 0.0F) {
+        const float fit_w = (static_cast<float>(renderer.viewport_width()) -
+                             2.0F * kMargin) / aw;
+        const float fit_h = (static_cast<float>(renderer.viewport_height()) -
+                             120.0F) / ah;
+        const float fit = std::min(fit_w, fit_h);
+        scale = fit >= 3.0F ? 3.0F : (fit >= 2.0F ? 2.0F : 1.0F);
+    }
+    x = kMargin;
+    y = kMargin + 40.0F;
+}
+
+void ItemMode::draw_picker(client::Renderer2D& renderer) const {
+    const float vw = static_cast<float>(renderer.viewport_width());
+    const float vh = static_cast<float>(renderer.viewport_height());
+    client::ui::fill(renderer, *tileset_, 0.0F, 0.0F, vw, vh,
+                     client::Color{10, 11, 15, 250});
+
+    const std::string kind = derived_sprite_kind();
+    int cell_w = 0;
+    int cell_h = 0;
+    cell_size_for(kind, cell_w, cell_h);
+
+    char header[128];
+    std::snprintf(header, sizeof header,
+                  "pick a %s sprite for id %u  (%dx%d cells)", kind.c_str(),
+                  static_cast<unsigned>(draft_.type.id), cell_w, cell_h);
+    client::ui::text(renderer, *tileset_, header, kMargin, kMargin, kBright,
+                     kTextScale);
+
+    float ox = 0.0F;
+    float oy = 0.0F;
+    float scale = 1.0F;
+    picker_geometry(renderer, ox, oy, scale);
+
+    const float aw = static_cast<float>(tileset_->atlas_width());
+    const float ah = static_cast<float>(tileset_->atlas_height());
+    if (aw <= 0.0F || ah <= 0.0F) {
+        client::ui::text(renderer, *tileset_, "no atlas loaded", kMargin,
+                         oy, kDim, kTextScale);
+        return;
+    }
+
+    // A dark plate behind the sheet: the atlas is mostly transparent, and without
+    // this the sprites float on the scrim and the grid is unreadable.
+    client::ui::fill(renderer, *tileset_, ox, oy, aw * scale, ah * scale,
+                     client::Color{30, 32, 40, 255});
+
+    client::AtlasEntry sheet;
+    sheet.uv = client::Rect{0.0F, 0.0F, 1.0F, 1.0F};
+    sheet.width = aw;
+    sheet.height = ah;
+    sheet.valid = true;
+    client::ui::sprite(renderer, *tileset_, sheet, ox, oy, aw * scale, ah * scale,
+                       client::Color{255, 255, 255, 255},
+                       client::ui::kDepth + 1.0F);
+
+    // Grid. One thin quad per line; at 64px cells that is a handful, at 16px it is
+    // still well under a hundred and they all batch with everything else.
+    const client::Color grid{255, 255, 255, 40};
+    const float step_x = static_cast<float>(cell_w) * scale;
+    const float step_y = static_cast<float>(cell_h) * scale;
+    for (float gx = ox; gx <= ox + aw * scale + 0.5F; gx += step_x) {
+        client::ui::fill(renderer, *tileset_, gx, oy, 1.0F, ah * scale, grid,
+                         client::ui::kDepth + 2.0F);
+    }
+    for (float gy = oy; gy <= oy + ah * scale + 0.5F; gy += step_y) {
+        client::ui::fill(renderer, *tileset_, ox, gy, aw * scale, 1.0F, grid,
+                         client::ui::kDepth + 2.0F);
+    }
+
+    // The cell currently bound, so it is obvious what is being replaced.
+    if (binding_.has_value() && binding_->kind == kind) {
+        client::ui::fill(renderer, *tileset_,
+                         ox + static_cast<float>(binding_->x) * scale,
+                         oy + static_cast<float>(binding_->y) * scale,
+                         static_cast<float>(binding_->w) * scale,
+                         static_cast<float>(binding_->h) * scale,
+                         client::Color{90, 200, 120, 70},
+                         client::ui::kDepth + 3.0F);
+    }
+
+    // Hover.
+    const int cols = tileset_->atlas_width() / cell_w;
+    const int rows = tileset_->atlas_height() / cell_h;
+    const float rel_x = (mouse_x_ - ox) / scale;
+    const float rel_y = (mouse_y_ - oy) / scale;
+    if (rel_x >= 0.0F && rel_y >= 0.0F && rel_x < aw && rel_y < ah) {
+        const int cx = static_cast<int>(rel_x) / cell_w;
+        const int cy = static_cast<int>(rel_y) / cell_h;
+        if (cx < cols && cy < rows) {
+            client::ui::fill(renderer, *tileset_,
+                             ox + static_cast<float>(cx * cell_w) * scale,
+                             oy + static_cast<float>(cy * cell_h) * scale,
+                             step_x, step_y, client::Color{201, 162, 39, 90},
+                             client::ui::kDepth + 4.0F);
+        }
+    }
+
+    client::ui::text(renderer, *tileset_,
+                     "click a cell to bind   esc cancel", kMargin, vh - 22.0F,
+                     kDim, kHintScale);
+    if (!message_.empty()) {
+        client::ui::text(renderer, *tileset_, message_, kMargin, vh - 38.0F,
+                         kRowSelected, kHintScale * 1.5F);
+    }
+}
+
 void ItemMode::draw(client::Renderer2D& renderer) const {
+    if (picking_) {
+        draw_picker(renderer);
+        return;
+    }
+    draw_form(renderer);
+}
+
+void ItemMode::draw_form(client::Renderer2D& renderer) const {
     const float vh = static_cast<float>(renderer.viewport_height());
     const float list_h = vh - 2.0F * kMargin - 40.0F;
     const auto visible_rows =
