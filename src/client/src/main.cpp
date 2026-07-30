@@ -6,6 +6,7 @@
 #include <cstring>
 #include <string>
 
+#include "client/damage_feed.hpp"
 #include "client/input.hpp"
 #include "client/iso.hpp"
 #include "client/sdl_backend.hpp"
@@ -221,6 +222,8 @@ int main(int argc, char** argv) {
 
         bool          running = true;
         std::uint64_t frames = 0;
+        client::DamageFeed damage_feed;
+        const std::uint64_t start_nanos = core::now_nanos();
         std::uint64_t last_title_update = core::now_nanos();
         double        fps = 0.0;
         std::uint64_t fps_window_start = last_title_update;
@@ -332,6 +335,11 @@ int main(int argc, char** argv) {
                 running = false;
             }
 
+            // Monotonic seconds since start, for animating the damage numbers.
+            const float now_seconds = static_cast<float>(
+                static_cast<double>(core::now_nanos() - start_nanos) / 1.0e9);
+            damage_feed.observe(session->view(), now_seconds);
+
             {
                 float target_x = 0.0F;
                 float target_y = 0.0F;
@@ -353,6 +361,7 @@ int main(int argc, char** argv) {
 
             renderer->begin_frame(client::Color{18, 20, 26, 255});
             client::render_world(*renderer, tileset, session->view(), params);
+            damage_feed.render(*renderer, tileset, now_seconds);
             renderer->end_frame();
 
             ++frames;

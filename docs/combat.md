@@ -77,13 +77,18 @@ combate (dano, defesa, velocidade de ataque). Um ator tem itens equipados; os
 stats efetivos saem da soma base + equipado. Isso é a razão de o catálogo existir
 — combate **consome** os tipos, não redefine regras.
 
-## Fase 4 — feedback e loot (a fazer)
+## Fase 4 — feedback e loot
 
-- **Hit splats / números de dano:** evento não-confiável sequenciado
-  (`S2C_Damage { target, amount, kind }`), efêmero, tolerante a perda. Só
-  apresentação; o estado autoritativo continua no `hp` do snapshot.
-- **Corpo e loot na morte:** solta itens no chão (precisa de itens-no-chão, que é
-  outra peça de conteúdo), penalidade de exp — o design "hardcore" do Grimhold.
+- **Números de dano (feito):** `client::DamageFeed` mostra "-N" flutuante quando o
+  `hp` de um ator **cai entre views** — derivado do estado que o snapshot já
+  carrega, sem pacote novo (mesma razão de "snapshot perdido não custa nada"),
+  então funciona igual em solo e rede. Desenhado em 7 segmentos com o texel
+  `Tileset::solid()`, sobe e some. Puramente apresentação; o estado autoritativo
+  segue no `hp`. Um evento explícito `S2C_Damage` só valeria se precisássemos de
+  tipo de dano/crítico que o delta de hp não conta.
+- **Corpo e loot na morte (a fazer):** solta itens no chão (precisa de
+  itens-no-chão, outra peça de conteúdo), penalidade de exp — o design "hardcore"
+  do Grimhold.
 
 ## Protocolo
 

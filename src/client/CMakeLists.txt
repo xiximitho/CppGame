@@ -10,6 +10,7 @@ set(GAME_CLIENT_SOURCES
     src/tileset.cpp
     src/input.cpp
     src/world_render.cpp
+    src/damage_feed.cpp
     src/solo_session.cpp
     src/remote_session.cpp)
 
