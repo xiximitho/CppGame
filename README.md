@@ -205,6 +205,8 @@ regra está em [docs/architecture.md](docs/architecture.md).
   `game_editor`
 - [docs/combat.md](docs/combat.md) — vida e combate: o design em fases (auto-attack
   por alvo, respawn) e o que já está feito
+- [docs/authoring.md](docs/authoring.md) — **guia prático**: como criar um sprite,
+  um tipo de tile/objeto e um mapa, passo a passo
 
 ## Configuração opcional
 
