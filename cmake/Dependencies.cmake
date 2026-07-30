@@ -33,6 +33,17 @@ set(GAME_DEP_GLM_REF     "8d1fd52e5ab5590e2c81768ace50c72bae28f2ed") # 1.0.3
 set(GAME_DEP_ENET_REF    "2662c0de09e36f2a2030ccc2c528a3e4c9e8138a") # v1.3.18
 set(GAME_DEP_DOCTEST_REF "2d0a9359a60c51affe2a9bebb1be1dca47868151") # v2.5.3
 
+# SQLite is the exception to "pin a git SHA": it is not developed on GitHub and
+# the amalgamation is a generated artefact, not a checked-in file. The official
+# release zip is pinned by its SHA3-256 instead, which is published on
+# sqlite.org/download.html and is every bit as immutable as a commit SHA. Keep the
+# three lines below in sync; verify-deps.sh re-downloads and re-hashes them.
+set(GAME_DEP_SQLITE_VERSION "3.53.4")
+set(GAME_DEP_SQLITE_URL
+    "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip")
+set(GAME_DEP_SQLITE_SHA3
+    "628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e")
+
 # ---------------------------------------------------------------------------
 # EnTT — entity component system. Header only.
 # ---------------------------------------------------------------------------
@@ -143,6 +154,51 @@ if(GAME_BUILD_CLIENT)
         ${GAME_DEP_SYSTEM})
     FetchContent_MakeAvailable(SDL3_image)
   endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# SQLite — authoring store for content and, on the server, player persistence.
+#
+# Linked by the server and by the offline tools; NEVER by the client. That is not
+# tidiness: on Android and iOS the client's assets live inside the package and are
+# not files at all (see platform::vfs and docs/mobile.md), while SQLite wants a
+# real path it can open and seek. The client reads content from the baked blob
+# instead — see docs/content.md.
+#
+# This does not weaken the server-only preset. Its invariant is "no SDL, no
+# graphics library", and SQLite is one amalgamated C file with no system
+# dependencies.
+# ---------------------------------------------------------------------------
+if(GAME_BUILD_SERVER OR GAME_BUILD_TOOLS)
+  FetchContent_Declare(sqlite3
+      URL      ${GAME_DEP_SQLITE_URL}
+      URL_HASH SHA3_256=${GAME_DEP_SQLITE_SHA3}
+      ${GAME_DEP_SYSTEM})
+  # The archive carries no CMakeLists.txt, so this only unpacks it.
+  FetchContent_MakeAvailable(sqlite3)
+
+  # shell.c is the sqlite3 CLI and deliberately not built: we want the library.
+  add_library(sqlite3 STATIC "${sqlite3_SOURCE_DIR}/sqlite3.c")
+  target_include_directories(sqlite3 SYSTEM PUBLIC "${sqlite3_SOURCE_DIR}")
+
+  # Note the absence of game_warnings: this is vendored C compiled as-is, and our
+  # -Wconversion/-Werror set is for src/ only.
+  target_compile_definitions(sqlite3 PRIVATE
+      SQLITE_DQS=0                    # reject double-quoted string literals
+      SQLITE_THREADSAFE=1             # the server may grow a worker thread
+      SQLITE_DEFAULT_MEMSTATUS=0
+      SQLITE_DEFAULT_FOREIGN_KEYS=1   # the schema relies on FK enforcement
+      SQLITE_OMIT_DEPRECATED
+      SQLITE_OMIT_LOAD_EXTENSION      # nothing loads extensions; drop the surface
+      SQLITE_LIKE_DOESNT_MATCH_BLOBS
+      SQLITE_ENABLE_STMTVTAB=0)
+  if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(sqlite3 PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+  endif()
+  set(GAME_SQLITE_ORIGIN "pinned ${GAME_DEP_SQLITE_VERSION}" CACHE INTERNAL "")
+else()
+  set(GAME_SQLITE_ORIGIN "not needed" CACHE INTERNAL "")
 endif()
 
 # ---------------------------------------------------------------------------

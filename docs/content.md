@@ -107,37 +107,62 @@ private:
 Quem **preenche** esse registry não é o `sim/` — é o `server`/`platform` no boot,
 lendo o blob de conteúdo (ver pipeline abaixo). O `sim/` só consome.
 
-## O pipeline: SQLite para autoria, blob para runtime
+## O pipeline: SQLite é a fonte da verdade; o blob é o caminho do cliente
 
-O banco de dados local é uma **ferramenta de autoria**, não uma dependência de
-runtime. Ele nunca é linkado no `game_client` nem no `game_server`.
+> **Revisado.** A versão anterior deste doc dizia que o SQLite era só ferramenta de
+> autoria e "nunca linkado no `game_client` nem no `game_server`". A decisão mudou
+> para o servidor: ele **lê o `content.db` direto**. O cliente continua lendo o
+> blob, e isso não é simetria perdida por descuido — é a única forma de o cliente
+> funcionar no Android.
 
 ```
-   AUTORIA  (tools/, offline)              RUNTIME  (jogo)
-   ┌──────────────────────┐   bake step    ┌───────────────────────────┐
-   │  content.db (SQLite)  │───────────────▶│  content.bin (blob)        │
-   │   items, item_flags   │  tools/bake    │  lido por platform::vfs    │
-   │   maps, map_tiles     │                │  ↓ desserializa            │
-   └──────────────────────┘                │  ItemTypeRegistry (const)  │
-        ▲                                    │  TileMap com ids           │
-        │  editor de mapa escreve aqui       └───────────────────────────┘
-        └─ humano / ferramenta                          ▲
-                                              sim/ vê só isto: dado puro
+   AUTORIA + SERVIDOR                        CLIENTE
+   ┌───────────────────────┐   tools/bake   ┌────────────────────────────┐
+   │  content.db (SQLite)  │───────────────▶│  content.bin (blob)         │
+   │   items               │                │  lido por platform::vfs     │
+   │   accounts/characters │                │  ↓ read_content_blob        │
+   └───────────────────────┘                │  ItemTypeRegistry (const)   │
+      ▲            │                        └────────────────────────────┘
+      │            └─ servidor abre no boot            ▲
+      └─ editor de item escreve aqui       sim/ vê só isto: dado puro
 ```
 
-Por que **bake para blob** em vez de ler o SQLite direto no boot:
+**Quem linka SQLite:** o servidor e as ferramentas (`GAME_BUILD_TOOLS`). **Nunca o
+cliente** — e o `check-layering.sh` reprova tanto o `#include <sqlite3.h>` quanto o
+link de `sqlite3`/`game_store` em `src/client/` e `src/platform/`.
 
-- **Camadas e determinismo.** O blob é lido por `platform::vfs` (o mesmo caminho
-  que já funciona dentro do APK no Android). Nada de SQLite no hot path, nada de
-  SQLite dentro do APK.
-- **`server-only` intacto.** SQLite viraria dependência de link do servidor; o
-  blob não é dependência de nada, é bytes.
-- **Um formato de fio a menos para errar.** O blob tem um header com versão
-  (ver abaixo); o `.db` é detalhe de ferramenta e pode mudar de schema à vontade.
+Por que o cliente não pode abrir o banco, apesar de o servidor poder:
 
-SQLite entra em `cmake/Dependencies.cmake` **apenas para o alvo de tools**, pinado
-por SHA como todo o resto (`verify-deps.sh`), e as ferramentas em `tools/` só são
-compiladas quando `GAME_BUILD_TOOLS=ON` — nunca no `server-only` nem no cliente.
+- **Android e iOS.** Os assets do cliente ficam **dentro do pacote e não são
+  arquivos**; `platform::vfs` existe exatamente por isso. SQLite quer um caminho
+  real para abrir e fazer seek. Um cliente que abre banco funciona no desktop e
+  falha no device — meses depois. É o mesmo invariante que o `CLAUDE.md` protege
+  para `<fstream>`.
+- **Conteúdo é minúsculo e só-leitura.** O registry já é um `vector<ItemType>`
+  indexado por id: um bounds check e um índice. Um motor de query não compra nada.
+
+E por que o servidor **pode**, apesar do `server-only`:
+
+- O invariante do preset é "sem SDL, sem lib gráfica" — não "sem dependência".
+  SQLite é um `.c` amalgamado, sem dependência de sistema. O preset compila e linka
+  hoje, com `GAME_BUILD_TOOLS=OFF`.
+- Ler o `.db` direto elimina o passo de bake do loop de dev do servidor.
+- O risco disso seria cliente e servidor divergirem de conteúdo. Não divergem: o
+  servidor serializa em memória com `write_content_blob` **só para hashear**, então
+  o hash trocado no Hello prova igualdade semântica mesmo com fontes diferentes.
+
+### Como o SQLite é pinado
+
+Ele é a **exceção** à regra "pin por SHA de commit": não é desenvolvido no GitHub e
+o amalgamation é gerado, não versionado. O zip oficial é pinado pelo **SHA3-256**
+publicado em `sqlite.org/download.html` — imutável do mesmo jeito que um commit, e
+diferente de uma tag. O `verify-deps.sh` baixa e re-hasheia para conferir.
+
+O wrapper é `src/store/` (`store::Db`, `store::Stmt`): RAII, sem ORM, sem query
+builder. Nenhum tipo `sqlite3` aparece em `store/db.hpp`, então o `sqlite3.h` fica
+contido nesse diretório. Toda conexão nasce com WAL, `synchronous = NORMAL`,
+`foreign_keys = ON` (o SQLite deixa OFF por padrão, e o schema depende deles) e
+busy timeout — num lugar só, para nenhum chamador esquecer.
 
 ### Formato do blob
 

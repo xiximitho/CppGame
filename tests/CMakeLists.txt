@@ -28,4 +28,12 @@ target_link_libraries(game_tests PRIVATE
 target_include_directories(game_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/client/include")
 
+# game_store only exists when the server or the tools are enabled, so its test is
+# conditional rather than assumed. It uses ":memory:" databases, keeping the suite
+# free of any need for a writable directory.
+if(TARGET game_store)
+  target_sources(game_tests PRIVATE test_store.cpp)
+  target_link_libraries(game_tests PRIVATE game_store)
+endif()
+
 add_test(NAME unit COMMAND game_tests --no-intro)

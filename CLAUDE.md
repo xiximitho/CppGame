@@ -21,7 +21,7 @@ ctest --preset debug
 |---|---|
 | `debug` | dia a dia |
 | `release` | `RelWithDebInfo` |
-| `server-only` | servidor headless, **sem SDL3 nem lib gráfica** |
+| `server-only` | servidor headless, **sem SDL3 nem lib gráfica** (e `GAME_BUILD_TOOLS=OFF`) |
 | `asan` | ASan + UBSan; rode aqui ao mexer em `net/` |
 | `ci` | release com `-Werror` |
 
@@ -56,13 +56,20 @@ Documentação de fundo em `docs/architecture.md`, `docs/dependencies.md`,
 
 ```
 core  <-  sim  <-  net  <-  server
-  ^        ^        ^
-  +--------+--------+----  platform  <-  client
+  ^        ^        ^          ^
+  |        +--------+----  platform  <-  client
+  +----  store  ------------- + ------  tools (game_editor, bake)
 ```
 
 `src/sim/` é o estado autoritativo e as regras. Ele **não pode** incluir SDL, abrir
 socket, tocar filesystem nem ler relógio. `scripts/check-layering.sh` verifica isso
 por grep de `#include` e por `SDL3::` nos `CMakeLists.txt`, e roda na CI.
+
+`src/store/` é o wrapper de SQLite (`store::Db`). Servidor e ferramentas linkam;
+**o cliente nunca** — no Android os dados dele estão dentro do pacote e não são
+arquivos, e SQLite precisa de caminho real. O cliente lê conteúdo do blob baked via
+`platform::vfs`. O `check-layering.sh` reprova `<sqlite3.h>` e link de
+`sqlite3`/`game_store` em `src/client/` e `src/platform/`. Ver `docs/content.md`.
 
 Não é estética. Três coisas dependem disso: o servidor compila sem lib gráfica
 (preset `server-only`), os testes dirigem a simulação sem abrir janela, e o modo
@@ -169,7 +176,7 @@ interface.
 
 ## Invariantes que quebram em silêncio
 
-- **Mudou o formato de fio?** Bump em `net::kProtocolVersion` (hoje 2). O servidor
+- **Mudou o formato de fio?** Bump em `net::kProtocolVersion` (hoje 5). O servidor
   rejeita cliente com versão diferente no Hello, o que é a única coisa que impede um
   misparse silencioso.
 - **`sim::can_traverse` é a única regra de geometria de passo.** Tanto
