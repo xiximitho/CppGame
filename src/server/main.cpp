@@ -18,6 +18,7 @@
 #include "sim/map_io.hpp"
 #include "sim/rng.hpp"
 #include "sim/systems.hpp"
+#include "sim/tile_ids.hpp"
 #include "sim/world.hpp"
 
 namespace {
@@ -253,6 +254,18 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
     const entt::entity entity = world.spawn_actor(connection.net_id, spawn, 0);
     // Players respawn on death instead of vanishing; monsters do not.
     world.registry().emplace<sim::CRespawn>(entity, sim::CRespawn{spawn});
+
+    // Starting kit, so the player's attack/defense are data-driven from turn one.
+    {
+        auto& equipment = world.registry().emplace<sim::CEquipment>(entity);
+        equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
+            sim::tiles::kSword;
+        equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
+            sim::tiles::kArmor;
+    }
+    world.registry().emplace<sim::CInventory>(
+        entity, sim::CInventory{{{sim::tiles::kBow, 1}, {sim::tiles::kShield, 1}}});
+
     connection.welcomed = true;
 
     net::WelcomeMsg welcome;
@@ -445,6 +458,11 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+            // Attack effects since the last snapshot. Drained once; each player
+            // gets the ones inside its area of interest.
+            const std::vector<sim::AttackEvent> effects = world.attack_events();
+            world.clear_attack_events();
+
             for (auto& [peer, connection] : connections) {
                 if (!connection.welcomed) {
                     continue;
@@ -457,6 +475,21 @@ int main(int argc, char** argv) {
                     world.registry().get<sim::CPosition>(entity).tile;
 
                 stream_chunks(world, *transport, connection, center);
+
+                for (const sim::AttackEvent& fx : effects) {
+                    if (fx.to.z != center.z ||
+                        std::abs(fx.to.x - center.x) > sim::kAoiHalfX ||
+                        std::abs(fx.to.y - center.y) > sim::kAoiHalfY) {
+                        continue;
+                    }
+                    std::uint8_t effect_buffer[32];
+                    net::BitWriter effect_writer(effect_buffer,
+                                                 sizeof(effect_buffer));
+                    net::write_effect(effect_writer,
+                                      net::EffectMsg{fx.from, fx.to, fx.effect});
+                    send_message(*transport, peer, effect_writer, effect_buffer,
+                                 net::Channel::Unreliable);
+                }
 
                 sim::Snapshot snapshot;
                 sim::build_snapshot(world, center, snapshot);

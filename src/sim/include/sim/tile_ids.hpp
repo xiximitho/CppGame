@@ -23,4 +23,15 @@ constexpr TileId kCrate = 102;
 
 constexpr TileId kActor = 200;
 
+// Equipment items. Not placed on the map like tiles; they live in inventories.
+constexpr TileId kSword  = 300;
+constexpr TileId kBow    = 301;
+constexpr TileId kShield = 302;
+constexpr TileId kHelmet = 303;
+constexpr TileId kArmor  = 304;
+constexpr TileId kLegs   = 305;
+constexpr TileId kBoots  = 306;
+constexpr TileId kRing   = 307;
+constexpr TileId kAmulet = 308;
+
 }  // namespace sim::tiles

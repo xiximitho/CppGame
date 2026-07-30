@@ -148,4 +148,36 @@ constexpr bool in_melee_range(TilePos from, TilePos to) {
     return tile_distance(from, to) == 1;
 }
 
+/// Whether `to` is within `range` tiles of `from` (>=1), same floor. Melee passes
+/// range 1; a bow passes its reach. Line of sight is not checked yet.
+constexpr bool in_attack_range(TilePos from, TilePos to, int range) {
+    const int distance = tile_distance(from, to);
+    return distance >= 1 && distance <= range;
+}
+
+/// A swing that landed this tick, for the client to render an effect over: a
+/// burst at `to` for melee (from == to reads as a hit), or a projectile from ->
+/// to for ranged. Pure value type so it rides in a WorldView and on the wire.
+struct AttackEvent {
+    TilePos      from;
+    TilePos      to;
+    std::uint8_t effect = 0;  ///< ItemType::effect of the weapon used
+};
+
+/// Coarsest 8-way direction from `from` toward `to`, by the sign of dx/dy. Unlike
+/// direction_between it works at any distance (for facing a ranged target);
+/// returns South for the same tile.
+constexpr Direction direction_towards(TilePos from, TilePos to) {
+    const int dx = (to.x > from.x ? 1 : 0) - (to.x < from.x ? 1 : 0);
+    const int dy = (to.y > from.y ? 1 : 0) - (to.y < from.y ? 1 : 0);
+    for (int i = 0; i < kDirectionCount; ++i) {
+        const auto candidate = static_cast<Direction>(i);
+        const TileDelta delta = direction_delta(candidate);
+        if (delta.dx == dx && delta.dy == dy) {
+            return candidate;
+        }
+    }
+    return Direction::South;
+}
+
 }  // namespace sim

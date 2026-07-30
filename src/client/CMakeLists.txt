@@ -11,6 +11,8 @@ set(GAME_CLIENT_SOURCES
     src/input.cpp
     src/world_render.cpp
     src/damage_feed.cpp
+    src/effect_feed.cpp
+    src/inventory_ui.cpp
     src/solo_session.cpp
     src/remote_session.cpp)
 

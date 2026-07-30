@@ -23,6 +23,17 @@ void update_wanderers(World& world, Rng& rng);
 /// and gives up after kPathBlockedGiveUpTicks rather than pushing forever.
 void update_path_followers(World& world);
 
+/// Effective combat stats of an actor: a base plus everything equipped. The
+/// weapon slot sets range and effect; unarmed is a melee punch, range 1, a
+/// default glow. Pure read of CEquipment against the world's item catalogue.
+struct CombatStats {
+    std::int32_t attack  = kBaseMeleeDamage;
+    std::int32_t defense = 0;
+    std::uint8_t range   = 1;
+    std::uint8_t effect  = kEffectMeleeGlow;
+};
+CombatStats combat_stats(const World& world, entt::entity actor);
+
 /// Resolves auto-attacks and respawns. Each actor with a CTarget faces its target
 /// and, when in melee range and its cooldown is up, hits it for kBaseMeleeDamage;
 /// dead actors past their respawn timer come back. A stale target (gone or dead)

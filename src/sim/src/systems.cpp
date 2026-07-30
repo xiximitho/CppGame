@@ -1,10 +1,36 @@
 #include "sim/systems.hpp"
 
+#include <algorithm>
 #include <vector>
 
 #include "sim/components.hpp"
+#include "sim/item_type.hpp"
 
 namespace sim {
+
+CombatStats combat_stats(const World& world, entt::entity actor) {
+    CombatStats stats;
+    const entt::registry& registry = world.registry();
+    const ItemTypeRegistry& items = world.item_types();
+
+    if (const auto* equipment = registry.try_get<CEquipment>(actor)) {
+        for (const ItemTypeId id : equipment->slots) {
+            if (id == kItemNone) {
+                continue;
+            }
+            const ItemType& type = items.get(id);
+            stats.attack =
+                static_cast<std::int32_t>(stats.attack + type.attack);
+            stats.defense =
+                static_cast<std::int32_t>(stats.defense + type.defense);
+            if (type.is_weapon()) {
+                stats.range = type.attack_range;
+                stats.effect = type.effect;
+            }
+        }
+    }
+    return stats;
+}
 
 void update_wanderers(World& world, Rng& rng) {
     entt::registry& registry = world.registry();
@@ -56,11 +82,18 @@ void update_combat(World& world) {
     // Resolve targets. Facing and the swing timer are plain field writes (safe
     // mid-view); the actual hits are collected and applied after, because
     // apply_damage can despawn an entity and invalidate the view.
-    std::vector<NetId>        hits;
+    struct Swing {
+        NetId        target;
+        std::int32_t damage;
+        TilePos      from;
+        TilePos      to;
+        std::uint8_t effect;
+    };
+    std::vector<Swing>        swings;
     std::vector<entt::entity> clear_targets;
 
-    for (auto [entity, target, pos, actor] :
-         registry.view<CTarget, CPosition, CActor>().each()) {
+    for (auto [entity, target, pos] :
+         registry.view<CTarget, CPosition>().each()) {
         if (registry.all_of<CDead>(entity)) {
             continue;  // the dead do not swing
         }
@@ -73,28 +106,32 @@ void update_combat(World& world) {
             continue;
         }
 
+        const CombatStats attacker = combat_stats(world, entity);
         const TilePos target_tile = registry.get<CPosition>(target_entity).tile;
-        if (!in_melee_range(pos.tile, target_tile)) {
-            continue;  // keep the target, wait until adjacent
+        if (!in_attack_range(pos.tile, target_tile, attacker.range)) {
+            continue;  // keep the target, wait until it is in reach
         }
 
-        Direction facing = pos.facing;
-        if (direction_between(pos.tile, target_tile, facing)) {
-            pos.facing = facing;  // turn to face the target
-        }
+        pos.facing = direction_towards(pos.tile, target_tile);
 
         if (now < target.next_swing_tick) {
             continue;
         }
         target.next_swing_tick = now + kAttackCooldownTicks;
-        hits.push_back(target.target);
+
+        const std::int32_t defense = combat_stats(world, target_entity).defense;
+        const std::int32_t damage =
+            std::max<std::int32_t>(1, attacker.attack - defense);
+        swings.push_back(Swing{target.target, damage, pos.tile, target_tile,
+                               attacker.effect});
     }
 
     for (const entt::entity entity : clear_targets) {
         registry.remove<CTarget>(entity);
     }
-    for (const NetId victim : hits) {
-        world.apply_damage(victim, kBaseMeleeDamage);
+    for (const Swing& swing : swings) {
+        world.apply_damage(swing.target, swing.damage);
+        world.push_attack_event(AttackEvent{swing.from, swing.to, swing.effect});
     }
 }
 

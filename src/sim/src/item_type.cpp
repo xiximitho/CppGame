@@ -72,6 +72,39 @@ ItemTypeRegistry build_default_registry() {
     registry.add(ItemType{tiles::kCrate,
                           ItemFlag::BlocksWalk | ItemFlag::Pickable, 40U, 1U});
 
+    // Equipment. Weapons set attack + kind/range/effect; armour sets defense.
+    registry.add(ItemType{.id = tiles::kSword, .flags = ItemFlag::Pickable,
+                          .weight = 180U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 12,
+                          .attack_kind = AttackKind::Melee, .attack_range = 1,
+                          .effect = kEffectMeleeGlow});
+    registry.add(ItemType{.id = tiles::kBow, .flags = ItemFlag::Pickable,
+                          .weight = 90U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 8,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 4,
+                          .effect = kEffectRangedShot});
+    registry.add(ItemType{.id = tiles::kShield, .flags = ItemFlag::Pickable,
+                          .weight = 90U, .equippable = true,
+                          .slot = EquipSlot::Shield, .defense = 6});
+    registry.add(ItemType{.id = tiles::kHelmet, .flags = ItemFlag::Pickable,
+                          .weight = 40U, .equippable = true,
+                          .slot = EquipSlot::Helmet, .defense = 3});
+    registry.add(ItemType{.id = tiles::kArmor, .flags = ItemFlag::Pickable,
+                          .weight = 120U, .equippable = true,
+                          .slot = EquipSlot::Body, .defense = 8});
+    registry.add(ItemType{.id = tiles::kLegs, .flags = ItemFlag::Pickable,
+                          .weight = 70U, .equippable = true,
+                          .slot = EquipSlot::Legs, .defense = 4});
+    registry.add(ItemType{.id = tiles::kBoots, .flags = ItemFlag::Pickable,
+                          .weight = 30U, .equippable = true,
+                          .slot = EquipSlot::Boots, .defense = 2});
+    registry.add(ItemType{.id = tiles::kRing, .flags = ItemFlag::Pickable,
+                          .weight = 5U, .equippable = true,
+                          .slot = EquipSlot::Ring, .defense = 1});
+    registry.add(ItemType{.id = tiles::kAmulet, .flags = ItemFlag::Pickable,
+                          .weight = 5U, .equippable = true,
+                          .slot = EquipSlot::Amulet, .defense = 1});
+
     return registry;
 }
 

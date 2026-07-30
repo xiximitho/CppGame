@@ -93,6 +93,12 @@ public:
 
     const WorldView& view() const override { return view_; }
 
+    std::vector<sim::AttackEvent> drain_effects() override {
+        std::vector<sim::AttackEvent> out;
+        out.swap(effects_buffer_);
+        return out;
+    }
+
     std::string status_text() const override {
         char buffer[160];
         std::snprintf(buffer, sizeof(buffer),
@@ -220,6 +226,15 @@ private:
                 break;
             }
 
+            case net::MsgId::S2C_Effect: {
+                net::EffectMsg effect;
+                if (net::read_effect(reader, effect)) {
+                    effects_buffer_.push_back(
+                        sim::AttackEvent{effect.from, effect.to, effect.effect});
+                }
+                break;
+            }
+
             case net::MsgId::C2S_Hello:
             case net::MsgId::C2S_Input:
             case net::MsgId::C2S_MoveTo:
@@ -267,6 +282,7 @@ private:
     net::PeerId  server_peer_ = net::kInvalidPeer;
 
     WorldView   view_;
+    std::vector<sim::AttackEvent> effects_buffer_;
     std::string status_ = "connecting";
     bool        alive_ = true;
     int         chunks_received_ = 0;

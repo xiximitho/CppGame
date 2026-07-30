@@ -182,6 +182,58 @@ def main(out_dir):
         for xx in range(232, 240):
             px[xx, yy] = (255, 255, 255, 255)
 
+    def rct(x0, y0, w, h, c):
+        for yy in range(y0, y0 + h):
+            for xx in range(x0, x0 + w):
+                if 0 <= xx < ATLAS and 0 <= yy < ATLAS:
+                    px[xx, yy] = c
+
+    # --- inventory item icons, 16x16 at y=176 (ids 300..308) ---
+    IY = 176
+
+    def cell(slot):
+        return slot * 16
+
+    steel = rgba((198, 203, 210)); dk = rgba((120, 124, 132))
+    wood = rgba((124, 92, 52)); gold = rgba((214, 170, 60))
+    s = cell(0)  # 300 sword
+    rct(s + 7, IY + 2, 2, 9, steel); rct(s + 5, IY + 10, 6, 2, wood)
+    s = cell(1)  # 301 bow
+    fill_circle(px, s + 4, IY + 8, 6, wood)
+    for yy in range(IY + 2, IY + 15):
+        px[s + 4, yy] = (0, 0, 0, 0)
+        px[s + 3, yy] = (0, 0, 0, 0)
+    rct(s + 9, IY + 2, 1, 13, rgba((210, 210, 210)))  # string
+    s = cell(2)  # 302 shield
+    rct(s + 3, IY + 2, 10, 9, rgba((70, 110, 180))); rct(s + 6, IY + 11, 4, 3, rgba((70, 110, 180)))
+    s = cell(3)  # 303 helmet
+    fill_circle(px, s + 8, IY + 8, 5, dk); rct(s + 3, IY + 8, 11, 3, dk)
+    s = cell(4)  # 304 armor (body)
+    rct(s + 4, IY + 3, 8, 10, steel); rct(s + 2, IY + 3, 3, 4, dk); rct(s + 11, IY + 3, 3, 4, dk)
+    s = cell(5)  # 305 legs
+    rct(s + 4, IY + 3, 3, 11, dk); rct(s + 9, IY + 3, 3, 11, dk)
+    s = cell(6)  # 306 boots
+    rct(s + 3, IY + 8, 4, 6, wood); rct(s + 9, IY + 8, 4, 6, wood)
+    s = cell(7)  # 307 ring
+    fill_circle(px, s + 8, IY + 9, 5, gold); fill_circle(px, s + 8, IY + 9, 3, (0, 0, 0, 0))
+    s = cell(8)  # 308 amulet
+    px_line = rgba((180, 150, 60))
+    for i in range(6):
+        px[s + 3 + i, IY + 3 + i] = px_line
+        px[s + 13 - i, IY + 3 + i] = px_line
+    fill_circle(px, s + 8, IY + 11, 3, gold)
+
+    # --- attack effects at y=200 ---
+    # effect 1: melee glow (24x24 radial), effect 2: ranged shot (8x8 dot)
+    for dy in range(-11, 12):
+        for dx in range(-11, 12):
+            d = (dx * dx + dy * dy) ** 0.5
+            if d <= 11:
+                a = int(max(0, 255 * (1.0 - d / 11.0)))
+                px[12 + dx, 200 + 12 + dy] = (255, 236, 150, a)
+    fill_circle(px, 24 + 4, 200 + 4, 3, rgba((235, 245, 255)))
+    fill_circle(px, 24 + 4, 200 + 4, 2, rgba((120, 200, 255)))
+
     img.save(f"{out_dir}/atlas.png")
 
     meta = [
@@ -196,6 +248,17 @@ def main(out_dir):
         "object      102     128  64   64  64  -32      -32",
         "highlight           0    32   64  32  -32      0",
         "solid               234  42   4   4",
+        "item        300     0    176  16  16",
+        "item        301     16   176  16  16",
+        "item        302     32   176  16  16",
+        "item        303     48   176  16  16",
+        "item        304     64   176  16  16",
+        "item        305     80   176  16  16",
+        "item        306     96   176  16  16",
+        "item        307     112  176  16  16",
+        "item        308     128  176  16  16",
+        "effect      1       0    200  24  24",
+        "effect      2       24   200  8   8",
     ]
     for i in range(8):
         meta.append(f"actor       {i}       {i*AFW:<4} 128  32  48  -16      -32")

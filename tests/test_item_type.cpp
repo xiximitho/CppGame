@@ -71,7 +71,8 @@ TEST_CASE("re-adding an id overwrites without inflating the count") {
 
 TEST_CASE("default registry has the base tile types plus the crate example") {
     const ItemTypeRegistry registry = build_default_registry();
-    CHECK(registry.count() == 7U);
+    // 6 tiles + crate + 9 equipment items.
+    CHECK(registry.count() == 16U);
 
     // Walkable ground.
     for (const ItemTypeId id :

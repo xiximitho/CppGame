@@ -16,7 +16,8 @@ namespace net {
 ///
 /// 2: added C2S_MoveTo (click-to-move).
 /// 3: added C2S_Attack (auto-attack a target).
-constexpr std::uint32_t kProtocolVersion = 3;
+/// 4: added S2C_Effect (attack effect sprite).
+constexpr std::uint32_t kProtocolVersion = 4;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -55,6 +56,7 @@ enum class MsgId : std::uint8_t {
     S2C_Reject   = 65,
     S2C_Snapshot = 66,
     S2C_MapChunk = 67,
+    S2C_Effect   = 68,
 };
 
 struct HelloMsg {
@@ -103,6 +105,15 @@ struct RejectMsg {
 /// A square of map, sent reliably as the player approaches it. The client holds
 /// only the chunks it has been told about, so the world may be far larger than
 /// anything a client ever sees.
+/// A one-shot attack effect for the client to render: a burst at `to` for melee
+/// (from == to), or a projectile travelling from -> to for ranged. Pure
+/// presentation — unreliable, and a lost one just means a missed spark.
+struct EffectMsg {
+    sim::TilePos from;
+    sim::TilePos to;
+    std::uint8_t effect = 0;
+};
+
 struct MapChunkMsg {
     std::int16_t            chunk_x = 0;  ///< in tiles, top-left corner
     std::int16_t            chunk_y = 0;
@@ -119,6 +130,7 @@ void write_welcome(BitWriter& writer, const WelcomeMsg& msg);
 void write_reject(BitWriter& writer, const RejectMsg& msg);
 void write_snapshot(BitWriter& writer, const sim::Snapshot& snapshot);
 void write_map_chunk(BitWriter& writer, const MapChunkMsg& msg);
+void write_effect(BitWriter& writer, const EffectMsg& msg);
 
 // --- reading ---------------------------------------------------------------
 /// Returns MsgId::Invalid on an empty or truncated packet.
@@ -134,5 +146,6 @@ bool read_welcome(BitReader& reader, WelcomeMsg& out);
 bool read_reject(BitReader& reader, RejectMsg& out);
 bool read_snapshot(BitReader& reader, sim::Snapshot& out);
 bool read_map_chunk(BitReader& reader, MapChunkMsg& out);
+bool read_effect(BitReader& reader, EffectMsg& out);
 
 }  // namespace net

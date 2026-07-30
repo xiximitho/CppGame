@@ -7,7 +7,9 @@
 #include <string>
 
 #include "client/damage_feed.hpp"
+#include "client/effect_feed.hpp"
 #include "client/input.hpp"
+#include "client/inventory_ui.hpp"
 #include "client/iso.hpp"
 #include "client/sdl_backend.hpp"
 #include "client/session.hpp"
@@ -223,6 +225,8 @@ int main(int argc, char** argv) {
         bool          running = true;
         std::uint64_t frames = 0;
         client::DamageFeed damage_feed;
+        client::EffectFeed effect_feed;
+        bool show_inventory = false;
         const std::uint64_t start_nanos = core::now_nanos();
         std::uint64_t last_title_update = core::now_nanos();
         double        fps = 0.0;
@@ -259,6 +263,8 @@ int main(int argc, char** argv) {
                         } else if (event.key.key == SDLK_MINUS ||
                                    event.key.key == SDLK_KP_MINUS) {
                             zoom = SDL_max(zoom / 1.25F, 0.5F);
+                        } else if (event.key.scancode == SDL_SCANCODE_I) {
+                            show_inventory = !show_inventory;
                         }
                         break;
 
@@ -339,6 +345,9 @@ int main(int argc, char** argv) {
             const float now_seconds = static_cast<float>(
                 static_cast<double>(core::now_nanos() - start_nanos) / 1.0e9);
             damage_feed.observe(session->view(), now_seconds);
+            for (const sim::AttackEvent& effect : session->drain_effects()) {
+                effect_feed.spawn(effect, now_seconds);
+            }
 
             {
                 float target_x = 0.0F;
@@ -361,7 +370,11 @@ int main(int argc, char** argv) {
 
             renderer->begin_frame(client::Color{18, 20, 26, 255});
             client::render_world(*renderer, tileset, session->view(), params);
+            effect_feed.render(*renderer, tileset, now_seconds);
             damage_feed.render(*renderer, tileset, now_seconds);
+            if (show_inventory) {
+                client::draw_inventory(*renderer, tileset, session->view());
+            }
             renderer->end_frame();
 
             ++frames;

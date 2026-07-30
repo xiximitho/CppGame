@@ -12,6 +12,7 @@
 #include "sim/map_gen.hpp"
 #include "sim/map_io.hpp"
 #include "sim/systems.hpp"
+#include "sim/tile_ids.hpp"
 #include "sim/world.hpp"
 
 namespace client {
@@ -63,6 +64,20 @@ public:
         // The player respawns on death instead of vanishing; monsters do not.
         world_.registry().emplace<sim::CRespawn>(local_entity,
                                                  sim::CRespawn{spawn});
+
+        // Starting kit: a sword and body armour worn, spares in the pack.
+        {
+            auto& equipment =
+                world_.registry().emplace<sim::CEquipment>(local_entity);
+            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
+                sim::tiles::kSword;
+            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
+                sim::tiles::kArmor;
+        }
+        world_.registry().emplace<sim::CInventory>(
+            local_entity, sim::CInventory{{{sim::tiles::kBow, 1},
+                                           {sim::tiles::kShield, 1},
+                                           {sim::tiles::kHelmet, 1}}});
 
         spawn_wanderers(wanderers, spawn);
 
@@ -123,6 +138,12 @@ public:
             sim::update_wanderers(world_, rng_);
         }
 
+        // Hand attack effects to the client to render, then clear them.
+        for (const sim::AttackEvent& effect : world_.attack_events()) {
+            effects_buffer_.push_back(effect);
+        }
+        world_.clear_attack_events();
+
         refresh_view();
     }
 
@@ -144,6 +165,12 @@ public:
     }
 
     const WorldView& view() const override { return view_; }
+
+    std::vector<sim::AttackEvent> drain_effects() override {
+        std::vector<sim::AttackEvent> out;
+        out.swap(effects_buffer_);
+        return out;
+    }
 
     std::string status_text() const override {
         char buffer[120];
@@ -196,6 +223,17 @@ private:
 
         view_.tick = snapshot.tick;
         view_.actors = std::move(snapshot.actors);
+
+        // The inventory panel reads these; solo fills them straight from the
+        // local player's components.
+        if (const auto* equipment =
+                world_.registry().try_get<sim::CEquipment>(local)) {
+            view_.equipment = equipment->slots;
+        }
+        if (const auto* inventory =
+                world_.registry().try_get<sim::CInventory>(local)) {
+            view_.inventory = inventory->items;
+        }
     }
 
     sim::World  world_;
@@ -212,6 +250,7 @@ private:
     sim::TilePos   pending_target_;
     bool           pending_attack_ = false;
     sim::NetId     pending_attack_target_ = sim::kInvalidNetId;
+    std::vector<sim::AttackEvent> effects_buffer_;
     int            spawned_wanderers_ = 0;
 };
 

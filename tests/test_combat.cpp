@@ -79,6 +79,65 @@ TEST_CASE("a target out of melee range is never hit") {
     CHECK(hp_of(world, target) == 100);
 }
 
+// Same open map, but the World carries the real catalogue so equipped-item
+// stats resolve.
+World make_armed_world() {
+    TileMap map(12, 12, 1);
+    for (int y = 0; y < 12; ++y) {
+        for (int x = 0; x < 12; ++x) {
+            map.set_ground(TilePos{static_cast<std::int16_t>(x),
+                                   static_cast<std::int16_t>(y), 0},
+                           tiles::kStone);
+        }
+    }
+    return World(std::move(map), build_default_registry());
+}
+
+void equip(World& world, NetId id, EquipSlot slot, ItemTypeId item) {
+    CEquipment& eq = world.registry().get_or_emplace<CEquipment>(world.lookup(id));
+    eq.slots[static_cast<std::size_t>(slot)] = item;
+}
+
+TEST_CASE("equipped weapon and armour change the damage dealt") {
+    World world = make_armed_world();
+    const NetId attacker = world.allocate_net_id();
+    world.spawn_actor(attacker, TilePos{5, 5, 0}, 0);
+    const NetId target = world.allocate_net_id();
+    world.spawn_actor(target, TilePos{6, 5, 0}, 0);
+
+    equip(world, attacker, EquipSlot::Weapon, tiles::kSword);   // +12 attack
+    equip(world, target, EquipSlot::Body, tiles::kArmor);       // +8 defense
+
+    world.set_attack_target(attacker, target);
+    tick(world);  // first swing
+
+    // (base 18 + sword 12) - armour 8 = 22.
+    CHECK(hp_of(world, target) == 100 - (kBaseMeleeDamage + 12 - 8));
+}
+
+TEST_CASE("a bow reaches a target three tiles away that a punch cannot") {
+    World world = make_armed_world();
+    const NetId attacker = world.allocate_net_id();
+    world.spawn_actor(attacker, TilePos{2, 2, 0}, 0);
+    const NetId target = world.allocate_net_id();
+    world.spawn_actor(target, TilePos{5, 2, 0}, 0);  // three tiles away
+
+    world.set_attack_target(attacker, target);
+
+    // Unarmed (melee range 1) never lands.
+    for (int i = 0; i < 60; ++i) {
+        tick(world);
+    }
+    CHECK(hp_of(world, target) == 100);
+
+    // With a bow (range 4) it does, and records an attack event to render.
+    equip(world, attacker, EquipSlot::Weapon, tiles::kBow);
+    tick(world);
+    CHECK(hp_of(world, target) < 100);
+    REQUIRE_FALSE(world.attack_events().empty());
+    CHECK(world.attack_events().back().effect == kEffectRangedShot);
+}
+
 TEST_CASE("a player (CRespawn) dies then respawns at its point") {
     World world = make_open_world();
     const NetId attacker = world.allocate_net_id();

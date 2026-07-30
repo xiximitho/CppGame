@@ -61,6 +61,12 @@ public:
     /// selection frames) through the same batched path as sprites.
     const AtlasEntry& solid() const { return solid_; }
 
+    /// Inventory icon for an item id (invalid when the atlas has none).
+    const AtlasEntry& icon(sim::TileId id) const;
+
+    /// Attack-effect sprite by id (see sim ItemType::effect); invalid if absent.
+    const AtlasEntry& effect(std::uint8_t id) const;
+
 private:
     /// Fills `out` from the text metadata; returns false if nothing parsed. Kept
     /// a member so it can populate the private lookup tables.
@@ -73,6 +79,8 @@ private:
     std::array<AtlasEntry, 8> actor_frames_{};
     AtlasEntry highlight_{};
     AtlasEntry solid_{};
+    std::unordered_map<sim::TileId, AtlasEntry>      icons_;
+    std::unordered_map<std::uint8_t, AtlasEntry>     effects_;
     AtlasEntry invalid_{};
 };
 

@@ -1,12 +1,33 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
+#include "sim/item_type.hpp"
 #include "sim/types.hpp"
 
 namespace sim {
+
+/// A quantity of one item type. count > 1 only for stackable types.
+struct ItemStack {
+    ItemTypeId    id    = kItemNone;
+    std::uint16_t count = 0;
+};
+
+/// A backpack: a flat list of stacks. Kept simple (no grid) until it needs to be
+/// more.
+struct CInventory {
+    std::vector<ItemStack> items;
+};
+
+/// Worn gear, one item id per slot (kItemNone = empty). The wearer's effective
+/// attack/defense and weapon range come from summing these — see
+/// sim::combat_stats.
+struct CEquipment {
+    std::array<ItemTypeId, kEquipSlotCount> slots{};
+};
 
 /// Where an actor stands and which way it looks. `facing` is simulation state,
 /// not presentation: in a tile MMO turning is an action with its own cost, and

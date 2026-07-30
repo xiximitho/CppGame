@@ -71,6 +71,14 @@ void write_attack(BitWriter& writer, const AttackMsg& msg) {
     writer.flush();
 }
 
+void write_effect(BitWriter& writer, const EffectMsg& msg) {
+    write_msg_id(writer, MsgId::S2C_Effect);
+    write_tile_pos(writer, msg.from);
+    write_tile_pos(writer, msg.to);
+    writer.write_bits(msg.effect, 8);
+    writer.flush();
+}
+
 void write_welcome(BitWriter& writer, const WelcomeMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Welcome);
     writer.write_bits(msg.your_id, 32);
@@ -152,6 +160,7 @@ MsgId read_msg_id(BitReader& reader) {
         case MsgId::S2C_Reject:   return MsgId::S2C_Reject;
         case MsgId::S2C_Snapshot: return MsgId::S2C_Snapshot;
         case MsgId::S2C_MapChunk: return MsgId::S2C_MapChunk;
+        case MsgId::S2C_Effect:   return MsgId::S2C_Effect;
         case MsgId::Invalid:      break;
     }
     return MsgId::Invalid;
@@ -177,6 +186,13 @@ bool read_move_to(BitReader& reader, MoveToMsg& out) {
 
 bool read_attack(BitReader& reader, AttackMsg& out) {
     out.target = reader.read_bits(32);
+    return !reader.overflowed();
+}
+
+bool read_effect(BitReader& reader, EffectMsg& out) {
+    out.from = read_tile_pos(reader);
+    out.to = read_tile_pos(reader);
+    out.effect = static_cast<std::uint8_t>(reader.read_bits(8));
     return !reader.overflowed();
 }
 

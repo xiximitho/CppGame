@@ -83,6 +83,20 @@ constexpr ItemFlags operator|(ItemFlags a, ItemFlag b) {
     return ItemFlags{a.bits() | static_cast<std::uint32_t>(b)};
 }
 
+/// Where an equippable item goes. Tibia-style slots; indices 0..kEquipSlotCount-1
+/// double as the layout of CEquipment.
+enum class EquipSlot : std::uint8_t {
+    Weapon, Shield, Helmet, Body, Legs, Boots, Ring, Amulet
+};
+constexpr std::size_t kEquipSlotCount = 8;
+
+/// How a weapon reaches its target. Non-weapons ignore this.
+enum class AttackKind : std::uint8_t { Melee, Ranged };
+
+/// Attack effect ids the client renders (see client/effect_feed). 0 = none.
+constexpr std::uint8_t kEffectMeleeGlow  = 1;
+constexpr std::uint8_t kEffectRangedShot = 2;
+
 /// One entry in the catalogue. Deliberately POD-like and free of any pointer to
 /// presentation, so it serialises to the content blob as a fixed record.
 struct ItemType {
@@ -91,9 +105,21 @@ struct ItemType {
     std::uint16_t weight    = 0U;   ///< in centi-oz; 0 for scenery
     std::uint8_t  max_stack = 1U;   ///< meaningful only with ItemFlag::Stackable
 
+    // Equipment and combat. Defaults are inert, so a non-gear type leaves them 0.
+    bool          equippable   = false;
+    EquipSlot     slot         = EquipSlot::Weapon;  ///< used when equippable
+    std::int16_t  attack       = 0;   ///< added to the wearer's attack (weapons)
+    std::int16_t  defense      = 0;   ///< added to the wearer's defense (armour)
+    AttackKind    attack_kind  = AttackKind::Melee;  ///< weapons only
+    std::uint8_t  attack_range = 1;   ///< tiles; melee = 1
+    std::uint8_t  effect       = 0;   ///< client attack-effect id for this weapon
+
     constexpr bool blocks_walk()  const { return flags.has(ItemFlag::BlocksWalk); }
     constexpr bool blocks_sight() const { return flags.has(ItemFlag::BlocksSight); }
     constexpr bool is_ground()    const { return flags.has(ItemFlag::Ground); }
+    constexpr bool is_weapon() const {
+        return equippable && slot == EquipSlot::Weapon;
+    }
 };
 
 /// The catalogue itself: id -> ItemType, dense so lookup is a bounds check and an

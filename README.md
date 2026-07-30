@@ -207,6 +207,8 @@ regra está em [docs/architecture.md](docs/architecture.md).
   por alvo, respawn) e o que já está feito
 - [docs/authoring.md](docs/authoring.md) — **guia prático**: como criar um sprite,
   um tipo de tile/objeto e um mapa, passo a passo
+- [docs/inventory.md](docs/inventory.md) — inventário, equipamento, combate
+  data-driven (ataque/defesa, melee/ranged) e efeitos de ataque
 
 ## Configuração opcional
 

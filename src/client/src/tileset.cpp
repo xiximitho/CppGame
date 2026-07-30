@@ -433,6 +433,19 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
             }
             out.solid_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, 0.0F, 0.0F);
             ++bound;
+        } else if (kind == "item" || kind == "effect") {
+            int id = 0;
+            if (!(fields >> id >> x >> y >> w >> h)) {
+                return false;
+            }
+            const AtlasEntry entry =
+                entry_from_pixels(atlas_w, atlas_h, x, y, w, h, 0.0F, 0.0F);
+            if (kind == "item") {
+                out.icons_[static_cast<sim::TileId>(id)] = entry;
+            } else {
+                out.effects_[static_cast<std::uint8_t>(id)] = entry;
+            }
+            ++bound;
         } else if (kind == "ground" || kind == "object") {
             int id = 0;
             if (!(fields >> id >> x >> y >> w >> h >> ox >> oy)) {
@@ -499,6 +512,16 @@ const AtlasEntry& Tileset::ground(sim::TileId id) const {
 const AtlasEntry& Tileset::object(sim::TileId id) const {
     const auto it = object_.find(id);
     return it == object_.end() ? invalid_ : it->second;
+}
+
+const AtlasEntry& Tileset::icon(sim::TileId id) const {
+    const auto it = icons_.find(id);
+    return it == icons_.end() ? invalid_ : it->second;
+}
+
+const AtlasEntry& Tileset::effect(std::uint8_t id) const {
+    const auto it = effects_.find(id);
+    return it == effects_.end() ? invalid_ : it->second;
 }
 
 const AtlasEntry& Tileset::actor(sim::Direction facing) const {

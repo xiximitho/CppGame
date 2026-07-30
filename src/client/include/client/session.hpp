@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "sim/components.hpp"
 #include "sim/snapshot.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
@@ -24,6 +26,12 @@ struct WorldView {
     sim::Tick                    tick = 0;
     /// False until the map dimensions and the local actor id are known.
     bool ready = false;
+
+    /// The local player's gear and backpack, for the inventory panel. Filled by
+    /// solo today; the remote session leaves them empty until inventory is sent
+    /// over the wire (a known TODO).
+    std::array<sim::ItemTypeId, sim::kEquipSlotCount> equipment{};
+    std::vector<sim::ItemStack>                       inventory;
 };
 
 /// Where the world comes from. Solo runs the simulation in-process; Remote
@@ -58,6 +66,10 @@ public:
     virtual void request_attack(sim::NetId target) = 0;
 
     virtual const WorldView& view() const = 0;
+
+    /// Attack effects that occurred since the last call, for the client to
+    /// render. Returns and clears them so each is drawn once.
+    virtual std::vector<sim::AttackEvent> drain_effects() = 0;
 
     /// Short human-readable state for the window title / HUD.
     virtual std::string status_text() const = 0;

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include <entt/entity/registry.hpp>
 
@@ -88,6 +89,15 @@ public:
     /// Brings a dead (CRespawn) actor back at its respawn point, full health.
     void respawn_actor(NetId net_id);
 
+    /// Attacks that landed since the last clear. update_combat appends here; the
+    /// server sends them as S2C_Effect and the solo session feeds them to the
+    /// client, then clears.
+    const std::vector<AttackEvent>& attack_events() const { return attack_events_; }
+    void push_attack_event(const AttackEvent& event) {
+        attack_events_.push_back(event);
+    }
+    void clear_attack_events() { attack_events_.clear(); }
+
     /// Whether the actor is currently following a route.
     bool is_following_path(NetId net_id) const;
 
@@ -101,9 +111,10 @@ private:
     void occupy(TilePos pos, NetId net_id);
     void vacate(TilePos pos, NetId net_id);
 
-    TileMap          map_;
-    ItemTypeRegistry item_types_;
-    entt::registry   registry_;
+    TileMap                  map_;
+    ItemTypeRegistry         item_types_;
+    entt::registry           registry_;
+    std::vector<AttackEvent> attack_events_;
 
     std::unordered_map<NetId, entt::entity>  by_net_id_;
     std::unordered_map<std::uint64_t, NetId> occupancy_;
