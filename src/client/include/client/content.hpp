@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim/item_type.hpp"
+#include "sim/monster_type.hpp"
 
 // How the client gets its item catalogue.
 //
@@ -23,5 +24,15 @@ namespace client {
 /// fallback in Tileset::load. A blob that exists but does not parse is a different
 /// matter and logs loudly: that is corruption or a version mismatch, not an absence.
 sim::ItemTypeRegistry load_item_catalogue();
+
+/// Loads the monster classes from `monsters.txt` through platform::vfs, falling
+/// back to the built-in table when the file is missing or malformed.
+///
+/// Both the solo session (which simulates) and the HUD (which needs the class name
+/// for the battle list) call this, so there is one loader and one parser for the
+/// file. In network play the numbers are the server's business and this copy is
+/// only ever read for presentation — a client whose file disagrees shows a wrong
+/// NAME, never a wrong fight.
+sim::MonsterRegistry load_monster_catalogue();
 
 }  // namespace client

@@ -386,11 +386,20 @@ bool decode_atlas_rgba(const std::vector<std::uint8_t>& file_bytes,
 
 AtlasEntry entry_from_pixels(int atlas_w, int atlas_h, int x, int y, int w,
                              int h, float origin_x, float origin_y) {
+    // Half-texel inset. A region's edge in normalised uv is only exact when the
+    // atlas dimension is a power of two; at 256x440 the bottom edge of the ground
+    // row lands a hair past texel 31 and NEAREST sampling picks up row 32 — which
+    // is the gold cursor band, so every floor tile grew a yellow speck at its
+    // bottom tip. Biasing to texel centres samples the region and nothing else,
+    // whatever the atlas measures.
+    const float half_u = 0.5F / static_cast<float>(atlas_w);
+    const float half_v = 0.5F / static_cast<float>(atlas_h);
+
     AtlasEntry entry;
-    entry.uv = Rect{static_cast<float>(x) / static_cast<float>(atlas_w),
-                    static_cast<float>(y) / static_cast<float>(atlas_h),
-                    static_cast<float>(w) / static_cast<float>(atlas_w),
-                    static_cast<float>(h) / static_cast<float>(atlas_h)};
+    entry.uv = Rect{static_cast<float>(x) / static_cast<float>(atlas_w) + half_u,
+                    static_cast<float>(y) / static_cast<float>(atlas_h) + half_v,
+                    static_cast<float>(w) / static_cast<float>(atlas_w) - 2.0F * half_u,
+                    static_cast<float>(h) / static_cast<float>(atlas_h) - 2.0F * half_v};
     entry.width = static_cast<float>(w);
     entry.height = static_cast<float>(h);
     entry.origin_x = origin_x;
@@ -471,6 +480,23 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
             }
             if (dir >= 0 && dir < static_cast<int>(out.actor_frames_.size())) {
                 out.actor_frames_[static_cast<std::size_t>(dir)] =
+                    entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+                ++bound;
+            }
+        } else if (kind == "mob") {
+            // One appearance's worth of directions, one line each:
+            //   mob <appearance> <dir> <x> <y> <w> <h> <origin_x> <origin_y>
+            // A separate kind from `actor` rather than an extra column on it, so
+            // every atlas.txt written before monsters existed still parses.
+            int appearance = 0;
+            int dir = 0;
+            if (!(fields >> appearance >> dir >> x >> y >> w >> h >> ox >> oy)) {
+                return false;
+            }
+            if (dir >= 0 && dir < 8 && appearance > 0) {
+                auto& frames =
+                    out.mob_frames_[static_cast<std::uint16_t>(appearance)];
+                frames[static_cast<std::size_t>(dir)] =
                     entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
                 ++bound;
             }
@@ -563,10 +589,22 @@ const AtlasEntry& Tileset::glyph(char c) const {
     return glyphs_[index];
 }
 
-const AtlasEntry& Tileset::actor(sim::Direction facing) const {
-    const auto index = static_cast<std::size_t>(facing);
-    return index < actor_frames_.size() ? actor_frames_[index]
-                                        : actor_frames_[0];
+const AtlasEntry& Tileset::actor(sim::Direction facing,
+                                 std::uint16_t appearance) const {
+    auto index = static_cast<std::size_t>(facing);
+    if (index >= actor_frames_.size()) {
+        index = 0;
+    }
+    if (appearance != 0) {
+        const auto found = mob_frames_.find(appearance);
+        // Falls through to the player frames when the atlas has no art for this
+        // appearance: a mob drawn as a knight is a bug you can see, and an
+        // invisible mob that still hits you is one you cannot.
+        if (found != mob_frames_.end() && found->second[index].valid) {
+            return found->second[index];
+        }
+    }
+    return actor_frames_[index];
 }
 
 }  // namespace client

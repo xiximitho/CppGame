@@ -6,6 +6,8 @@
 #include <cstring>
 #include <string>
 
+#include "client/battle_list.hpp"
+#include "client/content.hpp"
 #include "client/damage_feed.hpp"
 #include "client/effect_feed.hpp"
 #include "client/input.hpp"
@@ -29,7 +31,13 @@ struct Options {
     std::uint16_t port = net::kDefaultPort;
     std::string   name = "player";
     std::uint64_t seed = 1337;
-    int           wanderers = 24;
+    /// Extra random mobs on top of whatever the map authors. Zero by default: maps
+    /// carry their own monsters and spawn points now.
+    int           wanderers = 0;
+    /// Asset-relative, resolved through the VFS: on Android the map lives inside
+    /// the package and is not a file. Solo only; in network play the server owns
+    /// the map and sends it.
+    std::string   map_path = "maps/dungeon.txt";
     int           window_width = 1280;
     int           window_height = 720;
     float         zoom = 2.0F;
@@ -50,7 +58,10 @@ void print_usage() {
         "  --connect HOST[:PORT]  join a server (default port %u)\n"
         "  --name NAME          player name sent to the server\n"
         "  --seed N             solo world seed\n"
-        "  --wanderers N        solo wandering actors (default 24)\n"
+        "  --wanderers N        extra random mobs on top of the map's (default 0)\n"
+        "  --map PATH           solo map, asset-relative (default\n"
+        "                       maps/dungeon.txt); falls back to the seeded\n"
+        "                       generated map when it cannot be read\n"
         "  --zoom N             initial zoom (default 2)\n"
         "  --screenshot FILE    render a few frames, write a BMP, exit\n"
         "  --screenshot-frame N  which frame to capture (default 45)\n"
@@ -99,6 +110,8 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.seed = std::strtoull(argv[++i], nullptr, 10);
         } else if (arg == "--wanderers" && has_value) {
             options.wanderers = std::atoi(argv[++i]);
+        } else if (arg == "--map" && has_value) {
+            options.map_path = argv[++i];
         } else if (arg == "--zoom" && has_value) {
             options.zoom = static_cast<float>(std::atof(argv[++i]));
         } else if (arg == "--screenshot" && has_value) {
@@ -139,6 +152,8 @@ void apply_config_file(Options& options) {
             parse_endpoint(value, options);
         } else if (key == "name") {
             options.name = value;
+        } else if (key == "map") {
+            options.map_path = value;
         } else if (key == "zoom") {
             options.zoom = static_cast<float>(std::atof(value.c_str()));
         } else if (key == "width") {
@@ -203,7 +218,8 @@ int main(int argc, char** argv) {
 
         std::unique_ptr<client::Session> session;
         if (options.solo) {
-            session = client::make_solo_session(options.seed, options.wanderers);
+            session = client::make_solo_session(options.seed, options.wanderers,
+                                                options.map_path);
         } else {
             session = client::make_remote_session(options.host, options.port,
                                                   options.name);
@@ -227,6 +243,14 @@ int main(int argc, char** argv) {
         client::DamageFeed damage_feed;
         client::EffectFeed effect_feed;
         bool show_inventory = false;
+        // Class names for the battle list. Presentation only: in network play the
+        // server owns the numbers, so a stale local file shows a wrong NAME and
+        // never a wrong fight.
+        const sim::MonsterRegistry monster_types = client::load_monster_catalogue();
+        // What the player last clicked to fight. Kept client-side because the
+        // snapshot does not carry "who am I attacking" — it is a UI highlight, and
+        // the simulation is the one that actually holds the target.
+        sim::NetId ui_target = sim::kInvalidNetId;
         const std::uint64_t start_nanos = core::now_nanos();
         std::uint64_t last_title_update = core::now_nanos();
         double        fps = 0.0;
@@ -310,9 +334,15 @@ int main(int argc, char** argv) {
                 params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
                 params.hover_valid = session->view().map.in_bounds(params.hover);
             }
+            // Where the battle list starts: under the inventory when that is open,
+            // at the top of the screen otherwise. Passed in rather than the panel
+            // knowing about the inventory, so neither has to know the other exists.
+            const float battle_top = show_inventory ? 300.0F : 24.0F;
+
             // A click goes to the inventory panel first (when open), then to the
-            // world: on another actor it attacks, on the ground it walks. Only
-            // the intent is sent; the simulation owns fight, route and inventory.
+            // battle list, then to the world: on another actor it attacks, on the
+            // ground it walks. Only the intent is sent; the simulation owns fight,
+            // route and inventory.
             if (click_requested) {
                 bool consumed = false;
                 if (show_inventory) {
@@ -328,6 +358,17 @@ int main(int argc, char** argv) {
                     }
                 }
 
+                if (!consumed) {
+                    const sim::NetId picked = client::battle_list_hit(
+                        *renderer, tileset, session->view(), mouse_x, mouse_y,
+                        battle_top);
+                    if (picked != sim::kInvalidNetId) {
+                        session->request_attack(picked);
+                        ui_target = picked;
+                        consumed = true;
+                    }
+                }
+
                 if (!consumed && params.hover_valid) {
                     const client::WorldView& view = session->view();
                     sim::NetId target = sim::kInvalidNetId;
@@ -338,10 +379,32 @@ int main(int argc, char** argv) {
                             break;
                         }
                     }
-                    session->request_move_to(params.hover);
                     if (target != sim::kInvalidNetId) {
-                        session->request_attack(target);  // close in, then swing
+                        // Naming the creature is the whole intent: the simulation
+                        // closes the distance and keeps closing it. Sending a
+                        // move_to as well would plan a route to where the target
+                        // stood, which is the stale-route bug this replaced.
+                        session->request_attack(target);
+                        ui_target = target;
+                    } else {
+                        ui_target = sim::kInvalidNetId;
+                        session->request_move_to(params.hover);
                     }
+                }
+            }
+
+            // A target that walked out of view (or died) stops being highlighted:
+            // the panel would otherwise frame a row that no longer exists.
+            if (ui_target != sim::kInvalidNetId) {
+                bool still_there = false;
+                for (const sim::ActorState& actor : session->view().actors) {
+                    if (actor.net_id == ui_target) {
+                        still_there = true;
+                        break;
+                    }
+                }
+                if (!still_there) {
+                    ui_target = sim::kInvalidNetId;
                 }
             }
 
@@ -390,6 +453,8 @@ int main(int argc, char** argv) {
             if (show_inventory) {
                 client::draw_inventory(*renderer, tileset, session->view());
             }
+            client::draw_battle_list(*renderer, tileset, session->view(),
+                                     monster_types, ui_target, battle_top);
             renderer->end_frame();
 
             ++frames;

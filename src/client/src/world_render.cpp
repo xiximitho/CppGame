@@ -152,11 +152,22 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
         const TileRange range = visible_tiles(renderer, z);
 
         // Floors below the actor's are dimmed, which reads as depth and keeps the
-        // eye on the floor being played.
+        // eye on the floor being played. Clamped at both ends: the floor *above*
+        // is drawn when nothing overhead covers the actor, and there
+        // depth_below is -1, which without the upper bound overflows the cast to
+        // brightness 44 and paints an overhang almost black.
         const int depth_below = actor_floor - z;
         const auto brightness = static_cast<std::uint8_t>(
-            std::max(120, 255 - depth_below * 45));
-        const Color floor_tint{brightness, brightness, brightness, 255};
+            std::clamp(255 - depth_below * 45, 120, 255));
+
+        // The floor above is drawn see-through. Floors dominate depth absolutely,
+        // so an opaque slab overhead HIDES THE PLAYER: standing in the courtyard
+        // beside the tower, a tile of floor 1 to the south-east covers the actor
+        // and all that is left on screen is a health bar. Transparency keeps what
+        // that floor was drawn for (overhangs, bridges, the shape of the building
+        // above) without ever losing the character under it.
+        const auto alpha = static_cast<std::uint8_t>(z > actor_floor ? 110 : 255);
+        const Color floor_tint{brightness, brightness, brightness, alpha};
 
         for (int y = range.min_y; y <= range.max_y; ++y) {
             for (int x = range.min_x; x <= range.max_x; ++x) {
@@ -244,8 +255,9 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
 
             const float actor_depth =
                 iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor);
-            submit_entry(renderer, texture, tileset.actor(actor.facing), apex,
-                         actor_depth, tint);
+            const AtlasEntry& sprite =
+                tileset.actor(actor.facing, actor.appearance);
+            submit_entry(renderer, texture, sprite, apex, actor_depth, tint);
 
             // Health bar above the head. Drawn from the hp already carried in the
             // snapshot, so it needs nothing server-side beyond what exists.
@@ -257,7 +269,10 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
                 constexpr float bar_w = 22.0F;
                 constexpr float bar_h = 3.0F;
                 const float bar_x = apex.x - bar_w * 0.5F;
-                const float bar_y = apex.y - 42.0F;
+                // Hung off the sprite's own top edge, not a constant: mob cells
+                // differ in height, and a fixed -42 leaves a rat's bar floating
+                // half a tile above the rat.
+                const float bar_y = apex.y + sprite.origin_y - 10.0F;
                 submit_rect(renderer, texture, tileset.solid(), bar_x - 1.0F,
                             bar_y - 1.0F, bar_w + 2.0F, bar_h + 2.0F,
                             actor_depth + 0.5F, Color{16, 16, 20, 230});

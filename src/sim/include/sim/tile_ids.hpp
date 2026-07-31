@@ -21,6 +21,11 @@ constexpr TileId kWall  = 100;
 constexpr TileId kTree  = 101;
 constexpr TileId kCrate = 102;
 
+// Stairs. Walkable objects: the rule is "arriving here moves you a floor", so a
+// blocking stair would be a stair nobody can use.
+constexpr TileId kStairsUp   = 103;
+constexpr TileId kStairsDown = 104;
+
 constexpr TileId kActor = 200;
 
 // Equipment items. Not placed on the map like tiles; they live in inventories.

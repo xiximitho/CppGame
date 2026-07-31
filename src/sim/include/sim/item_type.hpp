@@ -45,6 +45,14 @@ enum class ItemFlag : std::uint32_t {
     Stackable   = 1U << 4U,
     /// Holds other items (backpack, chest).
     Container   = 1U << 5U,
+    /// Walking onto this tile moves the actor one floor up.
+    ///
+    /// Relative on purpose: a stair needs no per-tile destination, so it is a
+    /// property of the type and an author only has to paint the tile. An absolute
+    /// destination is a different mechanism (see the map file's `portal`).
+    StairsUp    = 1U << 6U,
+    /// Walking onto this tile moves the actor one floor down.
+    StairsDown  = 1U << 7U,
 };
 
 /// A small, strongly-typed bitset over ItemFlag. Kept trivial and constexpr so
@@ -121,6 +129,15 @@ struct ItemType {
     friend bool operator==(const ItemType&, const ItemType&) = default;
 
     constexpr bool blocks_walk()  const { return flags.has(ItemFlag::BlocksWalk); }
+    /// +1, -1 or 0: which floor this type sends an arriving actor to. Both flags
+    /// set is contradictory content, and up wins rather than the actor being
+    /// stuck — a silently inert tile is harder to notice than a wrong one.
+    constexpr int stair_delta_z() const {
+        if (flags.has(ItemFlag::StairsUp)) {
+            return 1;
+        }
+        return flags.has(ItemFlag::StairsDown) ? -1 : 0;
+    }
     constexpr bool blocks_sight() const { return flags.has(ItemFlag::BlocksSight); }
     constexpr bool is_ground()    const { return flags.has(ItemFlag::Ground); }
     constexpr bool is_weapon() const {

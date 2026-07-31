@@ -1,0 +1,58 @@
+# monsters.txt — as classes de mob do jogo. Editar e rodar: não recompila nada.
+#
+# Formato (docs/monsters.md):
+#
+#   class <id> <nome>        # id é CONTRATO: mapa salvo referencia classe por
+#     <chave> <valor>        # número, então nunca troque nem recicle um id
+#
+# Chaves: appearance, hp, attack, defense, kind (melee|ranged), range, effect,
+# step_ticks, aggro, leash, loot. Chave desconhecida é ERRO (pega typo), e nesse
+# caso o servidor cai no catálogo embutido e loga o motivo.
+#
+# step_ticks é a VELOCIDADE: ticks por passo cardinal a 30 Hz. O jogador anda a 9,
+# então:
+#     menor que 9  -> mais rápido que o jogador (não dá para fugir)
+#     igual a 9    -> mesma velocidade
+#     maior que 9  -> mais lento (dá para desengajar)
+# Diagonal custa proporcionalmente mais, calculado pelo sim.
+#
+# aggro é em tiles (Chebyshev): a que distância ele te nota. Ele desiste a 1.5x
+# disso, para não ligar e desligar quando você anda na borda.
+# leash é o quanto ele se afasta de onde nasceu enquanto não tem ninguém para caçar.
+# loot é um id de item deixado no chão na morte (0 = nada).
+
+class 1 rato
+  appearance   1
+  hp           14
+  attack       3
+  defense      0
+  kind         melee
+  range        1
+  step_ticks   13
+  aggro        4
+  leash        6
+  loot         306
+
+class 2 esqueleto
+  appearance   2
+  hp           40
+  attack       8
+  defense      3
+  kind         melee
+  range        1
+  step_ticks   19
+  aggro        8
+  leash        10
+  loot         302
+
+class 3 ogro
+  appearance   3
+  hp           90
+  attack       18
+  defense      6
+  kind         melee
+  range        2
+  step_ticks   30
+  aggro        7
+  leash        12
+  loot         308

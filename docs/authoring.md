@@ -17,6 +17,7 @@ uma, duas ou nas três, dependendo do que quer:
 | **Vincular um sprite a um id / mudar recorte** | `assets/tilesets/atlas.txt` | Não |
 | **Um id novo com regra de jogo** (bloqueia, pegável, ataque, defesa, alcance…) | `assets/content.db` (pelo `game_editor`, tecla `F2`) | Não |
 | **Colocar coisas no mundo** | `assets/maps/*.txt` (à mão ou pelo `game_editor`) | Não |
+| **Balancear um mob** (velocidade, hp, dano, aggro…) | `assets/monsters.txt` | Não |
 
 Regra de ouro: **tudo é dado**. Arte e mapa são lidos em runtime da árvore-fonte;
 tipos de item vivem no `assets/content.db` e são editados pelo `game_editor`
@@ -42,30 +43,36 @@ nunca vê a arte, e é isso que mantém o `server-only` sem lib gráfica — ver
 ```
 assets/tilesets/atlas.png   a folha de sprites (uma textura só)
 assets/tilesets/atlas.txt   liga cada recorte do PNG a um id/direção
-assets/maps/*.txt           mapas autorados
+assets/maps/*.txt           mapas autorados (tiles, spawn, mobs e ninhos)
+assets/monsters.txt         as classes de mob (velocidade, hp, dano, aggro, loot)
 assets/content.db           o catálogo de itens (SQLite; editado pelo game_editor)
 assets/content.bin          blob derivado do banco, que o CLIENTE lê (game_bake)
 src/sim/include/sim/tile_ids.hpp   ids que o próprio engine referencia por nome
 src/sim/src/item_type.cpp          build_default_registry(): a SEMENTE do banco
 tools/gen_placeholder_atlas.py     gera o atlas placeholder (PIL)
 tools/gen_dungeon.py               gera o calabouço de exemplo
+tools/gen_maps.py                  gera os outros mapas (floresta, vila, ...)
 ```
 
 ---
 
 ## Receita A — um objeto novo (ex.: um barril)
 
-Vamos criar um **barril** (`id 103`) que bloqueia passagem, ponta a ponta. (O
+Vamos criar um **barril** (`id 105`) que bloqueia passagem, ponta a ponta. (O
 mesmo passo a passo vale para paredes, árvores, baús etc. — muda só as flags.)
+103 e 104 já são as escadas, e id não se recicla: o editor escolhe o próximo livre
+com `N`, e é isso que você deve usar em vez de digitar um número.
 
 ### 1. Desenhar o sprite no atlas
 
-O atlas é 256×256. A linha de objetos fica em `y=64` (células de 64×64); os slots
-`x=0,64,128` são parede/árvore/caixa, então o **slot 3 em `x=192` está livre**.
+O atlas é 256×440 (cresceu para caber escadas e mobs). A linha de objetos fica em
+`y=64` (células de 64×64); os slots `x=0,64,128` são parede/árvore/caixa, então o
+**slot 3 em `x=192` está livre** — as escadas foram para a faixa nova em `y=256`
+justamente porque precisavam de duas vagas.
 Em `tools/gen_placeholder_atlas.py`, desenhe ali (perto do bloco da caixa):
 
 ```python
-# barril  id 103  -- objeto novo (docs/authoring.md)
+# barril  id 105  -- objeto novo (docs/authoring.md)
 bx = 3 * TW  # x = 192, slot livre na linha de blocos
 fill_block(px, bx, BLOCK_Y, rgba((150, 110, 60)),
            rgba((96, 68, 40)), rgba((120, 88, 50)), 32)
@@ -95,7 +102,7 @@ calculados, não digitados.
 **À mão**, é uma linha (é isto que responde "qual sprite é o objeto 103?"):
 
 ```
-object      103     192  64   64  64  -32      -32
+object      105     192  64   64  64  -32      -32
 #           id      x    y    w   h   origin_x origin_y
 ```
 
@@ -104,10 +111,10 @@ esquerdo do sprite. Valores canônicos: bloco 64×64 → `-32 -32`; chão 64×32
 `-32 0`; ator 32×48 → `-16 -32`. Ver [sprites.md](sprites.md).
 
 Para vincular em lote (uma folha de arte nova, dezenas de ids), existe também
-`game_editor --bind-sprite object:103:3:1` — `kind:id:coluna:linha` em células,
+`game_editor --bind-sprite object:105:3:1` — `kind:id:coluna:linha` em células,
 sem abrir janela.
 
-**Só com os passos 1–2 o cliente já desenha o id 103** — mas a simulação ainda não
+**Só com os passos 1–2 o cliente já desenha o id 105** — mas a simulação ainda não
 conhece esse id. Se você parar aqui, é uma decoração muda.
 
 ### 3 e 4. Criar o id e dar regras — no editor, sem recompilar
@@ -143,7 +150,7 @@ que têm sprite):
 ```
 
 Escolha o barril (clique na paleta ou `Tab`/`0`–`9`), clique pra pintar, `S` pra
-salvar. Ou, à mão, no `.txt`: `legend b 3 103` (chão pedra + barril) e use `b` na
+salvar. Ou, à mão, no `.txt`: `legend b 3 105` (chão pedra + barril) e use `b` na
 grade. Ver [maps.md](maps.md).
 
 ---
@@ -160,6 +167,63 @@ Chão é igual, com duas diferenças: a flag `Ground` e o tamanho do sprite (dia
    (para o id cair na faixa de chão), marque `is ground` = `yes` e deixe
    `blocks walk` = `no`. Água é o caso raro de chão que bloqueia: as duas em `yes`.
 5. Pinte com o editor ou use na legenda de um mapa.
+
+---
+
+## Receita B2 — uma escada
+
+Escada é objeto com flag, não código novo. No modo item do editor (`F2`), num id da
+faixa de objeto: `stairs up` = yes (ou `stairs down`), `blocks walk` = **no** (o
+ponto é pisar nela), sprite escolhido no seletor. Já existem as duas: ids **103** e
+**104**.
+
+No mapa, o par tem que ser simétrico: `<` em `(x,y,z)` e `>` no **mesmo x,y** em
+`z+1`, senão só dá para subir. O `tools/gen_maps.py` valida isso (`stair ... leads
+nowhere`) e a `torre.txt` é o exemplo pronto.
+
+---
+
+## Receita B3 — balancear um mob (sem recompilar)
+
+Edite `assets/monsters.txt` e rode. Nada de build, nada de rebake. `step_ticks` é a
+velocidade (jogador = 9; maior é mais lento), e o resto está em
+[monsters.md](monsters.md).
+
+```
+class 3 ogro
+  hp           90
+  attack       18
+  step_ticks   30      # 1 segundo por tile
+  aggro        7
+```
+
+Chave desconhecida é erro e o arquivo inteiro é recusado, com o motivo no log — aí
+vale o catálogo embutido. Se o mob não mudou, a primeira linha do log diz por quê.
+
+## Receita B4 — uma classe de mob nova
+
+1. **Id** em `sim/monster_type.hpp` (`namespace monsters`) e uma `appearance` nova.
+   Id de classe é contrato: nunca recicle.
+2. **Números**: um bloco `class` no `assets/monsters.txt`, **e** a mesma entrada em
+   `default_monsters()` (`src/sim/src/monster_type.cpp`), que é o fallback quando o
+   arquivo falta. Os dois têm que concordar. Faça a classe diferir em algo que se
+   **sente** — alcance, velocidade, quando ela te nota — e não só em hp.
+3. **Arte**: um `draw_*` em `tools/gen_placeholder_atlas.py` e uma faixa em
+   `MOB_BANDS` (8 direções; a célula pode ter o tamanho que a criatura pede), depois
+   `python3 tools/gen_placeholder_atlas.py --patch assets/tilesets`.
+
+## Receita B5 — colocar mob no mundo
+
+Duas linhas diferentes no `.txt` do mapa:
+
+```
+monster 22 11 0 2                 # UM esqueleto, morreu e acabou
+spawner 31 13 0 1 3 2 20          # 3 ratos vivos, raio 2, repõe 20s após cada morte
+```
+
+Ou um plano em `monster_plan()` / `spawner_plan()` do `gen_maps.py`, que valida tile
+caminhável, alcançável e população que caiba no raio. Detalhes em
+[monsters.md](monsters.md).
 
 ---
 
@@ -195,8 +259,23 @@ floor 0
 ```
 
 Espaço em branco = vazio (buraco não-caminhável). Um caractere fora da legenda é
-erro (pega typo). O cliente carrega `maps/dungeon.txt` por padrão no solo; para
-ver outro mapa hoje, salve por cima dele (um seletor de mapa é trabalho futuro).
+erro (pega typo).
+
+Para **ver** o mapa novo, aponte a flag `--map` (não precisa mais salvar por cima
+do calabouço):
+
+```bash
+./build/debug/bin/game_client --solo --map maps/floresta.txt   # relativo aos assets
+./build/debug/bin/game_server --map assets/maps/vila.txt       # relativo ao CWD
+```
+
+O padrão continua sendo `maps/dungeon.txt`, e um arquivo ilegível cai no mapa
+procedural com `LOG_WARN`. Em rede o mapa é o do servidor; `--map` no cliente vale
+para o solo. O cliente também aceita `map=maps/floresta.txt` no `client.cfg`.
+
+Os mapas de exemplo (`floresta`, `vila`, `caverna`, `ilha`, `torre`) saem de
+`tools/gen_maps.py`, que valida conectividade antes de gravar — ver
+[maps.md](maps.md).
 
 ---
 

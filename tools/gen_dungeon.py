@@ -51,11 +51,22 @@ def carve_rooms(seed):
             placed += 1
     cx, cy = centre(rooms[0])
     g[cy][cx] = '@'
-    return g
+    return g, rooms, centre
 
 
 def main(out_path, seed=20260729):
-    g = carve_rooms(seed)
+    g, rooms, centre = carve_rooms(seed)
+
+    # One nest per room except the one the player starts in. Alternating classes
+    # (sim::monsters:: ids) so a run through the dungeon is not the same fight nine
+    # times; long respawns so a cleared room stays cleared for a while.
+    nests = []
+    for index, room in enumerate(rooms[1:]):
+        cx, cy = centre(room)
+        if g[cy][cx] in '#~o':          # keep the nest on open floor
+            continue
+        cls, alive, seconds = [(1, 3, 20), (2, 2, 45), (3, 1, 100)][index % 3]
+        nests.append(f"spawner {cx} {cy} 0 {cls} {alive} 2 {seconds}")
     lines = [
         "# Grimhold - calabouco de pedra (mapa de exemplo, formato texto)",
         "# Edite a mão: '#' parede, '.' piso, '~' agua, 'o' caixa, '@' spawn.",
@@ -66,6 +77,7 @@ def main(out_path, seed=20260729):
         f"legend o {GROUND_STONE} {OBJ_CRATE}",
         f"legend @ {GROUND_STONE}",
         "spawn @",
+        *nests,
         "floor 0",
     ]
     lines += ["".join(row) for row in g]

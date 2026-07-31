@@ -93,6 +93,60 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
             }
             spawn_char = glyph[0];
             ++i;
+        } else if (keyword == "monster") {
+            int x = 0;
+            int y = 0;
+            int z = 0;
+            int type = 0;
+            if (!(fields >> x >> y >> z >> type) || type <= 0) {
+                return fail("bad 'monster' line: " + line);
+            }
+            if (!sized) {
+                return fail("'monster' before 'size'");
+            }
+            const TilePos at{static_cast<std::int16_t>(x),
+                             static_cast<std::int16_t>(y),
+                             static_cast<std::int8_t>(z)};
+            if (!out.map.in_bounds(at)) {
+                return fail("'monster' outside the map: " + line);
+            }
+            // Whether the tile is walkable is NOT checked here: a monster line may
+            // legally precede the grid that fills that tile in. The spawner skips
+            // what it cannot place, and tools/gen_maps.py checks it at authoring
+            // time, where a bad placement can still be fixed.
+            out.monsters.push_back(
+                MonsterSpawn{at, static_cast<MonsterTypeId>(type)});
+            ++i;
+        } else if (keyword == "spawner") {
+            int x = 0;
+            int y = 0;
+            int z = 0;
+            int type = 0;
+            int count = 0;
+            int radius = 0;
+            int seconds = 0;
+            if (!(fields >> x >> y >> z >> type >> count >> radius >> seconds) ||
+                type <= 0 || count <= 0 || radius < 0 || seconds < 0) {
+                return fail("bad 'spawner' line: " + line);
+            }
+            if (!sized) {
+                return fail("'spawner' before 'size'");
+            }
+            const TilePos at{static_cast<std::int16_t>(x),
+                             static_cast<std::int16_t>(y),
+                             static_cast<std::int8_t>(z)};
+            if (!out.map.in_bounds(at)) {
+                return fail("'spawner' outside the map: " + line);
+            }
+            SpawnerSpec spec;
+            spec.tile = at;
+            spec.type = static_cast<MonsterTypeId>(type);
+            spec.max_alive = static_cast<std::uint8_t>(count > 255 ? 255 : count);
+            spec.radius = static_cast<std::uint8_t>(radius > 255 ? 255 : radius);
+            spec.respawn_seconds =
+                static_cast<std::uint16_t>(seconds > 65535 ? 65535 : seconds);
+            out.spawners.push_back(spec);
+            ++i;
         } else if (keyword == "floor") {
             int z = 0;
             if (!(fields >> z)) {
@@ -149,7 +203,9 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
 }
 
 std::string write_text_map(const TileMap& map,
-                           const std::optional<TilePos>& spawn) {
+                           const std::optional<TilePos>& spawn,
+                           const std::vector<MonsterSpawn>& monsters,
+                           const std::vector<SpawnerSpec>& spawners) {
     // Printable glyphs assigned to distinct (ground, object) pairs as they are
     // first seen. Space and '@' are reserved (void and spawn).
     const std::string pool = ".#~oTn,-=+:*%wsxde";
@@ -211,6 +267,23 @@ std::string write_text_map(const TileMap& map,
     if (has_spawn) {
         legend_line('@', spawn_key);
         out << "spawn @\n";
+    }
+
+    // Authored monsters are written back verbatim. The editor round-trips a map it
+    // cannot yet edit mobs in, and a save that silently dropped them would empty
+    // every map the first time someone opened one to move a wall.
+    for (const MonsterSpawn& monster : monsters) {
+        out << "monster " << monster.tile.x << ' ' << monster.tile.y << ' '
+            << static_cast<int>(monster.tile.z) << ' '
+            << static_cast<int>(monster.type) << '\n';
+    }
+    for (const SpawnerSpec& spawner : spawners) {
+        out << "spawner " << spawner.tile.x << ' ' << spawner.tile.y << ' '
+            << static_cast<int>(spawner.tile.z) << ' '
+            << static_cast<int>(spawner.type) << ' '
+            << static_cast<int>(spawner.max_alive) << ' '
+            << static_cast<int>(spawner.radius) << ' '
+            << static_cast<int>(spawner.respawn_seconds) << '\n';
     }
 
     for (int z = 0; z < map.floors(); ++z) {

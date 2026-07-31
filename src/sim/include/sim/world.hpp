@@ -8,6 +8,7 @@
 
 #include "sim/components.hpp"
 #include "sim/item_type.hpp"
+#include "sim/monster_type.hpp"
 #include "sim/pathfind.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
@@ -30,7 +31,11 @@ struct GroundPile {
 class World {
 public:
     World() = default;
-    explicit World(TileMap map, ItemTypeRegistry item_types = {});
+    /// `monsters` defaults to the built-in classes so every existing call site and
+    /// test keeps working; the server and the solo session hand in the catalogue
+    /// they loaded from assets/monsters.txt instead.
+    explicit World(TileMap map, ItemTypeRegistry item_types = {},
+                   MonsterRegistry monsters = default_monsters());
 
     Tick tick() const { return tick_; }
 
@@ -41,6 +46,10 @@ public:
     /// for gameplay properties (blocking, pickable, ...). Empty by default, which
     /// is fine for tests that place tiles by hand.
     const ItemTypeRegistry& item_types() const { return item_types_; }
+
+    /// The monster classes this world spawns from. Held here because spawners run
+    /// inside the simulation and need it at runtime, not just at world build.
+    const MonsterRegistry& monsters() const { return monsters_; }
 
     entt::registry&       registry() { return registry_; }
     const entt::registry& registry() const { return registry_; }
@@ -80,9 +89,21 @@ public:
     /// does not turn around at the end of the current step.
     bool request_move_to(NetId net_id, TilePos target);
 
-    /// Stops following a route. The step already in flight still completes — an
-    /// actor is never yanked backwards off a tile it is halfway onto.
+    /// Stops following a route AND stops chasing. This is what manual input calls:
+    /// pressing a direction or clicking the ground takes control back from both
+    /// auto-walking and an ongoing chase.
+    ///
+    /// The step already in flight still completes — an actor is never yanked
+    /// backwards off a tile it is halfway onto.
     void cancel_path(NetId net_id);
+
+    /// Drops the route but keeps any chase. sim::update_chasers uses this when the
+    /// target comes into reach: the actor stops walking and keeps swinging.
+    void stop_path(NetId net_id);
+
+    /// Chases `target` until it is within attack reach; kInvalidNetId clears it.
+    /// A primitive, like set_attack_target — sim::update_chasers does the walking.
+    void request_follow(NetId net_id, NetId target);
 
     /// Sets the actor `attacker` auto-attacks; kInvalidNetId clears it. A
     /// primitive like request_walk — sim::update_combat drives the swings.
@@ -138,8 +159,13 @@ private:
     void occupy(TilePos pos, NetId net_id);
     void vacate(TilePos pos, NetId net_id);
 
+    /// Moves the actor a floor when it just walked onto a stair tile. No-op when
+    /// the tile is not a stair or the destination cannot take it.
+    void apply_stairs(entt::entity entity);
+
     TileMap                  map_;
     ItemTypeRegistry         item_types_;
+    MonsterRegistry          monsters_;
     entt::registry           registry_;
     std::vector<AttackEvent> attack_events_;
 

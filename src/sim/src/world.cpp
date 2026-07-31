@@ -4,8 +4,10 @@
 
 namespace sim {
 
-World::World(TileMap map, ItemTypeRegistry item_types)
-    : map_(std::move(map)), item_types_(std::move(item_types)) {}
+World::World(TileMap map, ItemTypeRegistry item_types, MonsterRegistry monsters)
+    : map_(std::move(map)),
+      item_types_(std::move(item_types)),
+      monsters_(std::move(monsters)) {}
 
 std::uint64_t World::tile_key(TilePos pos) {
     // Bias into unsigned so negative coordinates still pack cleanly.
@@ -163,7 +165,37 @@ void World::cancel_path(NetId net_id) {
     const entt::entity entity = lookup(net_id);
     if (entity != entt::null) {
         registry_.remove<CPathFollow>(entity);
+        // Manual movement also ends a chase. Without this, update_chasers would
+        // replan on the next tick and walk the actor straight back, and the player
+        // would feel the input being ignored.
+        registry_.remove<CFollow>(entity);
     }
+}
+
+void World::stop_path(NetId net_id) {
+    const entt::entity entity = lookup(net_id);
+    if (entity != entt::null) {
+        registry_.remove<CPathFollow>(entity);
+    }
+}
+
+void World::request_follow(NetId net_id, NetId target) {
+    const entt::entity entity = lookup(net_id);
+    if (entity == entt::null) {
+        return;
+    }
+    if (target == kInvalidNetId || target == net_id) {
+        registry_.remove<CFollow>(entity);
+        return;
+    }
+    // Re-issuing the same target must not reset the plan, or a client sending the
+    // intent every frame would keep the actor replanning and never stepping.
+    if (const auto* existing = registry_.try_get<CFollow>(entity)) {
+        if (existing->target == target) {
+            return;
+        }
+    }
+    registry_.emplace_or_replace<CFollow>(entity, CFollow{target, TilePos{}, 0});
 }
 
 bool World::is_following_path(NetId net_id) const {
@@ -291,8 +323,16 @@ void World::set_attack_target(NetId attacker, NetId target) {
         registry_.remove<CTarget>(entity);
         return;
     }
-    // Reset the swing timer so a fresh target is hit promptly, not on the old
-    // target's leftover cooldown.
+    // Re-issuing the SAME target must change nothing. sim::update_monsters calls
+    // this a few times a second for an engaged mob, and resetting the swing timer
+    // each time let monsters hit every decision tick instead of once per cooldown —
+    // roughly ten times the intended damage, from a line that looks harmless.
+    if (auto* existing = registry_.try_get<CTarget>(entity)) {
+        if (existing->target == target) {
+            return;
+        }
+    }
+    // A fresh target is hit promptly, not on the old target's leftover cooldown.
     registry_.emplace_or_replace<CTarget>(entity, CTarget{target, 0});
 }
 
@@ -366,6 +406,38 @@ void World::respawn_actor(NetId net_id) {
     registry_.remove<CDead>(entity);
 }
 
+void World::apply_stairs(entt::entity entity) {
+    auto& pos = registry_.get<CPosition>(entity);
+    const int delta_z = item_types_.get(map_.at(pos.tile).object).stair_delta_z();
+    if (delta_z == 0) {
+        return;
+    }
+
+    const TilePos destination{pos.tile.x, pos.tile.y,
+                              static_cast<std::int8_t>(pos.tile.z + delta_z)};
+    const NetId mover = registry_.get<CActor>(entity).net_id;
+
+    // A stair leading into rock, off the top of the map, or onto an occupied tile
+    // does nothing: the actor stays where it is. Refusing beats teleporting into
+    // a wall, and beats a half-applied move that leaves occupancy lying.
+    if (!map_.is_walkable(destination)) {
+        return;
+    }
+    const NetId other = occupant(destination);
+    if (other != kInvalidNetId && other != mover) {
+        return;
+    }
+
+    vacate(pos.tile, mover);
+    occupy(destination, mover);
+    pos.tile = destination;
+
+    // A route was planned on the floor left behind, so every tile still in it is
+    // on the wrong floor. Dropping it is the only honest option; the follower
+    // would otherwise walk the actor through geometry it never checked.
+    registry_.remove<CPathFollow>(entity);
+}
+
 void World::step() {
     ++tick_;
 
@@ -384,7 +456,9 @@ void World::step() {
         pos.tile = walk.to;
         registry_.erase<CWalk>(entity);
 
-        // Walk over loot to pick it up (actors with a backpack only).
+        // Walk over loot to pick it up (actors with a backpack only). Before the
+        // stairs, so loot dropped on a stair tile is still collected by the actor
+        // that walked onto it.
         if (auto* inventory = registry_.try_get<CInventory>(entity)) {
             const auto pile = ground_.find(tile_key(pos.tile));
             if (pile != ground_.end()) {
@@ -396,6 +470,12 @@ void World::step() {
                 ground_.erase(pile);
             }
         }
+
+        // Stairs act on ARRIVAL BY WALKING, and that is what keeps a symmetric
+        // pair from ping-ponging: being placed on the down-stair above is not a
+        // walk arrival, so it does not immediately send the actor back. Stepping
+        // onto that same tile later does, which is the behaviour you want.
+        apply_stairs(entity);
     }
 }
 

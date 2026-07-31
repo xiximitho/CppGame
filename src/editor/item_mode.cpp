@@ -253,6 +253,12 @@ void ItemMode::adjust(int delta, bool coarse) {
         case Field::FlagContainer:
             t.flags = toggled(t.flags, sim::ItemFlag::Container);
             break;
+        case Field::FlagStairsUp:
+            t.flags = toggled(t.flags, sim::ItemFlag::StairsUp);
+            break;
+        case Field::FlagStairsDown:
+            t.flags = toggled(t.flags, sim::ItemFlag::StairsDown);
+            break;
         case Field::Weight:
             t.weight = static_cast<std::uint16_t>(
                 clamp_i64(static_cast<std::int64_t>(t.weight) + step, 0, 65535));
@@ -659,6 +665,8 @@ std::string ItemMode::label_of(Field field) const {
         case Field::FlagPickable:    return "pickable";
         case Field::FlagStackable:   return "stackable";
         case Field::FlagContainer:   return "container";
+        case Field::FlagStairsUp:    return "stairs up";
+        case Field::FlagStairsDown:  return "stairs down";
         case Field::Weight:          return "weight";
         case Field::MaxStack:        return "max stack";
         case Field::Equippable:      return "equippable";
@@ -691,6 +699,10 @@ std::string ItemMode::value_of(Field field) const {
             return yes_no(t.flags.has(sim::ItemFlag::Stackable));
         case Field::FlagContainer:
             return yes_no(t.flags.has(sim::ItemFlag::Container));
+        case Field::FlagStairsUp:
+            return yes_no(t.flags.has(sim::ItemFlag::StairsUp));
+        case Field::FlagStairsDown:
+            return yes_no(t.flags.has(sim::ItemFlag::StairsDown));
         case Field::Weight:     return std::to_string(t.weight);
         case Field::MaxStack:   return std::to_string(t.max_stack);
         case Field::Equippable: return yes_no(t.equippable);

@@ -37,6 +37,8 @@ ctest --preset debug
 
 # Rodar
 ./build/debug/bin/game_client                          # solo
+./build/debug/bin/game_client --solo --map maps/ilha.txt   # outro mapa autorado
+# balancear mob: editar assets/monsters.txt e rodar (sem build, sem rebake)
 ./scripts/run-local.sh                                 # sobe servidor + cliente
 ./build/debug/bin/game_client --connect 127.0.0.1:7777 --name felipe
 
@@ -71,12 +73,18 @@ comportamento correto, não bug: ver o invariante do hash de conteúdo mais abai
 `assets/content.db` é commitado (é conteúdo); `assets/content.bin` é derivado e
 gitignored; `players.db` é save de jogador e nunca vai para o git.
 
+Mapa também é dado: `assets/maps/*.txt`, escolhido por `--map` no cliente (solo),
+no servidor e no editor. Os seis mapas commitados saem de geradores determinísticos
+(`tools/gen_dungeon.py`, `tools/gen_maps.py`); o `gen_maps.py` **valida
+conectividade** antes de gravar, porque um tile bloqueante mal colocado sela um
+corredor sem que parser nem screenshot reclamem. Ver `docs/maps.md`.
+
 ## Arquitetura
 
 Documentação de fundo em `docs/architecture.md`, `docs/dependencies.md`,
 `docs/mobile.md`, `docs/roadmap.md`. Para conteúdo e autoria: `docs/content.md` (o
 pipeline e o porquê das decisões), `docs/authoring.md` (as receitas),
-`docs/sprites.md`. **`docs/pendencias.md` é o handoff**: o que está pronto, o que
+`docs/sprites.md`, `docs/monsters.md` (classes de mob e spawners). **`docs/pendencias.md` é o handoff**: o que está pronto, o que
 falta, e o que foi verificado de que jeito. O que segue é o mínimo para não quebrar
 nada.
 
@@ -172,6 +180,67 @@ cortava o sprite durante todo o passo. `tests/test_iso.cpp` tem o teste de regre
 `client::input::to_grid()`; `sim/` nunca sabe de tela. `tests/test_input.cpp` valida
 isso contra a própria projeção, não contra uma tabela.
 
+### Mobs: classe é dado, comportamento é sistema
+
+`sim::MonsterType` (`sim/monster_type.hpp`) é uma classe de mob: hp, dano, defesa,
+alcance, velocidade (`step_ticks`), raio de aggro, leash, sprite (`appearance`) e um
+item de loot. As classes vivem em **`assets/monsters.txt`** e são lidas pelo mesmo
+parser puro nas duas bordas (servidor por `<fstream>`, cliente por `platform::vfs`);
+`sim::default_monsters()` é o **fallback** e tem que concordar com o arquivo. Ajustar
+velocidade não recompila nem rebakeia nada — não está no `content.db` porque stat de
+monstro só é lido onde a simulação roda, então não há o que o hash de conteúdo
+proteja. Receitas e o significado de cada campo em `docs/monsters.md`.
+**Id de classe é contrato**, igual a id de item: mapa salvo referencia classe por
+número.
+
+Velocidade: `step_ticks` é ticks por passo; o jogador anda a `kDefaultStepTicks` (9)
+e **todas** as classes shippadas estão acima disso, então dá para desengajar de
+qualquer coisa. Tem teste garantindo isso (`test_spawners.cpp`).
+
+População é autorada no mapa, não aleatória: `spawner <x> <y> <z> <classe> <quantos>
+<raio> <segundos>` mantém uma população viva e repõe **um por vez**, com o relógio
+começando na morte. `monster <x> <y> <z> <classe>` é o caso oposto: um mob que não
+volta. O spawner é entidade **sem `CActor`** (invisível, nunca em snapshot) e guarda
+os `NetId` dos filhos em vez de contar mobs por perto. `--wanderers` (0 por padrão)
+espalha mobs aleatórios por cima, e existe só para encher o mundo rápido.
+
+`sim::spawn_monster` **copia** os números da classe para componentes do ator
+(`CActor::step_ticks`, `CHealth`, `CCombat`, `CMonster`) — por isso nada a jusante
+precisa do catálogo em mão, e `sim::combat_stats` só soma `CCombat` + equipamento.
+Jogador não tem `CCombat`, então para ele nada mudou.
+
+`sim::update_monsters` decide **quem** atacar: o **não-mob** mais próximo dentro do
+aggro (histerese de 1.5x para não ligar/desligar na borda), senão vagueia dentro do
+leash em volta de `home`. Quem **anda** é o `update_chasers`, o mesmo sistema que
+move o jogador quando ele clica num mob — mob e jogador perseguem pelo mesmo código. **É "não-mob", não "jogador", de
+propósito**: no solo o ator local não tem `CPlayer` (não existe peer), então aggro
+por `CPlayer` daria comportamento diferente em single-player — exatamente a
+divergência que a regra de camadas existe para impedir.
+
+A ordem do tick, nos dois laços (servidor e `SoloSession`), é `step` →
+`update_spawners` → `update_monsters` → `update_chasers` → `update_path_followers` →
+`update_combat`: decide, planeja, anda, bate — tudo no mesmo tick. Decisões são coletadas e só depois aplicadas: `request_walk` adiciona
+componente e invalidaria a view sendo iterada.
+
+Mob morto **não** volta (sem `CRespawn`, ao contrário do jogador) e deixa o loot da
+classe no chão.
+
+### A battle list é montada só do `WorldView`
+
+`client::build_battle_list` (header, `inline`, puro) devolve os atores visíveis menos
+o local, **mais próximo primeiro**, empate por `net_id` para a linha não trocar de
+lugar debaixo do cursor. Distância é Chebyshev, a mesma medida de alcance e aggro —
+ordenar de outro jeito discordaria do que está ao alcance do golpe.
+
+Ela sai do `WorldView` e de nada mais, e é isso que dá a semântica do Tibia de
+graça: a view é o que o servidor decidiu que aquele jogador pode ver (AoI, andar), 
+então o painel não consegue listar o que o jogador não deveria saber. Clique numa
+linha é intenção de **ataque** (que implica perseguir), nunca de movimento.
+
+Nome da classe vem do `assets/monsters.txt` lido pelo cliente
+(`client::load_monster_catalogue`) — apresentação: em rede os números são do
+servidor, então um arquivo local desatualizado mostra nome errado, nunca luta errada.
+
 ### Sessão: solo e remoto são a mesma coisa a jusante
 
 `client::Session` entrega um `WorldView` (um `TileMap` + `vector<ActorState>`). Não
@@ -212,6 +281,27 @@ interface.
   o que bloqueia e quanto ataca. `net::ITransport::disconnect` usa
   `enet_peer_disconnect_later` de propósito, senão o disconnect corre com o pacote de
   reject e o cliente só vê "disconnected" sem o motivo.
+- **Escada age na chegada POR PASSO, nunca na chegada por escada.** `World::step`
+  chama `apply_stairs` quando um `CWalk` termina. É isso que impede o par
+  simétrico (`<` embaixo, `>` em cima no mesmo x,y) de ficar teletransportando o
+  ator para sempre: ser *colocado* na escada de cima não conta como passo. Pisar
+  nela de novo, sim. Escada é flag de item (`StairsUp`/`StairsDown`), relativa
+  (`z±1`), e recusa em silêncio quando o destino é rocha ou está ocupado — não
+  existe meio-movimento que deixe occupancy pendurada. `tests/test_stairs.cpp`
+  cobre os cinco casos.
+- **Atacar implica perseguir, e perseguir é contínuo.** O cliente manda **quem**,
+  nunca **onde**: `C2S_Attack` faz o servidor chamar `set_attack_target` **e**
+  `request_follow`, e `sim::update_chasers` replaneja a rota sempre que o alvo se
+  move, parando de andar quando ele entra no alcance. O jeito antigo — um
+  `request_move_to` para o tile onde o mob estava — é o bug de "segue metade do
+  caminho e para de atacar": a rota terminava (ou o último passo era recusado, porque
+  o tile do alvo está ocupado) e o ator ficava plantado com um alvo que nunca
+  alcançava. Movimento manual (`World::cancel_path`) **cancela a perseguição** —
+  senão o chase replaneja no tick seguinte e o input parece ignorado.
+- **`set_attack_target` com o MESMO alvo não faz nada.** Ele zerava
+  `next_swing_tick` a cada chamada, e o `update_monsters` chama algumas vezes por
+  segundo para um mob engajado: mob batia a cada 3 ticks em vez de a cada cooldown,
+  ~10x o dano pretendido. `request_follow` tem a mesma guarda, pelo mesmo motivo.
 - **`sim::can_traverse` é a única regra de geometria de passo.** Tanto
   `World::can_enter` quanto o `Pathfinder` a chamam. Se as duas usarem regras
   diferentes, o A* devolve rotas que o movimento recusa e o ator trava para sempre
@@ -294,16 +384,18 @@ Os que mais confundem:
   propósito (precisa de KDF de verdade, decisão de produto e mudança de protocolo) —
   ver `docs/pendencias.md`.
 - **Um personagem por conta.** O schema permite vários; a query não.
-- **Andares 1 e 2 são inalcançáveis**: não existe escada nem rampa, e o spawn é
-  sempre `z=0`. Toda a infra multi-andar existe e é testada, mas nunca foi vista na
-  tela.
+- **Spawn autorado vale, mas só como preferência**: o `spawn @` do mapa é usado
+  pelo servidor e pelo solo; se o tile estiver ocupado (dois logins ao mesmo tempo)
+  cai em `find_spawn_tile`. Mapa sem `spawn` (todo mapa gerado por seed) usa
+  walkable aleatório, sempre `z=0`.
 - `iso::depth_key` ordena errado objeto maior que 1 tile (precisa de sort
   topológico).
 - `write_snapshot` trunca em 255 atores sem critério (falta prioridade por ator).
 - Rotas não são replanejadas quando outro ator bloqueia: o seguidor espera e
   desiste.
 - Sem client-side prediction; a latência visível é o início de um passo.
-- `sim::update_wanderers` é placeholder explícito e deve ser deletado quando
-  houver IA.
+- O editor não coloca mob nem ninho (preserva os que carregou, mas não tem UI).
+- Loot é **um** item por classe, não tabela com chances. Sem mob ranged usando
+  `kind ranged` ainda.
 
 Nada disso está escondido: cada um tem comentário no ponto do código onde morde.

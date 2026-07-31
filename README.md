@@ -103,7 +103,17 @@ cmake --preset server-only && cmake --build --preset server-only
 - **Mapas em arquivo texto**: mundo autorado em `assets/maps/*.txt` (formato
   legível, editável à mão), lido pelo **mesmo parser puro** no cliente (via VFS,
   à prova de APK) e no servidor (via `<fstream>`, sem SDL) — solo e multiplayer
-  não podem divergir. Ver [docs/maps.md](docs/maps.md).
+  não podem divergir. Seis mapas hoje (calabouço, floresta, vila, caverna, ilha e
+  uma torre de três andares); `--map` escolhe qual. Ver [docs/maps.md](docs/maps.md).
+- **Mobs com classes** em `assets/monsters.txt`: rato, esqueleto e ogro, cada um com
+  hp/dano/alcance/**velocidade**/sprite e loot próprios, editáveis sem recompilar; IA
+  persegue e ataca dentro do raio de aggro e vagueia dentro do leash.
+- **Battle list** no estilo Tibia: painel à direita com os bichos visíveis ordenados
+  do mais próximo, sprite, nome, distância e vida; clicar ataca e persegue.
+- **Spawners autorados no mapa** (`spawner x y z classe quantos raio segundos`):
+  população que repõe uma por vez, em vez de mobs espalhados aleatoriamente. Ver
+  [docs/monsters.md](docs/monsters.md).
+- **Escadas** ligando andares (`<`/`>`), o que finalmente põe o multi-andar em jogo.
 - **Editor de mapa** (`game_editor`): editor isométrico clicável cuja paleta é
   montada dos ids do catálogo + sprites do atlas; pinta/apaga tiles com o mouse e
   salva de volta pro `.txt`.

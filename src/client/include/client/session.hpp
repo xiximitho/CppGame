@@ -95,7 +95,12 @@ public:
 
 /// In-process simulation. `wanderers` extra actors are spawned so there is
 /// something to watch besides the player.
-std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers);
+///
+/// `map_path` is an asset path (read through platform::vfs, so it also resolves
+/// inside the APK on Android); the seeded procedural map is used when the file is
+/// missing or malformed, which keeps a clone with no map file runnable.
+std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers,
+                                           const std::string& map_path);
 
 /// Connects to a server. Returns nullptr when the address cannot be resolved;
 /// connection failures after that surface through alive().

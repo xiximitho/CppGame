@@ -15,6 +15,7 @@ set(GAME_CLIENT_SOURCES
     src/damage_feed.cpp
     src/effect_feed.cpp
     src/inventory_ui.cpp
+    src/battle_list.cpp
     src/solo_session.cpp
     src/remote_session.cpp)
 

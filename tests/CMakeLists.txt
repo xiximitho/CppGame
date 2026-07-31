@@ -14,9 +14,14 @@ add_executable(game_tests
     test_content_blob.cpp
     test_content_hash.cpp
     test_map_io.cpp
+    test_stairs.cpp
+    test_monsters.cpp
+    test_spawners.cpp
+    test_chase.cpp
     test_combat.cpp
     test_atlas_meta.cpp
-    test_input.cpp)
+    test_input.cpp
+    test_battle_list.cpp)
 
 target_link_libraries(game_tests PRIVATE
     game_core

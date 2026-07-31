@@ -3,18 +3,47 @@
 
 Layout mirrors src/client/src/tileset.cpp so the existing id->sprite bindings
 line up. This is throwaway tooling: the real pipeline (docs/content.md) bakes an
-atlas from SQLite. Run:  python3 gen_atlas.py <out_dir>
+atlas from SQLite.
+
+    python3 gen_placeholder_atlas.py <out_dir>          # whole atlas from scratch
+    python3 gen_placeholder_atlas.py --patch <out_dir>  # only the bands missing
+
+The committed assets/tilesets/atlas.png is NOT this script's output any more (it
+was edited afterwards), so regenerating it over the top would throw that art
+away. `--patch` exists for that: it grows the existing PNG to the current canvas
+size, draws only into the newly added band, and adds the missing atlas.txt lines.
+Old pixels are never touched.
 """
 import math
+import os
 import sys
 from PIL import Image
 
-ATLAS = 256
+ATLAS = 256      # width, and the height of everything that predates the stairs
+ATLAS_H = 440    # grew twice: a 64px stair band, then one band per mob class
 TW, TH = 64, 32          # tile diamond
 HALF_W, HALF_H = 32, 16
 
 GROUND_Y, HL_Y, BLOCK_Y, ACTOR_Y = 0, 32, 64, 128
 AFW, AFH = 32, 48
+
+# Stair band. The object row at y=64 had one free 64x64 slot and stairs need two,
+# so the atlas grew instead of the pair being squeezed in — see docs/sprites.md.
+STAIR_Y = 256
+STAIR_IDS = (103, 104)  # up, down; sim::tiles::kStairsUp / kStairsDown
+
+# Monster bands: one row of 8 directions per class. Cell size is PER CLASS, not
+# fixed at the player's 32x48 — a rat in a knight-sized cell leaves its health bar
+# floating half a tile above it, because the bar hangs off the sprite's origin. The
+# origin_y of each cell is chosen so every class's feet land on the tile centre.
+# Appearance ids match sim::kAppearanceRat / Skeleton / Ogre; 0 is the player.
+MOB_Y = 320
+MOB_BANDS = (
+    # appearance, cell w, cell h, origin_x, origin_y
+    (1, 24, 24, -12, -8),    # rat: small and close to the ground
+    (2, 32, 48, -16, -32),   # skeleton: player-sized
+    (3, 32, 48, -16, -32),   # ogre: fills the cell
+)
 
 # --- bitmap font ------------------------------------------------------------
 # The atlas had one free band left (y=224..248 -- items end at 192, effects at
@@ -197,10 +226,13 @@ def fill_circle(px, cx, cy, r, c):
 
 
 def fill_shadow(px, cx, cy, rx, ry):
+    # Clipped: a sprite whose shadow reaches past the last band would otherwise
+    # take the whole generator down with an IndexError.
     for dy in range(-ry, ry + 1):
         for dx in range(-rx, rx + 1):
             nx, ny = dx / rx, dy / ry
-            if nx * nx + ny * ny <= 1.0:
+            if nx * nx + ny * ny <= 1.0 and 0 <= cx + dx < ATLAS \
+                    and 0 <= cy + dy < ATLAS_H:
                 px[cx + dx, cy + dy] = (0, 0, 0, 70)
 
 
@@ -268,8 +300,219 @@ def draw_actor(px, ox, oy, facing):
         px[mx, my] = gold_lt
 
 
+def draw_stairs_up(px, ox, oy):
+    """Stairs up, as a stepped platform seen from above.
+
+    Three slabs, each narrower and 7px higher than the one below, which in 2:1
+    projection reads as rising toward the back of the tile. It has to be legible
+    at 1x and it must not overflow the 64x64 cell, hence the small offsets.
+    """
+    top = (125, 116, 106)   # the wall block's stone, so a stair matches masonry
+    for i, (w, h, lift) in enumerate(((TW, TH, 0), (52, 26, 7), (40, 20, 14),
+                                      (28, 14, 21))):
+        x = ox + (TW - w) // 2
+        # Extruded down to the base before its top face is drawn: without the
+        # side, the slabs read as plates floating over the tile instead of as
+        # steps cut from one block.
+        for drop in range(lift, 0, -1):
+            fill_diamond(px, x, oy + TH - lift + drop, w, h, shade(top, 0.55),
+                         shade(top, 0.48))
+        fill_diamond(px, x, oy + TH - lift, w, h, shade(top, 1.0 + 0.07 * i),
+                     shade(top, 0.62))
+
+
+def draw_stairs_down(px, ox, oy):
+    """Stairs down, as a pit with steps sinking into the tile.
+
+    Nested diamonds getting darker inward. The darkness is the whole read: a hole
+    is the one thing a flat tile can say without leaving its own diamond.
+    """
+    top = (125, 116, 106)
+    fill_diamond(px, ox, oy + TH, TW, TH, rgba(top), shade(top, 0.62))
+    for i, (w, h, sink) in enumerate(((48, 24, 4), (32, 16, 8), (16, 8, 12))):
+        fill = shade(top, 0.60 - 0.16 * i)
+        fill_diamond(px, ox + (TW - w) // 2, oy + TH + sink, w, h, fill,
+                     shade(top, 0.45))
+
+
+def draw_stairs(px):
+    draw_stairs_up(px, 0, STAIR_Y)
+    draw_stairs_down(px, TW, STAIR_Y)
+
+
+def facing_marker(facing, reach=3):
+    """Screen-space offset of the 'front' of a sprite, for the facing cue.
+
+    The same 2:1 conversion draw_actor uses: grid direction -> screen direction, so
+    a mob looking north-west looks UP on screen like everything else. `reach` is
+    small on purpose — a head shifted five pixels stops looking attached.
+    """
+    dx, dy = DIRDELTA[facing]
+    sx, sy = (dx - dy), (dx + dy) * 0.5
+    length = math.hypot(sx, sy)
+    if length == 0:
+        return 0, 0
+    return round(sx / length * reach), round(sy / length * reach)
+
+
+def draw_rat(px, ox, oy, facing, cell_h=24):
+    """Giant rat: low, long, brown. Reads as 'small and fast' by silhouette.
+
+    Sits in the bottom third of the 32x48 cell on purpose — height in the cell is
+    the only cue this projection gives for how big something is, and a rat drawn
+    at knight height stops being a rat.
+    """
+    body = rgba((104, 82, 64)); back = rgba((124, 100, 78))
+    belly = rgba((142, 120, 96)); ear = rgba((150, 112, 112))
+    eye = rgba((214, 74, 60)); tail = rgba((146, 124, 104))
+    cx = ox + 12
+    feet_y = oy + cell_h - 3
+    fill_shadow(px, cx, feet_y, 8, 3)
+    mx, my = facing_marker(facing, 3)
+    # Tail: a solid run of pixels trailing straight out behind it, stepped one at a
+    # time so it never breaks into dashes.
+    tx, ty = float(cx), float(feet_y - 5)
+    for _ in range(9):
+        tx -= mx / 3.0
+        ty -= my / 3.0
+        px[round(tx), round(ty)] = tail
+    fill_circle(px, cx, feet_y - 6, 6, body)          # haunches
+    fill_circle(px, cx + mx, feet_y - 7, 5, back)     # shoulders
+    fill_rect(px, cx - 4, feet_y - 4, 9, 3, belly)
+    hx, hy = cx + mx + mx // 2, feet_y - 8 + my       # head
+    fill_circle(px, hx, hy, 3, back)
+    px[hx - 1, hy - 3] = ear
+    px[hx + 1, hy - 3] = ear
+    px[hx + (1 if mx >= 0 else -1), hy] = eye
+
+
+def draw_skeleton(px, ox, oy, facing, cell_h=AFH):
+    """Skeleton: bone white, thin, dark sockets. The player's height, half its mass."""
+    bone = rgba((222, 218, 198)); bone_dk = rgba((166, 160, 140))
+    socket = rgba((28, 26, 24)); rust = rgba((96, 74, 52))
+    cx = ox + AFW // 2
+    feet_y = oy + cell_h - 2
+    fill_shadow(px, cx, feet_y - 2, 8, 3)
+    fill_rect(px, cx - 4, feet_y - 12, 3, 11, bone)   # legs
+    fill_rect(px, cx + 2, feet_y - 12, 3, 11, bone)
+    fill_rect(px, cx - 4, feet_y - 25, 9, 13, bone_dk)  # ribcage
+    for ry in range(feet_y - 24, feet_y - 14, 3):       # ribs
+        fill_rect(px, cx - 4, ry, 9, 1, bone)
+    fill_rect(px, cx - 7, feet_y - 25, 15, 2, bone)     # collarbone
+    fill_rect(px, cx - 8, feet_y - 24, 2, 10, bone)     # arms
+    fill_rect(px, cx + 7, feet_y - 24, 2, 10, bone)
+    fill_circle(px, cx, feet_y - 30, 4, bone)           # skull
+    mx, my = facing_marker(facing, 2)
+    px[cx + mx - 1, feet_y - 30 + my] = socket          # eye sockets face forward
+    px[cx + mx + 1, feet_y - 30 + my] = socket
+    px[cx + mx, feet_y - 27 + my] = rust                # jaw
+
+
+def draw_ogre(px, ox, oy, facing, cell_h=AFH):
+    """Ogre: fills the cell, green-grey, tiny head, club. Slow and heavy by shape."""
+    hide = rgba((104, 126, 84)); hide_lt = rgba((126, 148, 100))
+    hide_dk = rgba((72, 90, 60)); gut = rgba((140, 156, 116))
+    wood = rgba((92, 68, 44)); eye = rgba((236, 226, 140))
+    cx = ox + AFW // 2
+    feet_y = oy + cell_h - 4       # kept inside the cell, shadow included
+    fill_shadow(px, cx, feet_y + 1, 13, 3)
+    fill_rect(px, cx - 7, feet_y - 14, 6, 13, hide_dk)   # legs
+    fill_rect(px, cx + 2, feet_y - 14, 6, 13, hide_dk)
+    fill_rect(px, cx - 9, feet_y - 32, 18, 19, hide)     # torso
+    fill_circle(px, cx, feet_y - 18, 7, gut)             # belly
+    fill_rect(px, cx - 12, feet_y - 33, 24, 6, hide_lt)  # shoulders, very wide
+    mx, my = facing_marker(facing, 2)
+    fill_circle(px, cx + mx, feet_y - 36 + my, 4, hide_lt)  # small head
+    px[cx + mx - 1, feet_y - 36 + my] = eye
+    px[cx + mx + 2, feet_y - 36 + my] = eye
+    # club, held on the side it is facing
+    club_x = cx + (10 if mx >= 0 else -11)
+    fill_rect(px, club_x, feet_y - 30, 3, 16, wood)
+    fill_circle(px, club_x + 1, feet_y - 32, 4, wood)
+
+
+MOB_DRAWERS = (draw_rat, draw_skeleton, draw_ogre)
+
+
+def mob_band_y(index):
+    """Top of a class's band: bands are stacked by their own heights."""
+    return MOB_Y + sum(MOB_BANDS[i][2] for i in range(index))
+
+
+def draw_mobs(px):
+    for index, (_, cw, ch, _, _) in enumerate(MOB_BANDS):
+        y = mob_band_y(index)
+        for facing in range(8):
+            MOB_DRAWERS[index](px, facing * cw, y, facing, ch)
+
+
+def mob_meta_lines():
+    lines = []
+    for index, (appearance, cw, ch, ox, oy) in enumerate(MOB_BANDS):
+        y = mob_band_y(index)
+        for facing in range(8):
+            lines.append(f"mob         {appearance}  {facing}  {facing*cw:<4} "
+                         f"{y}  {cw}  {ch}  {ox}      {oy}")
+    return lines
+
+
+def stair_meta_lines():
+    return [f"object      {STAIR_IDS[0]}     0    {STAIR_Y}  64  64  -32      -32",
+            f"object      {STAIR_IDS[1]}     64   {STAIR_Y}  64  64  -32      -32"]
+
+
+def already_bound(text, line):
+    """Whether atlas.txt already binds what `line` binds.
+
+    Compared on the identifying fields only (kind + id, kind + appearance + dir for
+    a mob), never on the whole line: a region someone moved by hand must not be
+    quietly re-added at the old coordinates.
+    """
+    fields = line.split()
+    key = fields[:3] if fields[0] == "mob" else fields[:2]
+    return any(existing.split()[:len(key)] == key
+               for existing in text.splitlines() if existing.strip())
+
+
+def patch(out_dir):
+    """Adds what the existing atlas is missing, touching nothing that is there.
+
+    Used because the committed art diverged from this script: regenerating would
+    silently replace hand-made pixels, and a tool that destroys art to add a
+    sprite is a tool nobody runs twice.
+    """
+    png_path = os.path.join(out_dir, "atlas.png")
+    txt_path = os.path.join(out_dir, "atlas.txt")
+
+    existing = Image.open(png_path).convert("RGBA")
+    if existing.height >= ATLAS_H:
+        print(f"{png_path} is already {existing.width}x{existing.height}")
+        img = existing
+    else:
+        img = Image.new("RGBA", (ATLAS, ATLAS_H), (0, 0, 0, 0))
+        img.paste(existing, (0, 0))
+        print(f"grew {png_path} to {ATLAS}x{ATLAS_H}")
+
+    px = img.load()
+    draw_stairs(px)
+    draw_mobs(px)
+    img.save(png_path)
+
+    with open(txt_path) as f:
+        text = f.read()
+    wanted = stair_meta_lines() + mob_meta_lines()
+    added = [line for line in wanted if not already_bound(text, line)]
+    if added:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n".join(added) + "\n"
+        with open(txt_path, "w") as f:
+            f.write(text)
+    print(f"patched {png_path} and added {len(added)} line(s) to {txt_path}")
+
+
 def main(out_dir):
-    img = Image.new("RGBA", (ATLAS, ATLAS), (0, 0, 0, 0))
+    img = Image.new("RGBA", (ATLAS, ATLAS_H), (0, 0, 0, 0))
     px = img.load()
 
     # Grimhold palette: muted moss grass, warm brown dirt, warm-grey stone
@@ -364,6 +607,9 @@ def main(out_dir):
     fill_circle(px, 24 + 4, 200 + 4, 3, rgba((235, 245, 255)))
     fill_circle(px, 24 + 4, 200 + 4, 2, rgba((120, 200, 255)))
 
+    draw_stairs(px)
+    draw_mobs(px)
+
     # Glyphs are drawn white so the renderer can tint them per call.
     draw_font(px)
     assert FONT_Y + ((len(FONT) - 1) // FONT_PER_ROW + 1) * FONT_CELL_H <= ATLAS
@@ -380,6 +626,8 @@ def main(out_dir):
         "object      100     0    64   64  64  -32      -32",
         "object      101     64   64   64  64  -32      -32",
         "object      102     128  64   64  64  -32      -32",
+        *stair_meta_lines(),
+        *mob_meta_lines(),
         "highlight           0    32   64  32  -32      0",
         "solid               234  42   4   4",
         "item        300     0    176  16  16",
@@ -405,4 +653,8 @@ def main(out_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else ".")
+    args = sys.argv[1:]
+    if args and args[0] == "--patch":
+        patch(args[1] if len(args) > 1 else ".")
+    else:
+        main(args[0] if args else ".")

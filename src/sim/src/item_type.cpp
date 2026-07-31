@@ -66,6 +66,11 @@ ItemTypeRegistry build_default_registry() {
                           ItemFlag::BlocksWalk | ItemFlag::BlocksSight, 0U, 1U});
     registry.add(ItemType{tiles::kTree, ItemFlag::BlocksWalk, 0U, 1U});
 
+    // Stairs. Not blockers: the whole point is to be stepped onto. The pair is
+    // symmetric so the tile you land on can send you back.
+    registry.add(ItemType{tiles::kStairsUp, ItemFlag::StairsUp, 0U, 1U});
+    registry.add(ItemType{tiles::kStairsDown, ItemFlag::StairsDown, 0U, 1U});
+
     // Worked example (docs/sprites.md): a crate is a pushable-looking, pickable
     // blocker. Weight is set to show the field flowing through; nothing reads it
     // yet.

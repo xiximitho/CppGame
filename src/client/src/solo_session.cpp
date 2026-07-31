@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "client/content.hpp"
@@ -16,6 +17,7 @@
 #include "sim/item_type.hpp"
 #include "sim/map_gen.hpp"
 #include "sim/map_io.hpp"
+#include "sim/monster_io.hpp"
 #include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
 #include "sim/world.hpp"
@@ -23,21 +25,36 @@
 namespace client {
 namespace {
 
+/// A built world plus what the map file said about it. The authored player spawn
+/// and the authored monsters both come from the same parse, so they travel
+/// together instead of the caller re-reading the file.
+struct SoloWorld {
+    sim::World                     world;
+    std::optional<sim::TilePos>    spawn;
+    std::vector<sim::MonsterSpawn> monsters;
+    std::vector<sim::SpawnerSpec>  spawners;
+};
+
 /// Builds the solo World. Prefers an authored map read through platform::vfs
 /// (so it also works from inside the APK on Android); falls back to the seeded
 /// procedural map when the file is missing or malformed, which keeps a clone
 /// with no map file runnable. The World keeps a copy of the item catalogue so
 /// gameplay systems can query item properties without a global.
-sim::World build_solo_world(std::uint64_t seed, const char* map_path) {
+SoloWorld build_solo_world(std::uint64_t seed, const char* map_path) {
     const sim::ItemTypeRegistry item_types = client::load_item_catalogue();
+    const sim::MonsterRegistry monsters = client::load_monster_catalogue();
 
     std::string text;
     if (platform::vfs::read_asset_text(map_path, text)) {
         std::string error;
         if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
-            LOG_INFO("loaded map '%s' (%dx%d)", map_path, parsed->map.width(),
-                     parsed->map.height());
-            return sim::World(std::move(parsed->map), item_types);
+            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)",
+                     map_path, parsed->map.width(), parsed->map.height(),
+                     parsed->monsters.size(), parsed->spawners.size());
+            return SoloWorld{
+                sim::World(std::move(parsed->map), item_types, monsters),
+                parsed->spawn, std::move(parsed->monsters),
+                std::move(parsed->spawners)};
         }
         LOG_WARN("map '%s' failed to parse: %s; using generated map", map_path,
                  error.c_str());
@@ -45,9 +62,13 @@ sim::World build_solo_world(std::uint64_t seed, const char* map_path) {
         LOG_INFO("no map '%s'; using generated map", map_path);
     }
 
-    return sim::World(
-        sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed}, item_types),
-        item_types);
+    return SoloWorld{
+        sim::World(sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed},
+                                          item_types),
+                   item_types, monsters),
+        std::nullopt,
+        {},
+        {}};
 }
 
 /// Runs the real simulation in-process at the real tick rate.
@@ -58,10 +79,24 @@ sim::World build_solo_world(std::uint64_t seed, const char* map_path) {
 /// nobody would notice until the network build was tested.
 class SoloSession final : public Session {
 public:
-    SoloSession(std::uint64_t seed, int wanderers)
-        : world_(build_solo_world(seed, "maps/dungeon.txt")),
+    /// Takes the built world by value so it can be MOVED in: the map file is read
+    /// once, and what it said about the spawn and the mobs is consumed here rather
+    /// than kept as state. make_solo_session() does the reading.
+    SoloSession(SoloWorld built, std::uint64_t seed, int wanderers)
+        : world_(std::move(built.world)),
           rng_(seed ^ 0x9E3779B97F4A7C15ULL) {
-        const sim::TilePos spawn = sim::find_spawn_tile(world_.map(), rng_);
+        // The map's own spawn point wins, but only if it is actually walkable —
+        // dungeon.txt has its '@' painted over with a wall, and trusting that puts
+        // the player inside rock. Same check the server does, for the same reason.
+        sim::TilePos spawn = sim::find_spawn_tile(world_.map(), rng_);
+        if (built.spawn.has_value() && world_.map().is_walkable(*built.spawn)) {
+            spawn = *built.spawn;
+        } else if (built.spawn.has_value()) {
+            LOG_WARN("map spawn (%d,%d,%d) is not walkable; using (%d,%d,%d)",
+                     built.spawn->x, built.spawn->y,
+                     static_cast<int>(built.spawn->z), spawn.x, spawn.y,
+                     static_cast<int>(spawn.z));
+        }
 
         local_id_ = world_.allocate_net_id();
         const entt::entity local_entity =
@@ -84,6 +119,10 @@ public:
                                            {sim::tiles::kShield, 1},
                                            {sim::tiles::kHelmet, 1}}});
 
+        // Authored mobs first: they are the ones the map author aimed, and they
+        // hold their tiles against the random ones that come after.
+        const int authored = sim::spawn_authored_monsters(world_, built.monsters);
+        const int spawners = sim::create_spawners(world_, built.spawners);
         spawn_wanderers(wanderers, spawn);
 
         // The scaffold's map never changes, so the view copies it once instead of
@@ -95,8 +134,10 @@ public:
 
         last_time_ = core::now_nanos();
 
-        LOG_INFO("solo world ready, spawn at (%d,%d,%d), %d wanderers",
-                 spawn.x, spawn.y, static_cast<int>(spawn.z), spawned_wanderers_);
+        LOG_INFO("solo world ready, spawn at (%d,%d,%d), %d monster(s) + %d "
+                 "spawner(s) + %d random",
+                 spawn.x, spawn.y, static_cast<int>(spawn.z), authored, spawners,
+                 spawned_wanderers_);
     }
 
     void update() override {
@@ -121,6 +162,8 @@ public:
             // acted on by this tick.
             if (pending_move_to_) {
                 pending_move_to_ = false;
+                // An explicit destination replaces a chase, like a keypress does.
+                world_.cancel_path(local_id_);
                 if (!world_.request_move_to(local_id_, pending_target_)) {
                     LOG_DEBUG("no route to (%d,%d,%d)", pending_target_.x,
                               pending_target_.y,
@@ -135,7 +178,9 @@ public:
             }
             if (pending_attack_) {
                 pending_attack_ = false;
+                // Attacking implies chasing, same as on the server.
                 world_.set_attack_target(local_id_, pending_attack_target_);
+                world_.request_follow(local_id_, pending_attack_target_);
             }
             if (pending_equip_ != sim::kItemNone) {
                 world_.equip(local_id_, pending_equip_);
@@ -146,9 +191,13 @@ public:
                 world_.unequip(local_id_, pending_unequip_);
             }
 
+            // Same order as the server's loop, for the same reason: monsters
+            // decide, then followers step, then swings land.
+            sim::update_spawners(world_, rng_);
+            sim::update_monsters(world_, rng_);
+            sim::update_chasers(world_);
             sim::update_path_followers(world_);
             sim::update_combat(world_);
-            sim::update_wanderers(world_, rng_);
         }
 
         // Hand attack effects to the client to render, then clear them.
@@ -222,17 +271,11 @@ private:
                 continue;
             }
 
-            const sim::NetId id = world_.allocate_net_id();
-            const entt::entity entity = world_.spawn_actor(id, at, 0);
-            world_.registry().emplace<sim::CWanderer>(entity, sim::CWanderer{0});
-            // A little loot to drop on death, so the loop is visible.
-            static const sim::TileId kLoot[] = {
-                sim::tiles::kShield, sim::tiles::kHelmet, sim::tiles::kBoots,
-                sim::tiles::kRing, sim::tiles::kAmulet};
-            world_.registry().emplace<sim::CInventory>(
-                entity, sim::CInventory{{{kLoot[static_cast<std::size_t>(id % 5)],
-                                          1}}});
-            ++spawned_wanderers_;
+            // Class, stats, speed and loot come from the monster catalogue: the
+            // server spawns through the same call, so the two cannot diverge.
+            if (sim::spawn_random_monster(world_, rng_, at) != entt::null) {
+                ++spawned_wanderers_;
+            }
         }
     }
 
@@ -293,8 +336,10 @@ private:
 
 }  // namespace
 
-std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers) {
-    return std::make_unique<SoloSession>(seed, wanderers);
+std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers,
+                                           const std::string& map_path) {
+    return std::make_unique<SoloSession>(build_solo_world(seed, map_path.c_str()),
+                                         seed, wanderers);
 }
 
 }  // namespace client

@@ -52,8 +52,12 @@ public:
     const AtlasEntry& object(sim::TileId id) const;
 
     /// `facing` is a grid direction; the frame chosen already accounts for the
-    /// isometric rotation.
-    const AtlasEntry& actor(sim::Direction facing) const;
+    /// isometric rotation. `appearance` selects the sprite set (0 is the player,
+    /// the rest come from `mob` lines); an appearance the atlas does not have
+    /// falls back to 0, so a mob whose art is missing draws as a knight instead
+    /// of vanishing.
+    const AtlasEntry& actor(sim::Direction facing,
+                            std::uint16_t appearance = 0) const;
 
     /// Diamond outline drawn under the mouse cursor.
     const AtlasEntry& highlight() const { return highlight_; }
@@ -97,6 +101,8 @@ private:
     std::unordered_map<sim::TileId, AtlasEntry> ground_;
     std::unordered_map<sim::TileId, AtlasEntry> object_;
     std::array<AtlasEntry, 8> actor_frames_{};
+    /// One 8-direction set per non-zero appearance, from the atlas `mob` lines.
+    std::unordered_map<std::uint16_t, std::array<AtlasEntry, 8>> mob_frames_;
     AtlasEntry highlight_{};
     AtlasEntry solid_{};
     std::unordered_map<sim::TileId, AtlasEntry>      icons_;

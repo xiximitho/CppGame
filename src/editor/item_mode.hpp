@@ -83,6 +83,8 @@ private:
         FlagPickable,
         FlagStackable,
         FlagContainer,
+        FlagStairsUp,
+        FlagStairsDown,
         Weight,
         MaxStack,
         Equippable,

@@ -1,5 +1,9 @@
 #include "client/content.hpp"
 
+#include <string>
+
+#include "sim/monster_io.hpp"
+
 #include <cstdint>
 #include <vector>
 
@@ -32,6 +36,23 @@ sim::ItemTypeRegistry load_item_catalogue() {
         return sim::build_default_registry();
     }
     LOG_INFO("loaded %zu item types from content.bin", loaded.count());
+    return loaded;
+}
+
+sim::MonsterRegistry load_monster_catalogue() {
+    std::string text;
+    if (!platform::vfs::read_asset_text("monsters.txt", text)) {
+        LOG_INFO("no monsters.txt; using the built-in monster classes");
+        return sim::default_monsters();
+    }
+    sim::MonsterRegistry loaded;
+    std::string error;
+    if (!sim::parse_monster_catalogue(text, loaded, &error)) {
+        LOG_WARN("monsters.txt failed to parse: %s; using built-in classes",
+                 error.c_str());
+        return sim::default_monsters();
+    }
+    LOG_INFO("loaded %zu monster class(es) from monsters.txt", loaded.count());
     return loaded;
 }
 

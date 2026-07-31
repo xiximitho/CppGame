@@ -23,8 +23,48 @@ tooling descartável — a pipeline final assa o atlas a partir do SQLite
 (content.md). Para regerar:
 
 ```bash
-python3 tools/gen_placeholder_atlas.py assets/tilesets
+python3 tools/gen_placeholder_atlas.py assets/tilesets          # o atlas inteiro
+python3 tools/gen_placeholder_atlas.py --patch assets/tilesets  # só o que falta
 ```
+
+**Cuidado com o primeiro.** O `atlas.png` commitado **não é mais** a saída do
+script: ele foi editado depois (arte redesenhada, mais o sprite que o editor
+vinculou), e regerar por cima joga isso fora. `--patch` existe para isso: cresce o
+PNG existente até o tamanho de canvas atual, desenha **só** na faixa nova e
+acrescenta ao `atlas.txt` as linhas que faltam. Pixel antigo nunca é tocado.
+
+Foi assim que as escadas e os mobs entraram: a faixa de objetos em `y=64` tinha uma
+vaga 64×64 livre e a escada precisa de duas, então o canvas cresceu de 256×256 para
+**256×440** — escadas em `y=256`, e uma faixa por classe de mob a partir de `y=320`. O caminho de PNG calcula UV com o tamanho
+real da textura, então crescer o atlas não mexe em C++ nenhum (o `kAtlasSize` de
+`tileset.cpp` só serve para a arte procedural de fallback).
+
+### Sprites de mob e o tamanho da célula
+
+Ator não-jogador usa uma linha `mob`, não `actor`:
+
+```
+mob <appearance> <dir> <x> <y> <w> <h> <origin_x> <origin_y>
+```
+
+`appearance` é o número que o `sim::CActor::appearance` carrega (e que vai na rede
+em 16 bits — mob novo **não** muda protocolo). 0 é o jogador, que continua nas
+linhas `actor`; foi feito como *kind* novo em vez de coluna extra no `actor` para
+que todo `atlas.txt` escrito antes dos mobs continue parseando.
+
+**A célula é por classe.** O rato mora numa célula 24×24 com origem `(-12,-8)`, o
+esqueleto e o ogro em 32×48 com `(-16,-32)`. Isso não é economia de atlas: a barra
+de vida é desenhada a partir da **origem do sprite**, então um rato numa célula de
+cavaleiro fica com a barra flutuando meio tile acima dele.
+
+### UV com recuo de meio texel
+
+`entry_from_pixels` encolhe cada região em meio texel. Sem isso, com o atlas em
+256×440, a borda de baixo da faixa de chão caía um fio depois do texel 31 e o
+amostrador NEAREST pegava a linha 32 — que é a faixa do cursor dourado. Sintoma:
+**cada tile de piso ganhava um pontinho amarelo na ponta de baixo**. Borda de região
+só é exata quando a dimensão do atlas é potência de dois; o recuo vale para
+qualquer tamanho.
 
 ## O arquivo de binding: `assets/tilesets/atlas.txt`
 
@@ -40,9 +80,11 @@ actor       0       0    128  32  48  -16      -32
 highlight           0    32   64  32  -32      0
 ```
 
-- `kind`: `ground`, `object`, `actor` ou `highlight`.
+- `kind`: `ground`, `object`, `actor`, `mob`, `item`, `effect`, `font`, `solid` ou
+  `highlight`.
 - `id/dir`: para `ground`/`object` é o `sim::TileId`; para `actor` é a direção
-  0..7 (`sim::Direction`); `highlight` não tem.
+  0..7 (`sim::Direction`); para `mob` são **dois** campos (aparência e direção);
+  `highlight` não tem.
 - `x y w h`: retângulo em **pixels** dentro do PNG.
 - `origin_x origin_y`: deslocamento do **vértice de cima do tile** até o canto
   superior-esquerdo do sprite. Isto — não uma posição — é o que faz um bloco 64×64

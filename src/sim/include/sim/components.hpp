@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "sim/item_type.hpp"
+#include "sim/monster_type.hpp"
 #include "sim/types.hpp"
 
 namespace sim {
@@ -72,10 +73,51 @@ struct CPlayer {
     TilePos last_streamed_center{-32767, -32767, 0};
 };
 
-/// Marks an entity the server moves on its own. Kept minimal on purpose: real
-/// AI belongs in its own system once behaviour exists.
-struct CWanderer {
+/// Innate combat numbers, independent of anything worn.
+///
+/// This is how a monster class hits harder than another without the simulation
+/// needing a monster catalogue at hand: the class's numbers are copied here when
+/// it spawns, and sim::combat_stats adds them to whatever gear says. Players have
+/// no CCombat, so their stats come from equipment exactly as before.
+struct CCombat {
+    std::int16_t attack  = 0;
+    std::int16_t defense = 0;
+    std::uint8_t range   = 1;
+    std::uint8_t effect  = kEffectMeleeGlow;
+};
+
+/// Marks an actor the server drives: which class it is, where it belongs, and who
+/// it is currently after.
+///
+/// `home` plus `leash` is what keeps a mob in the room it was authored into — a
+/// wandering monster that drifts across the map ends up in a corridor nobody
+/// walks, and the map author's placement stops meaning anything.
+struct CMonster {
+    MonsterTypeId type = kMonsterNone;
+    TilePos       home;
+    std::uint8_t  aggro_radius = 6;
+    std::uint8_t  leash        = 8;
+    /// Throttle: AI thinks a few times a second, not 30. Chasing re-plans a route,
+    /// and re-planning every tick is both wasteful and jittery.
     Tick next_decision_tick = 0;
+};
+
+/// A spawn point, alive in the world. Sits on an entity with NO CActor: it is not
+/// something the client can see, so it never reaches a snapshot.
+///
+/// It tracks the net ids it created rather than counting nearby monsters, so a mob
+/// that wandered off on a leash still counts against the population and one that
+/// belongs to the spawner two rooms over does not.
+struct CSpawner {
+    TilePos            tile;
+    MonsterTypeId      type = kMonsterNone;
+    std::uint8_t       max_alive = 1;
+    std::uint8_t       radius = 2;
+    Tick               respawn_ticks = 0;
+    /// When the next child may appear. Set on every death, so a wiped spawner
+    /// refills one at a time instead of all at once.
+    Tick               next_spawn_tick = 0;
+    std::vector<NetId> children;
 };
 
 /// The actor this one is auto-attacking, Tibia style. Absent means "not
@@ -84,6 +126,27 @@ struct CWanderer {
 struct CTarget {
     NetId target          = kInvalidNetId;
     Tick  next_swing_tick = 0;
+};
+
+/// An actor chasing another one: keep walking until it is within reach.
+///
+/// This exists because a one-shot route is not a chase. Clicking a monster used to
+/// plan a path to the tile it was standing on; the monster walked away, the route
+/// finished (or its last step was refused, since the target's tile is occupied),
+/// and the attacker stood there with a target it could never reach — "it follows
+/// halfway and stops attacking". sim::update_chasers replans whenever the target
+/// moves, and stops as soon as the swing would land.
+///
+/// Held by monsters and players alike. Manual movement (World::cancel_path) drops
+/// it, so a keypress or a click on the ground always takes control back.
+struct CFollow {
+    NetId   target = kInvalidNetId;
+    /// Where the target was when the current route was planned; a chase replans
+    /// when this stops matching, which is what makes it a chase.
+    TilePos planned_for{};
+    /// Floor of the plan, so a target taking a stair forces a replan rather than a
+    /// walk toward a tile on another floor.
+    Tick    next_replan_tick = 0;
 };
 
 /// Marks an actor that respawns instead of vanishing on death, and where. Players

@@ -14,22 +14,17 @@ todo bug de render vira `printf`. É a coisa com maior retorno na lista.
 `imgui` + `imgui_impl_sdl3` + `imgui_impl_sdlrenderer3`, no mesmo padrão de SHA
 travado. Ver [dependencies.md](dependencies.md).
 
-### 2. Escadas / rampas — andares superiores são inalcançáveis hoje
-O mundo tem 3 andares, `TilePos` tem `z`, a projeção compensa altura, a ordenação
-de desenho trata andar como dominante, andares acima do jogador são escondidos e
-andares abaixo são escurecidos. **Mas não existe nenhuma forma de trocar de
-andar.** `find_spawn_tile` sempre devolve `z = 0` e `tile_step` nunca muda `z`.
+### 2. ~~Escadas / rampas~~ — FEITO
+Escada existe: flags de item `StairsUp`/`StairsDown` (ids 103/104), regra em
+`sim::World::apply_stairs`, e a `assets/maps/torre.txt` com os três andares ligados
+e verificados. A troca de andar é instantânea e dispara na **chegada por passo** —
+ver o invariante no CLAUDE.md e `tests/test_stairs.cpp`. Rampa (mudança de altura
+sem teleporte) continua não existindo, e portal **entre mapas** também não; o plano
+do portal está em [pendencias.md](pendencias.md).
 
-Ou seja: toda a infraestrutura multi-andar está pronta e nunca é exercitada em
-jogo. Falta:
-
-- um tipo de tile "escada" / "rampa" que ao ser pisado mova o ator para `z ± 1`
-- a regra em `World::request_walk` (ou um sistema novo) que aplique isso
-- decidir se a troca de andar é instantânea ou consome um passo
-
-É pequeno e desbloqueia a única feature estrutural que já foi paga e não rende
-nada. Enquanto não existir, o código de render multi-andar não foi visto
-funcionando de verdade.
+O que sobrou desta linha: rampa, e o **editor mostrando/editando só o andar 0** —
+dá para pintar a escada, mas não o andar onde ela chega. Ver
+[maps.md](maps.md).
 
 ### 3. Persistência — **feito**
 Posição, facing, hp/max_hp, equipamento e inventário sobrevivem a um restart, em
@@ -78,9 +73,11 @@ O atlas é gerado em código (`tileset.cpp`). Trocar por arte exige:
 Nada. Recomendação: **miniaudio** (single header, funciona nos 5 targets) em vez de
 SDL3_mixer, que é mais simples mas limita depois.
 
-### 8. Combate, inventário, chat, NPCs
-O conteúdo do jogo. `CHealth` existe e nada usa. `sim::update_wanderers` é um
-placeholder explícito e deve ser deletado quando houver IA real.
+### 8. Chat, NPCs, quests
+O conteúdo do jogo. Combate, inventário e mobs com classes já existem (ver
+[monsters.md](monsters.md)); `sim::update_wanderers` foi deletado quando
+`update_monsters` chegou, como estava previsto aqui. Falta chat, NPC que conversa
+(hoje todo mob é hostil) e qualquer noção de progressão.
 
 ## Baixa prioridade / quando doer
 
@@ -113,7 +110,8 @@ Registradas para não serem descobertas como surpresa:
 | `write_snapshot` | trunca em 255 atores sem critério | precisa de prioridade (item 4) |
 | `SoloSession` | copia o `TileMap` uma vez | terreno destrutível precisaria de versionamento por chunk |
 | `RemoteSession` | sem predição | item 5 |
-| Andares 1 e 2 | existem no dado e no render, inalcançáveis em jogo | falta escada; item 2 |
+| Andar de cima do ator | desenhado translúcido, não escondido | opaco esconde o personagem atrás de um overhang; ver comentário em `world_render.cpp` |
+| Mob | não conversa, não tem nível, loot é um item fixo por classe | tabela de loot e NPC são item 8 |
 | `sim::Pathfinder` | planeja ignorando outros atores | atores se movem, então desviar deles produz rota que já está velha quando é andada; bloqueio é tratado no passo, com desistência após 1s |
 | `CPathFollow` | não recalcula rota ao ser bloqueado, desiste | replanejar precisa de limite de tentativas para não virar busca por tick |
 | Custo da diagonal | 1.5× no grid, mas `ScreenRelative` faz `W` ser diagonal | ver comentário em `input.hpp`: escolher esquema e achatar o custo |

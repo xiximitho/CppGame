@@ -5,11 +5,68 @@
 
 namespace sim {
 
-/// Moves every CWanderer entity in a random direction now and then. This is a
-/// placeholder so the world is not empty and so snapshot/interpolation code has
-/// something other than the local player to prove itself against. Real behaviour
-/// gets its own systems; this one is expected to be deleted.
-void update_wanderers(World& world, Rng& rng);
+/// Spawns one monster of `type` at `at` and returns its entity.
+///
+/// The class's numbers are copied into the actor's components here, which is why
+/// nothing downstream needs the monster catalogue: speed lands in CActor, health
+/// in CHealth, damage and reach in CCombat. Returns entt::null when the class is
+/// unknown, so a map naming a class that does not exist is reportable content
+/// rather than a crash.
+entt::entity spawn_monster(World& world, MonsterTypeId type, TilePos at);
+
+/// Spawns every monster a map author placed. Returns how many were placed.
+///
+/// Entries naming a class that does not exist, or sitting on a tile that is not
+/// walkable or already taken, are skipped rather than fatal: content should not be
+/// able to stop a server from booting, and the count lets the caller log the gap.
+int spawn_authored_monsters(World& world, const std::vector<MonsterSpawn>& list);
+
+/// Spawns one monster of a class picked at random from `catalogue`.
+///
+/// Lives here rather than in the server and the solo session because both need it
+/// and the two must agree: single-player growing a different mob mix than the
+/// server is exactly the drift this module boundary exists to stop.
+entt::entity spawn_random_monster(World& world, Rng& rng, TilePos at);
+
+/// Creates the spawn points an author placed. Returns how many were created;
+/// entries naming a class that does not exist are skipped and counted out.
+///
+/// A spawner is an entity with CSpawner and no CActor: invisible, server-side, and
+/// never in a snapshot. Its children appear through update_spawners.
+int create_spawners(World& world, const std::vector<SpawnerSpec>& list);
+
+/// Keeps every CSpawner's population up.
+///
+/// Forgets children that died, and when it is short and its timer is up, places one
+/// new mob on a free walkable tile within the radius. One per timer expiry rather
+/// than a full refill, so clearing a nest stays cleared for a while.
+///
+/// Runs every tick like the other systems; the timers make it cheap.
+void update_spawners(World& world, Rng& rng);
+
+/// Drives every CMonster: chase and attack the nearest non-monster inside the
+/// aggro radius, otherwise drift around home within the leash.
+///
+/// "Non-monster" rather than "player" on purpose. In solo play the local actor has
+/// no CPlayer (there is no peer), so keying aggro on that would give monsters
+/// different behaviour in single-player than on the server — precisely the drift
+/// the module boundary exists to prevent.
+///
+/// Must run every tick after World::step(), before update_path_followers, so a
+/// route decided this tick is stepped on this tick.
+void update_monsters(World& world, Rng& rng);
+
+/// Keeps every CFollow actor walking toward its target until it is in reach.
+///
+/// Replans when the target has moved since the route was planned (and at worst
+/// four times a second), stops the route the moment the target is within the
+/// attacker's reach, and drops the chase when the target dies or vanishes. This is
+/// what makes "attack that one" mean "close in and keep hitting it" instead of
+/// "walk once to where it used to be".
+///
+/// Must run every tick after World::step() and BEFORE update_path_followers, so a
+/// route planned this tick is stepped this tick.
+void update_chasers(World& world);
 
 /// Advances every actor that is following a route from World::request_move_to,
 /// issuing one step per tile.

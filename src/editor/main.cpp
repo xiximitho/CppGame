@@ -267,6 +267,8 @@ int main(int argc, char** argv) {
 
         client::WorldView view;
         std::optional<sim::TilePos> spawn;
+        std::vector<sim::MonsterSpawn> authored_monsters;
+        std::vector<sim::SpawnerSpec>  authored_spawners;
         {
             std::string error;
             const std::string text = read_file(opt.map_path);
@@ -274,6 +276,11 @@ int main(int argc, char** argv) {
                 if (auto parsed = sim::parse_text_map(text, registry, &error)) {
                     view.map = std::move(parsed->map);
                     spawn = parsed->spawn;
+                    // Kept so saving writes them back: the editor cannot place a
+                    // monster yet, and a save that dropped what it could not edit
+                    // would empty every map the first time a wall got moved.
+                    authored_monsters = std::move(parsed->monsters);
+                    authored_spawners = std::move(parsed->spawners);
                     LOG_INFO("editing '%s' (%dx%d)", opt.map_path.c_str(),
                              view.map.width(), view.map.height());
                 } else {
@@ -596,7 +603,9 @@ int main(int argc, char** argv) {
                             running = false;
                         } else if (sc == SDL_SCANCODE_S) {
                             const std::string out =
-                                sim::write_text_map(view.map, spawn);
+                                sim::write_text_map(view.map, spawn,
+                                                    authored_monsters,
+                                                    authored_spawners);
                             if (write_file(opt.map_path, out)) {
                                 LOG_INFO("saved '%s'", opt.map_path.c_str());
                                 dirty = false;

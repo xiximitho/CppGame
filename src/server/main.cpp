@@ -19,6 +19,7 @@
 #include "sim/item_type.hpp"
 #include "sim/map_gen.hpp"
 #include "sim/map_io.hpp"
+#include "sim/monster_io.hpp"
 #include "sim/rng.hpp"
 #include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
@@ -51,27 +52,70 @@ std::string read_text_file(const std::string& path) {
     return buffer.str();
 }
 
-/// Builds the authoritative World. Same map format and blocking derivation as
-/// the client, so solo and multiplayer never diverge; only how the bytes are
-/// read differs by layer.
-sim::World build_server_world(const std::string& map_path, std::uint64_t seed,
-                              const sim::ItemTypeRegistry& item_types) {
+/// Loads the monster catalogue, falling back to the built-in classes.
+///
+/// Read with <fstream> for the same reason the map is: the server links no SDL, so
+/// it has no VFS, and it never runs on Android. A malformed file is loud and then
+/// ignored — a server that refuses to boot because someone fat-fingered a stat is
+/// worse than one that boots with the shipped numbers and says so.
+sim::MonsterRegistry load_monsters(const std::string& path) {
+    const std::string text = read_text_file(path);
+    if (text.empty()) {
+        LOG_INFO("no monster catalogue '%s'; using built-in classes",
+                 path.c_str());
+        return sim::default_monsters();
+    }
+    sim::MonsterRegistry loaded;
+    std::string error;
+    if (!sim::parse_monster_catalogue(text, loaded, &error)) {
+        LOG_WARN("monster catalogue '%s' failed to parse: %s; using built-in "
+                 "classes", path.c_str(), error.c_str());
+        return sim::default_monsters();
+    }
+    LOG_INFO("loaded %zu monster class(es) from '%s'", loaded.count(),
+             path.c_str());
+    return loaded;
+}
+
+/// A built world plus what the map file said about it: the authored player spawn,
+/// the one-off monsters and the spawn points, carried out of the single parse.
+struct ServerWorld {
+    sim::World                     world;
+    std::optional<sim::TilePos>    spawn;
+    std::vector<sim::MonsterSpawn> monsters;
+    std::vector<sim::SpawnerSpec>  spawners;
+};
+
+/// Builds the authoritative World. Same map format, blocking derivation and
+/// monster spawning as the client, so solo and multiplayer never diverge; only how
+/// the bytes are read differs by layer.
+ServerWorld build_server_world(const std::string& map_path, std::uint64_t seed,
+                               const sim::ItemTypeRegistry& item_types,
+                               const sim::MonsterRegistry& monsters) {
     const std::string text = read_text_file(map_path);
     if (!text.empty()) {
         std::string error;
         if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
-            LOG_INFO("loaded map '%s' (%dx%d)", map_path.c_str(),
-                     parsed->map.width(), parsed->map.height());
-            return sim::World(std::move(parsed->map), item_types);
+            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)",
+                     map_path.c_str(), parsed->map.width(), parsed->map.height(),
+                     parsed->monsters.size(), parsed->spawners.size());
+            return ServerWorld{
+                sim::World(std::move(parsed->map), item_types, monsters),
+                parsed->spawn, std::move(parsed->monsters),
+                std::move(parsed->spawners)};
         }
         LOG_WARN("map '%s' failed to parse: %s; using generated map",
                  map_path.c_str(), error.c_str());
     } else {
         LOG_INFO("no map '%s'; using generated map", map_path.c_str());
     }
-    return sim::World(
-        sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed}, item_types),
-        item_types);
+    return ServerWorld{
+        sim::World(sim::generate_demo_map(sim::MapGenSettings{96, 96, 3, seed},
+                                          item_types),
+                   item_types, monsters),
+        std::nullopt,
+        {},
+        {}};
 }
 
 }  // namespace
@@ -95,8 +139,17 @@ constexpr int kMaxChunksPerTick = 6;
 struct Options {
     std::uint16_t port = net::kDefaultPort;
     std::uint64_t seed = 1337;
-    int           wanderers = 60;
+    /// Extra mobs of random classes scattered over the map, on top of whatever the
+    /// map itself authors. Zero by default now that maps carry their own monsters
+    /// and spawn points: a world that is half authored and half random reads as
+    /// random.
+    int           wanderers = 0;
     std::size_t   max_peers = 64;
+    /// Relative to the working directory: the server reads plain files (it links
+    /// no SDL, so no VFS) and never runs on Android.
+    std::string   map_path = "assets/maps/dungeon.txt";
+    /// Monster classes. Same convention as the map path.
+    std::string   monsters_path = "assets/monsters.txt";
     /// Relative to the working directory, same convention as the map path.
     std::string   content_path = "assets/content.db";
     /// Separate file from content on purpose: content is committed, saves are not.
@@ -196,7 +249,11 @@ void print_usage() {
         "\n"
         "  --port N         UDP port to listen on (default %u)\n"
         "  --seed N         world seed (default 1337)\n"
-        "  --wanderers N    wandering actors to spawn (default 60)\n"
+        "  --wanderers N    extra random mobs on top of the map's own (default 0)\n"
+        "  --map PATH       authored map (default assets/maps/dungeon.txt);\n"
+        "                   falls back to the seeded generated map if unreadable\n"
+        "  --monsters PATH  monster classes (default assets/monsters.txt);\n"
+        "                   falls back to the built-in classes if unreadable\n"
         "  --max-peers N    connection limit (default 64)\n"
         "  --content PATH   content database (default assets/content.db,\n"
         "                   created and seeded if absent)\n"
@@ -221,6 +278,10 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.seed = std::strtoull(argv[++i], nullptr, 10);
         } else if (arg == "--wanderers" && has_value) {
             options.wanderers = std::atoi(argv[++i]);
+        } else if (arg == "--map" && has_value) {
+            options.map_path = argv[++i];
+        } else if (arg == "--monsters" && has_value) {
+            options.monsters_path = argv[++i];
         } else if (arg == "--max-peers" && has_value) {
             options.max_peers = static_cast<std::size_t>(std::atoi(argv[++i]));
         } else if (arg == "--content" && has_value) {
@@ -322,7 +383,8 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
 
 void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
                   Connection& connection, core::BitReader& reader,
-                  std::uint64_t content_fingerprint, store::Db* players) {
+                  std::uint64_t content_fingerprint, store::Db* players,
+                  const std::optional<sim::TilePos>& authored_spawn) {
     net::HelloMsg hello;
     if (!net::read_hello(reader, hello)) {
         send_reject(transport, connection.peer, "malformed hello");
@@ -360,7 +422,23 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
         players != nullptr ? store::load_character(*players, connection.name)
                            : std::nullopt;
 
+    // A map that names its spawn point decides where new players appear; otherwise
+    // it is a random walkable tile, which is every generated map.
+    //
+    // The authored point is a PREFERENCE, and it is checked: assets/maps/dungeon.txt
+    // has its '@' on a wall (someone painted over it in the editor), and trusting
+    // that would drop every new player inside solid rock.
     sim::TilePos spawn = sim::find_spawn_tile(world.map(), rng);
+    if (authored_spawn.has_value() &&
+        world.map().is_walkable(*authored_spawn) &&
+        world.occupant(*authored_spawn) == sim::kInvalidNetId) {
+        spawn = *authored_spawn;
+    } else if (authored_spawn.has_value()) {
+        LOG_WARN("map spawn (%d,%d,%d) is not usable; spawning at (%d,%d,%d)",
+                 authored_spawn->x, authored_spawn->y,
+                 static_cast<int>(authored_spawn->z), spawn.x, spawn.y,
+                 static_cast<int>(spawn.z));
+    }
     if (saved.has_value()) {
         // The saved tile may have become unusable since — the map is authored and
         // gets edited, and someone may already be standing there. Falling back to a
@@ -487,25 +565,29 @@ int main(int argc, char** argv) {
              options.players_path.c_str(),
              static_cast<long long>(store::character_count(*players).value_or(-1)));
 
-    sim::World world =
-        build_server_world("assets/maps/dungeon.txt", options.seed, item_types);
+    const sim::MonsterRegistry monster_types = load_monsters(options.monsters_path);
+    ServerWorld built = build_server_world(options.map_path, options.seed,
+                                          item_types, monster_types);
+    sim::World& world = built.world;
+    const std::optional<sim::TilePos> authored_spawn = built.spawn;
     sim::Rng rng(options.seed ^ 0xA24BAED4963EE407ULL);
+
+    // Authored mobs first, so they hold the tiles their author chose against the
+    // random ones that follow.
+    const int authored_monsters =
+        sim::spawn_authored_monsters(world, built.monsters);
+    const int spawners = sim::create_spawners(world, built.spawners);
+    LOG_INFO("%d authored monster(s) placed, %d spawner(s) armed",
+             authored_monsters, spawners);
 
     for (int i = 0; i < options.wanderers; ++i) {
         const sim::TilePos at = sim::find_spawn_tile(world.map(), rng);
         if (world.occupant(at) != sim::kInvalidNetId) {
             continue;
         }
-        const sim::NetId id = world.allocate_net_id();
-        const entt::entity entity = world.spawn_actor(id, at, 0);
-        world.registry().emplace<sim::CWanderer>(entity, sim::CWanderer{0});
-        // Loot to drop on death.
-        static const sim::TileId kLoot[] = {
-            sim::tiles::kShield, sim::tiles::kHelmet, sim::tiles::kBoots,
-            sim::tiles::kRing, sim::tiles::kAmulet};
-        world.registry().emplace<sim::CInventory>(
-            entity,
-            sim::CInventory{{{kLoot[static_cast<std::size_t>(id % 5)], 1}}});
+        // Class, stats, speed and loot all come from the monster catalogue, so
+        // this stays one line and cannot drift from what solo play spawns.
+        sim::spawn_random_monster(world, rng, at);
     }
 
     auto transport = net::create_server(options.port, options.max_peers);
@@ -569,7 +651,7 @@ int main(int argc, char** argv) {
                         case net::MsgId::C2S_Hello:
                             handle_hello(world, rng, *transport, connection,
                                          reader, content_fingerprint,
-                                         players_db);
+                                         players_db, authored_spawn);
                             break;
 
                         case net::MsgId::C2S_Input: {
@@ -594,6 +676,9 @@ int main(int argc, char** argv) {
                                 !connection.welcomed) {
                                 break;
                             }
+                            // An explicit destination replaces a chase, the same
+                            // way pressing a direction key does.
+                            world.cancel_path(connection.net_id);
                             // The target came off the wire, so it is untrusted:
                             // request_move_to rejects out-of-bounds and unwalkable
                             // tiles rather than trusting the client's aim.
@@ -613,10 +698,15 @@ int main(int argc, char** argv) {
                                 !connection.welcomed) {
                                 break;
                             }
-                            // Untrusted target id; set_attack_target ignores
-                            // unknown ids and self-targeting.
+                            // Untrusted target id; both primitives ignore unknown
+                            // ids and self-targeting.
+                            //
+                            // Attacking implies chasing (Tibia's chase mode): the
+                            // client names WHO, never where, and the server closes
+                            // the distance and keeps closing it as the target moves.
                             world.set_attack_target(connection.net_id,
                                                     attack.target);
+                            world.request_follow(connection.net_id, attack.target);
                             break;
                         }
 
@@ -705,9 +795,13 @@ int main(int argc, char** argv) {
             accumulator -= kTickNanos;
 
             world.step();
+            // Monsters decide before the followers step, so a route chosen this
+            // tick is walked on this tick instead of the next one.
+            sim::update_spawners(world, rng);
+            sim::update_monsters(world, rng);
+            sim::update_chasers(world);
             sim::update_path_followers(world);
             sim::update_combat(world);
-            sim::update_wanderers(world, rng);
 
             if (world.tick() % kSnapshotEveryTicks != 0) {
                 continue;
