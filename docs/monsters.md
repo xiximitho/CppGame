@@ -28,11 +28,28 @@ class <id> <nome>          # id é CONTRATO; nome é só para humanos
 | **`step_ticks`** | **velocidade**: ticks por passo cardinal a 30 Hz |
 | `aggro` | a que distância (tiles) ele te nota; 0 = nunca ataca |
 | `leash` | o quanto se afasta de onde nasceu sem alvo |
-| `loot` | id de item deixado no chão na morte (0 = nada) |
+| `loot` | tabela de drop na morte (implementação pendente; ver abaixo) |
 
 Chave que falta fica no default do `MonsterType`. **Chave desconhecida é erro** — um
 `speed 10` que fosse ignorado em silêncio seria um mob que mantém os números
 antigos enquanto o autor jura que mudou.
+
+### Tabela de loot (design fechado; código ainda legado)
+
+Várias linhas por classe:
+
+```
+  loot <item_id> <max_count> <chance>
+```
+
+- `chance` de **`1_000_000`** (rolls independentes na morte).
+- Só **`max_count`** no arquivo (sem `min_count`); quantidade ao dropar entre 1 e
+  `max_count` quando o roll passa.
+- Resultado num **cadáver fantasma** no tile (**não bloqueia** passo); coleta
+  **manual** (sem auto-loot ao andar).
+- Formato legado `loot 306` (só id) → `max_count=1`, chance 100%.
+
+Fases de implementação: [pendencias.md](pendencias.md#loot-estilo-tibia--inventário-de-mob-e-drops).
 
 ### `step_ticks` é o parâmetro que você vai mexer
 

@@ -19,7 +19,9 @@
 # aggro é em tiles (Chebyshev): a que distância ele te nota. Ele desiste a 1.5x
 # disso, para não ligar e desligar quando você anda na borda.
 # leash é o quanto ele se afasta de onde nasceu enquanto não tem ninguém para caçar.
-# loot é um id de item deixado no chão na morte (0 = nada).
+# loot — hoje: um id = drop garantido (código legado). Alvo (pendencias.md):
+#   loot <item_id> <max_count> <chance>   # chance de 1_000_000; cadáver fantasma
+# Atalho legado: loot <item_id>  → max_count 1, chance 100%.
 
 class 1 rato
   appearance   1
