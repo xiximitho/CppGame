@@ -42,9 +42,15 @@ ctest --preset debug
 ./scripts/run-local.sh                                 # sobe servidor + cliente
 ./build/debug/bin/game_client --connect 127.0.0.1:7777 --name felipe
 
-# Autorar conteúdo — F2 alterna mapa <-> modo item
-./build/debug/bin/game_editor
+# Autorar conteúdo — F2 alterna mapa <-> modo item, F3 escolhe o mapa,
+# F4 alterna mapa <-> modo mob (animação de uma classe),
+# PgUp/PgDn trocam de andar, Ctrl+PgUp adiciona um andar
+./build/debug/bin/game_editor --map torre              # nome, caminho ou nada
 ./build/debug/bin/game_bake                            # content.db -> content.bin
+
+# Trazer arte de mob de uma folha estilo Tibia para o atlas (docs/animation.md)
+python3 tools/import_otsp.py --sheet assets/tibia_like/otsp_creatures_03.png \
+    --at 0,47 --cell 32x32 --appearance 2
 
 # Servidor com persistência
 ./build/debug/bin/game_server --players players.db --save-every 60
@@ -74,7 +80,9 @@ comportamento correto, não bug: ver o invariante do hash de conteúdo mais abai
 gitignored; `players.db` é save de jogador e nunca vai para o git.
 
 Mapa também é dado: `assets/maps/*.txt`, escolhido por `--map` no cliente (solo),
-no servidor e no editor. Os seis mapas commitados saem de geradores determinísticos
+no servidor e no editor — no cliente e no editor, `--map torre`, `--map
+maps/torre.txt` e o caminho completo todos resolvem, porque a alternativa era um typo
+virar "mapa procedural" em silêncio. No editor, `F3` escolhe da lista. Os seis mapas commitados saem de geradores determinísticos
 (`tools/gen_dungeon.py`, `tools/gen_maps.py`); o `gen_maps.py` **valida
 conectividade** antes de gravar, porque um tile bloqueante mal colocado sela um
 corredor sem que parser nem screenshot reclamem. Ver `docs/maps.md`.
@@ -84,7 +92,8 @@ corredor sem que parser nem screenshot reclamem. Ver `docs/maps.md`.
 Documentação de fundo em `docs/architecture.md`, `docs/dependencies.md`,
 `docs/mobile.md`, `docs/roadmap.md`. Para conteúdo e autoria: `docs/content.md` (o
 pipeline e o porquê das decisões), `docs/authoring.md` (as receitas),
-`docs/sprites.md`, `docs/monsters.md` (classes de mob e spawners). **`docs/pendencias.md` é o handoff**: o que está pronto, o que
+`docs/sprites.md`, `docs/monsters.md` (classes de mob e spawners),
+`docs/animation.md` (frames de caminhada, as folhas do pacote OTSP e o modo mob). **`docs/pendencias.md` é o handoff**: o que está pronto, o que
 falta, e o que foi verificado de que jeito. O que segue é o mínimo para não quebrar
 nada.
 
@@ -179,6 +188,41 @@ cortava o sprite durante todo o passo. `tests/test_iso.cpp` tem o teste de regre
 `NorthWest` é o que aparece como **cima** na tela. A rotação vive só em
 `client::input::to_grid()`; `sim/` nunca sabe de tela. `tests/test_input.cpp` valida
 isso contra a própria projeção, não contra uma tabela.
+
+O outro lado da mesma moeda é `client::anim::art_direction()`: arte estilo Tibia tem
+**4** direções desenhadas em espaço de tela (costas, direita, frente, esquerda), e as
+quatro direções de arte **são** as quatro diagonais de grid. Cada cardinal de grid cai
+no meio de duas, empate desempatado no horário — duas direções de grid por coluna de
+arte. Mesma regra de sempre: a rotação mora no cliente e é testada contra a projeção.
+
+### Animação é o progresso do passo, não um relógio
+
+`client::anim::walk_frame(walking, progress, frames)` (header, `inline`, puro) escolhe
+o frame a partir de `ActorState::walk_progress`, que o snapshot **já carrega**. Por isso
+animar não mexeu em `sim/`, não mexeu no servidor e não bumpou
+`net::kProtocolVersion`: é apresentação. E é por isso que é robusto — a fase é
+**derivada** da posição no passo em vez de acumulada num contador local, então snapshot
+perdido custa à animação o que custa à posição, ou seja nada.
+
+Um conjunto animado é uma linha do `atlas.txt`: `mobstrip <appearance> <x> <y>
+<cell_w> <cell_h> <dirs> <frames> <ox> <oy>`, células numa fileira só,
+**direção-maior** (`dir * frames + frame`). O kind antigo `mob <appearance> <dir> ...`
+segue valendo e é o que o rato usa — o caminho estático continua exercitado de
+propósito. **Os dois não podem coexistir para a mesma aparência**: são lidos na ordem do
+arquivo e o último ganha, então o importador e o editor apagam as linhas `mob` da
+aparência que ganha `mobstrip`.
+
+Conjunto estático responde `frames == 1`, e `walk_frame` responde 0 para ele — por isso
+nenhum caller tem `if` de "não animado".
+
+A linha tem um campo `tilt` **opcional** no fim, em graus: arte estilo Tibia é desenhada
+para uma grade alinhada aos eixos da tela, e numa isométrica a criatura desenhada como
+risco diagonal parece tombada (~30° põe as folhas do OTSP de pé). `SpriteCmd::rotation`
+gira em torno do **pé** do sprite, não do meio — a única coisa que um sprite girado tem
+que preservar é o contato com o chão — e não custa draw call, porque o backend já emite
+quatro vértices por sprite. `rotation == 0` desvia do `sin`/`cos`: todo tile de chão
+passa por ali. Arte, medidas das folhas e receitas em
+`docs/animation.md`; crédito da arte (CC BY 4.0) em `assets/tibia_like/CREDITS.md`.
 
 ### Mobs: classe é dado, comportamento é sistema
 
@@ -286,9 +330,15 @@ interface.
   simétrico (`<` embaixo, `>` em cima no mesmo x,y) de ficar teletransportando o
   ator para sempre: ser *colocado* na escada de cima não conta como passo. Pisar
   nela de novo, sim. Escada é flag de item (`StairsUp`/`StairsDown`), relativa
-  (`z±1`), e recusa em silêncio quando o destino é rocha ou está ocupado — não
-  existe meio-movimento que deixe occupancy pendurada. `tests/test_stairs.cpp`
-  cobre os cinco casos.
+  (`z±1`), e recusa em silêncio quando o destino é rocha, está ocupado ou **não
+  existe** (mapa de um andar) — não existe meio-movimento que deixe occupancy
+  pendurada. `tests/test_stairs.cpp` cobre os cinco casos.
+  O preço desse silêncio é que "escada quebrada" quase sempre é escada sem destino,
+  não regra errada: só a `torre.txt` tem escada, os outros cinco mapas são de um
+  andar. Dois anteparos: o editor avisa quando a escada no pincel não tem para onde
+  levar, e `tests/test_shipped_maps.cpp` reprova escada dos mapas commitados que dê
+  em tile onde não se pode ficar de pé — além de andar da torre até a escada e
+  conferir que o andar mudou.
 - **Atacar implica perseguir, e perseguir é contínuo.** O cliente manda **quem**,
   nunca **onde**: `C2S_Attack` faz o servidor chamar `set_attack_target` **e**
   `request_follow`, e `sim::update_chasers` replaneja a rota sempre que o alvo se
@@ -358,14 +408,22 @@ Um atlas só, cena inteira em **1 draw call**, texto incluído; se subir, o batc
 quebrou.
 
 ```bash
-# O modo item e o seletor de sprite, sem janela: o driver dummy não entrega teclas,
-# então estas flags existem para alcançá-los.
+# O modo item, o seletor de sprite, a lista de mapas, o andar e o brush, sem janela:
+# o driver dummy não entrega teclas, então estas flags existem para alcançá-los.
 SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --item-mode      --screenshot /tmp/f.bmp
 SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --sprite-picker  --screenshot /tmp/p.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --map-browser    --screenshot /tmp/m.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --mob 2          --screenshot /tmp/b.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --mob 1 --mob-picker --screenshot /tmp/s.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor --map torre --floor 1 --brush 7 \
+  --screenshot /tmp/z.bmp
 
 # Vincular sprite sem clicar — kind:id:coluna:linha, em células. Também serve para
 # vincular em lote quando chega uma folha de arte nova.
 ./build/debug/bin/game_editor --bind-sprite object:103:3:1
+# O mesmo para a tira de animação de um mob:
+# appearance:coluna:linha[:dirs:frames:cellw:cellh]
+./build/debug/bin/game_editor --bind-mob 2:0:14
 ```
 
 **O que isso NÃO cobre:** digitar no formulário. O driver dummy não entrega teclas,
@@ -394,7 +452,9 @@ Os que mais confundem:
 - Rotas não são replanejadas quando outro ator bloqueia: o seguidor espera e
   desiste.
 - Sem client-side prediction; a latência visível é o início de um passo.
-- O editor não coloca mob nem ninho (preserva os que carregou, mas não tem UI).
+- O editor não coloca mob nem ninho, e não move o spawn (preserva os que carregou,
+  mas não tem UI). Andares, sim: `PgUp`/`PgDn` editam qualquer andar e `Ctrl+PgUp`
+  adiciona um.
 - Loot é **um** item por classe, não tabela com chances. Sem mob ranged usando
   `kind ranged` ainda.
 

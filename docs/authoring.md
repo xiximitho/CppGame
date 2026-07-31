@@ -18,6 +18,7 @@ uma, duas ou nas três, dependendo do que quer:
 | **Um id novo com regra de jogo** (bloqueia, pegável, ataque, defesa, alcance…) | `assets/content.db` (pelo `game_editor`, tecla `F2`) | Não |
 | **Colocar coisas no mundo** | `assets/maps/*.txt` (à mão ou pelo `game_editor`) | Não |
 | **Balancear um mob** (velocidade, hp, dano, aggro…) | `assets/monsters.txt` | Não |
+| **Animar um mob** (frames de caminhada, direções, tamanho de célula) | `assets/tilesets/atlas.txt` (pelo `game_editor`, tecla `F4`) | Não |
 
 Regra de ouro: **tudo é dado**. Arte e mapa são lidos em runtime da árvore-fonte;
 tipos de item vivem no `assets/content.db` e são editados pelo `game_editor`
@@ -38,6 +39,14 @@ nunca vê a arte, e é isso que mantém o `server-only` sem lib gráfica — ver
 > O que ainda é trabalho de arte: **desenhar** o recorte no `atlas.png`. O seletor
 > escolhe entre células existentes; ele não pinta.
 
+> **Animação de mob é o modo `F4`** (`docs/animation.md`). Uma classe de mob tem duas
+> metades: os números em `assets/monsters.txt` (simulação, o servidor lê) e os sprites
+> no `atlas.txt`, ligados pelo `appearance`. O `F4` edita a segunda — célula inicial,
+> tamanho de célula, direções (4 ou 8), frames, origin — e mostra todos os frames de
+> todas as direções, com uma célula animada pela mesma função que o jogo usa. Trazer
+> pixels novos de uma folha de arte é do `tools/import_otsp.py`; o `F4` vincula o que
+> já está no atlas.
+
 ## Onde as coisas moram
 
 ```
@@ -50,6 +59,8 @@ assets/content.bin          blob derivado do banco, que o CLIENTE lê (game_bake
 src/sim/include/sim/tile_ids.hpp   ids que o próprio engine referencia por nome
 src/sim/src/item_type.cpp          build_default_registry(): a SEMENTE do banco
 tools/gen_placeholder_atlas.py     gera o atlas placeholder (PIL)
+tools/import_otsp.py               traz uma criatura de uma folha estilo Tibia
+assets/tibia_like/                 as folhas de origem (CC BY 4.0, ver CREDITS.md)
 tools/gen_dungeon.py               gera o calabouço de exemplo
 tools/gen_maps.py                  gera os outros mapas (floresta, vila, ...)
 ```
@@ -180,6 +191,22 @@ ponto é pisar nela), sprite escolhido no seletor. Já existem as duas: ids **10
 No mapa, o par tem que ser simétrico: `<` em `(x,y,z)` e `>` no **mesmo x,y** em
 `z+1`, senão só dá para subir. O `tools/gen_maps.py` valida isso (`stair ... leads
 nowhere`) e a `torre.txt` é o exemplo pronto.
+
+No editor, do começo ao fim:
+
+1. `F3`, escolha o mapa (ou `--map <nome>`).
+2. O mapa tem um andar só? `Ctrl+PgUp` adiciona o de cima. Com a escada no pincel, a
+   barra de baixo avisa em laranja quando o andar de destino não existe — é
+   exatamente o caso que `apply_stairs` recusa em silêncio, e a fonte da impressão
+   de que "escada não funciona".
+3. `PgDn` até o andar de baixo, pinte `stairs up` (103) num tile caminhável.
+4. `PgUp`, e **no mesmo x,y** pinte `stairs down` (104) — e chão em volta, senão
+   você sobe para dentro de uma sala de um tile.
+5. `S`. Conferir andando: `game_client --solo --map <nome>`.
+
+O passo 4 é o que se esquece. Subir funciona, descer não, e o mapa parece meio
+quebrado; a checagem em `tests/test_shipped_maps.cpp` pega o caso pior (escada que dá
+em rocha) nos mapas commitados, mas não olha o seu arquivo antes de você salvar.
 
 ---
 

@@ -489,9 +489,14 @@ def patch(out_dir):
         print(f"{png_path} is already {existing.width}x{existing.height}")
         img = existing
     else:
-        img = Image.new("RGBA", (ATLAS, ATLAS_H), (0, 0, 0, 0))
+        # NEVER narrower than what is already there. tools/import_otsp.py widens the
+        # atlas to fit a 12-cell animation strip (384px does not go into 256), and a
+        # canvas of ATLAS width would crop every imported creature off the right-hand
+        # side — the exact "tool that destroys art" this function exists to avoid.
+        width = max(existing.width, ATLAS)
+        img = Image.new("RGBA", (width, ATLAS_H), (0, 0, 0, 0))
         img.paste(existing, (0, 0))
-        print(f"grew {png_path} to {ATLAS}x{ATLAS_H}")
+        print(f"grew {png_path} to {width}x{ATLAS_H}")
 
     px = img.load()
     draw_stairs(px)

@@ -8,7 +8,12 @@
 add_executable(game_editor
     main.cpp
     item_mode.cpp
+    mob_mode.cpp
+    map_browser.cpp
     atlas_meta.cpp
+    # The client's own monsters.txt loader: mob mode lists the classes the game will
+    # have, and a second parser for that file is a format that drifts.
+    ${CMAKE_SOURCE_DIR}/src/client/src/content.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/sdl_backend.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/tileset.cpp
     ${CMAKE_SOURCE_DIR}/src/client/src/ui.cpp

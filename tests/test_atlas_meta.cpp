@@ -191,3 +191,112 @@ TEST_CASE("a file with no trailing newline is still handled") {
     CHECK(editor::find_binding(out, "ground", 1).has_value());
     CHECK(editor::find_binding(out, "object", 103).has_value());
 }
+
+TEST_CASE("a mob strip round-trips through the line it writes") {
+    editor::MobStrip strip;
+    strip.appearance = 2;
+    strip.x = 0;
+    strip.y = 440;
+    strip.cell_w = 32;
+    strip.cell_h = 32;
+    strip.dirs = 4;
+    strip.frames = 3;
+    editor::apply_canonical_mob_origin(strip);
+
+    const auto back = editor::find_mob_strip(editor::format_mob_strip(strip) + "\n", 2);
+    REQUIRE(back.has_value());
+    CHECK(back->x == 0);
+    CHECK(back->y == 440);
+    CHECK(back->cell_w == 32);
+    CHECK(back->cell_h == 32);
+    CHECK(back->dirs == 4);
+    CHECK(back->frames == 3);
+    // Feet on the tile centre: 16 - 32.
+    CHECK(back->origin_x == -16.0F);
+    CHECK(back->origin_y == -16.0F);
+}
+
+TEST_CASE("the canonical mob origin matches the bands already in atlas.txt") {
+    // These two are what the file has shipped since monsters existed. If the formula
+    // ever disagrees with them, every mob's health bar moves.
+    editor::MobStrip rat;
+    rat.cell_w = 24;
+    rat.cell_h = 24;
+    editor::apply_canonical_mob_origin(rat);
+    CHECK(rat.origin_x == -12.0F);
+    CHECK(rat.origin_y == -8.0F);
+
+    editor::MobStrip knight;
+    knight.cell_w = 32;
+    knight.cell_h = 48;
+    editor::apply_canonical_mob_origin(knight);
+    CHECK(knight.origin_x == -16.0F);
+    CHECK(knight.origin_y == -32.0F);
+}
+
+TEST_CASE("binding a strip retires the per-direction lines it replaces") {
+    // Both kinds bind the same appearance and the parser takes them in file order, so
+    // a leftover `mob` line below the strip would silently win.
+    const std::string before =
+        "mob         2  0  0    344  32  48  -16      -32\n"
+        "mob         2  1  32   344  32  48  -16      -32\n"
+        "mob         3  0  0    392  32  48  -16      -32\n";
+
+    editor::MobStrip strip;
+    strip.appearance = 2;
+    strip.y = 440;
+    editor::apply_canonical_mob_origin(strip);
+
+    const std::string after = editor::upsert_mob_strip(before, strip);
+    CHECK(after.find("mob         2") == std::string::npos);
+    CHECK(after.find("mob         3") != std::string::npos);
+    REQUIRE(editor::find_mob_strip(after, 2).has_value());
+    CHECK(editor::find_mob_strip(after, 3).has_value() == false);
+}
+
+TEST_CASE("re-binding a strip replaces its line instead of adding one") {
+    editor::MobStrip strip;
+    strip.appearance = 7;
+    strip.y = 100;
+    editor::apply_canonical_mob_origin(strip);
+    const std::string once = editor::upsert_mob_strip("# atlas\n", strip);
+
+    strip.y = 200;
+    const std::string twice = editor::upsert_mob_strip(once, strip);
+    const auto found = editor::find_mob_strip(twice, 7);
+    REQUIRE(found.has_value());
+    CHECK(found->y == 200);
+    // One line, not two: a second strip for the same appearance is the same bug as a
+    // leftover `mob` line.
+    CHECK(twice.find("mobstrip") == twice.rfind("mobstrip"));
+    // And the comment that was there is untouched.
+    CHECK(twice.find("# atlas") != std::string::npos);
+}
+
+TEST_CASE("an unusable strip leaves the file alone") {
+    const std::string text = "ground      1       0    0    64  32  -32      0\n";
+    editor::MobStrip strip;  // appearance 0 — the player, which has `actor` lines
+    CHECK(editor::upsert_mob_strip(text, strip) == text);
+}
+
+TEST_CASE("a strip's lean survives the round trip and is optional on the way in") {
+    editor::MobStrip strip;
+    strip.appearance = 2;
+    strip.y = 448;
+    strip.tilt = 30.0F;
+    editor::apply_canonical_mob_origin(strip);
+
+    const auto back = editor::find_mob_strip(editor::format_mob_strip(strip) + "\n", 2);
+    REQUIRE(back.has_value());
+    CHECK(back->tilt == 30.0F);
+
+    // A line written before leaning existed has no tenth field. It must read as
+    // upright rather than as a parse failure, or every atlas.txt in the wild stops
+    // binding its mobs the day this field appears.
+    const std::string old_line =
+        "mobstrip    2   0    448  32  32  4  3  -16  -16\n";
+    const auto older = editor::find_mob_strip(old_line, 2);
+    REQUIRE(older.has_value());
+    CHECK(older->tilt == 0.0F);
+    CHECK(older->frames == 3);
+}

@@ -41,6 +41,20 @@ struct SpriteCmd {
     /// Painter's-algorithm sort key; see iso::depth_key.
     float depth = 0.0F;
     Color tint;
+    /// Clockwise rotation in radians, about the BOTTOM CENTRE of `dst`.
+    ///
+    /// That pivot, and not the middle, because the only thing a rotated sprite must
+    /// keep is its contact with the ground: an actor's feet sit at the bottom centre
+    /// of its cell (that is what AtlasEntry::origin is chosen for), so rotating there
+    /// leans the creature and leaves it standing on its tile. Rotating about the
+    /// middle slides the feet off it by half the sprite.
+    ///
+    /// Costs nothing: the backend already emits four free vertices per sprite through
+    /// SDL_RenderGeometry, so a rotated quad is the same one draw call. Sampling stays
+    /// NEAREST, so a rotated sprite has hard stair-stepped edges — which is why this
+    /// is a per-sprite-set authoring knob (`mobstrip`'s tilt) and not something the
+    /// renderer applies on its own.
+    float rotation = 0.0F;
 };
 
 class Renderer2D {

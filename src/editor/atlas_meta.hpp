@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -66,5 +67,49 @@ std::string remove_binding(const std::string& text, std::string_view kind,
 /// Formats one line the way the file already looks, so a written line is
 /// indistinguishable from a hand-written one.
 std::string format_binding(const AtlasBinding& binding);
+
+/// One appearance's animated sprite set: the `mobstrip` line.
+///
+/// The cells sit in one atlas row starting at (x, y), direction-major — cell
+/// dir * frames + frame — which is how tools/import_otsp.py lays them down and how
+/// Tileset::parse_atlas_meta reads them back. A whole set on one line rather than
+/// dirs*frames separate lines because a 4x3 set written longhand is twelve lines that
+/// have to agree with each other, and nothing checks that they do.
+struct MobStrip {
+    std::uint16_t appearance = 0;
+    int           x = 0;
+    int           y = 0;
+    int           cell_w = 32;
+    int           cell_h = 32;
+    /// 4 for Tibia-style art, 8 for one sprite per grid direction.
+    int           dirs = 4;
+    int           frames = 3;
+    float         origin_x = 0.0F;
+    float         origin_y = 0.0F;
+    /// Clockwise lean in DEGREES, about the sprite's feet. Last on the line and
+    /// optional, so every mobstrip written before leaning existed still parses.
+    /// Tibia-style art is drawn for an axis-aligned grid; on an isometric diamond a
+    /// creature the artist drew as a diagonal streak needs a few degrees to stand up.
+    float         tilt = 0.0F;
+};
+
+/// Origin that puts the sprite's feet on the tile centre, whatever the cell size:
+/// (-w/2, kHalfTileHeight - h). The mob bands already in atlas.txt follow it —
+/// 24x24 is (-12, -8) and 32x48 is (-16, -32) — and getting it wrong is not subtle:
+/// the health bar hangs off the sprite's own top edge, so a wrong origin floats the
+/// bar as well as the mob.
+void apply_canonical_mob_origin(MobStrip& strip);
+
+/// The strip bound to `appearance`, if the file has one.
+std::optional<MobStrip> find_mob_strip(const std::string& text,
+                                       std::uint16_t appearance);
+
+std::string format_mob_strip(const MobStrip& strip);
+
+/// `text` with `strip`'s line replaced or appended. Any older per-direction `mob`
+/// lines for the same appearance are REMOVED: both kinds bind the same appearance and
+/// they parse in file order, so leaving them would make which art wins depend on
+/// where in the file each line happens to sit.
+std::string upsert_mob_strip(const std::string& text, const MobStrip& strip);
 
 }  // namespace editor

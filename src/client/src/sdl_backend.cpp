@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "core/log.hpp"
@@ -111,15 +112,36 @@ public:
 
             const auto base = static_cast<int>(vertices_.size());
 
-            vertices_.push_back(SDL_Vertex{{x0, y0}, color, {sprite.uv.x, sprite.uv.y}});
+            // Corners, rotated about the bottom centre when asked. The untilted path
+            // is bit-for-bit what it was: rotation == 0 takes the branch that does no
+            // arithmetic at all, because every ground tile in the scene goes through
+            // here and a sin/cos per quad for a feature almost nothing uses would be
+            // paid by everything.
+            float cx[4] = {x0, x1, x1, x0};
+            float cy[4] = {y0, y0, y1, y1};
+            if (sprite.rotation != 0.0F) {
+                const float pivot_x = (x0 + x1) * 0.5F;
+                const float pivot_y = y1;
+                const float sin_r = std::sin(sprite.rotation);
+                const float cos_r = std::cos(sprite.rotation);
+                for (int i = 0; i < 4; ++i) {
+                    const float dx = cx[i] - pivot_x;
+                    const float dy = cy[i] - pivot_y;
+                    cx[i] = pivot_x + dx * cos_r - dy * sin_r;
+                    cy[i] = pivot_y + dx * sin_r + dy * cos_r;
+                }
+            }
+
+            vertices_.push_back(
+                SDL_Vertex{{cx[0], cy[0]}, color, {sprite.uv.x, sprite.uv.y}});
             vertices_.push_back(SDL_Vertex{
-                {x1, y0}, color, {sprite.uv.x + sprite.uv.w, sprite.uv.y}});
+                {cx[1], cy[1]}, color, {sprite.uv.x + sprite.uv.w, sprite.uv.y}});
             vertices_.push_back(SDL_Vertex{
-                {x1, y1},
+                {cx[2], cy[2]},
                 color,
                 {sprite.uv.x + sprite.uv.w, sprite.uv.y + sprite.uv.h}});
             vertices_.push_back(SDL_Vertex{
-                {x0, y1}, color, {sprite.uv.x, sprite.uv.y + sprite.uv.h}});
+                {cx[3], cy[3]}, color, {sprite.uv.x, sprite.uv.y + sprite.uv.h}});
 
             indices_.push_back(base + 0);
             indices_.push_back(base + 1);

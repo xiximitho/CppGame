@@ -494,10 +494,53 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
                 return false;
             }
             if (dir >= 0 && dir < 8 && appearance > 0) {
-                auto& frames =
-                    out.mob_frames_[static_cast<std::uint16_t>(appearance)];
-                frames[static_cast<std::size_t>(dir)] =
+                auto& set = out.mob_frames_[static_cast<std::uint16_t>(appearance)];
+                set.dirs = anim::kArtDirsFull;
+                set.frames = 1;
+                set.entry[static_cast<std::size_t>(dir)][0] =
                     entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+                ++bound;
+            }
+        } else if (kind == "mobstrip") {
+            // A whole animated set on one line:
+            //   mobstrip <appearance> <x> <y> <cell_w> <cell_h> <dirs> <frames>
+            //            <origin_x> <origin_y>
+            // Cells run left to right from (x, y) in one atlas row, direction-major:
+            // index = dir * frames + frame. One line instead of dirs*frames of them,
+            // because that is how the source art is packed and because a 4x3 set
+            // written out longhand is twelve lines nobody can proofread.
+            int appearance = 0;
+            int dirs = 0;
+            int frames = 0;
+            if (!(fields >> appearance >> x >> y >> w >> h >> dirs >> frames >> ox >>
+                  oy)) {
+                return false;
+            }
+            // Tilt is optional and last, in DEGREES, so every mobstrip line written
+            // before leaning existed still parses and reads as upright.
+            float tilt_degrees = 0.0F;
+            if (!(fields >> tilt_degrees)) {
+                tilt_degrees = 0.0F;
+            }
+            const bool sane = appearance > 0 && w > 0 && h > 0 && frames >= 1 &&
+                              frames <= anim::kMaxFrames &&
+                              (dirs == anim::kArtDirsTibia ||
+                               dirs == anim::kArtDirsFull);
+            if (sane) {
+                auto& set = out.mob_frames_[static_cast<std::uint16_t>(appearance)];
+                set = MobSprites{};
+                set.dirs = static_cast<std::uint8_t>(dirs);
+                set.frames = static_cast<std::uint8_t>(frames);
+                set.tilt = tilt_degrees * 3.14159265F / 180.0F;
+                for (int dir = 0; dir < dirs; ++dir) {
+                    for (int frame = 0; frame < frames; ++frame) {
+                        const int cell = dir * frames + frame;
+                        set.entry[static_cast<std::size_t>(dir)]
+                                 [static_cast<std::size_t>(frame)] =
+                            entry_from_pixels(atlas_w, atlas_h, x + cell * w, y, w,
+                                              h, ox, oy);
+                    }
+                }
                 ++bound;
             }
         } else if (kind == "font") {
@@ -589,20 +632,43 @@ const AtlasEntry& Tileset::glyph(char c) const {
     return glyphs_[index];
 }
 
-const AtlasEntry& Tileset::actor(sim::Direction facing,
-                                 std::uint16_t appearance) const {
-    auto index = static_cast<std::size_t>(facing);
-    if (index >= actor_frames_.size()) {
-        index = 0;
-    }
+const MobSprites* Tileset::mob_sprites(std::uint16_t appearance) const {
+    const auto found = mob_frames_.find(appearance);
+    return found == mob_frames_.end() ? nullptr : &found->second;
+}
+
+float Tileset::tilt(std::uint16_t appearance) const {
+    const MobSprites* set = appearance == 0 ? nullptr : mob_sprites(appearance);
+    return set == nullptr ? 0.0F : set->tilt;
+}
+
+std::uint8_t Tileset::frame_count(std::uint16_t appearance) const {
+    const MobSprites* set = appearance == 0 ? nullptr : mob_sprites(appearance);
+    return set == nullptr ? 1U : set->frames;
+}
+
+const AtlasEntry& Tileset::actor(sim::Direction facing, std::uint16_t appearance,
+                                 std::uint8_t frame) const {
     if (appearance != 0) {
-        const auto found = mob_frames_.find(appearance);
+        const MobSprites* set = mob_sprites(appearance);
         // Falls through to the player frames when the atlas has no art for this
         // appearance: a mob drawn as a knight is a bug you can see, and an
         // invisible mob that still hits you is one you cannot.
-        if (found != mob_frames_.end() && found->second[index].valid) {
-            return found->second[index];
+        if (set != nullptr) {
+            const auto dir = static_cast<std::size_t>(
+                anim::art_direction(facing, set->dirs));
+            // A frame past the end of the cycle draws the first one rather than
+            // nothing: a set edited down from 3 frames to 2 while the game is
+            // running would otherwise make the mob blink out for a third of a step.
+            const std::size_t f = frame < set->frames ? frame : 0U;
+            if (dir < set->entry.size() && set->entry[dir][f].valid) {
+                return set->entry[dir][f];
+            }
         }
+    }
+    auto index = static_cast<std::size_t>(facing);
+    if (index >= actor_frames_.size()) {
+        index = 0;
     }
     return actor_frames_[index];
 }

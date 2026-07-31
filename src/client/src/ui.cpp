@@ -3,7 +3,8 @@
 namespace client::ui {
 
 void sprite(Renderer2D& renderer, const Tileset& tileset, const AtlasEntry& entry,
-            float x, float y, float w, float h, Color tint, float depth) {
+            float x, float y, float w, float h, Color tint, float depth,
+            float rotation) {
     if (!entry.valid) {
         return;
     }
@@ -21,6 +22,7 @@ void sprite(Renderer2D& renderer, const Tileset& tileset, const AtlasEntry& entr
     cmd.dst = Rect{wx, wy, w / zoom, h / zoom};
     cmd.depth = depth;
     cmd.tint = tint;
+    cmd.rotation = rotation;
     renderer.submit(cmd);
 }
 

@@ -19,7 +19,7 @@ class <id> <nome>          # id é CONTRATO; nome é só para humanos
 
 | Chave | O que é |
 |---|---|
-| `appearance` | qual conjunto de sprites o cliente desenha (linhas `mob` do `atlas.txt`) |
+| `appearance` | qual conjunto de sprites o cliente desenha (linha `mobstrip` ou `mob` do `atlas.txt`; `F4` no editor edita isso — ver [animation.md](animation.md)) |
 | `hp` | vida máxima |
 | `attack` / `defense` | somados por `sim::combat_stats` (mob não tem equipamento) |
 | `kind` | `melee` ou `ranged` |

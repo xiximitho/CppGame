@@ -12,11 +12,17 @@
 //   Tab or ] / [        next / previous brush
 //   0..9                pick brush by index
 //   arrows              pan          wheel or +/-   zoom
+//   PgUp / PgDn         go up / down a floor
+//   Ctrl+PgUp           add a floor on top of the map
 //   S                   save          Esc            quit
 //   F2                  switch between map mode and ITEM mode
+//   F3                  open another map (src/editor/map_browser.hpp)
+//   F4                  switch between map mode and MOB mode
 //
 // Item mode (src/editor/item_mode.hpp) edits the content database: it is what
-// makes adding an item authoring instead of a C++ change plus a rebuild.
+// makes adding an item authoring instead of a C++ change plus a rebuild. Mob mode
+// (src/editor/mob_mode.hpp) does the same for a monster class's animation, which is
+// the atlas half of a mob — the numbers stay in assets/monsters.txt.
 
 #include <SDL3/SDL.h>
 
@@ -24,10 +30,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "client/iso.hpp"
@@ -48,6 +57,8 @@
 #include "store/db.hpp"
 
 #include "item_mode.hpp"
+#include "map_browser.hpp"
+#include "mob_mode.hpp"
 
 namespace {
 
@@ -58,20 +69,75 @@ struct Options {
     std::string content_path = "assets/content.db";
     std::string blob_path = "assets/content.bin";
     int         screenshot_frame = 2;
+    /// Floor to open on. Also the only way to reach an upper floor headlessly.
+    int         floor = 0;
+    /// Palette index to start on, for the same headless reason: the brush is what
+    /// the bottom bar reports on, and no keystroke can pick one under the dummy
+    /// driver. The palette order is logged at startup.
+    int         brush = 0;
     /// Start in item mode. Exists so the form can be screenshotted
     /// headlessly (SDL_VIDEODRIVER=dummy delivers no keystrokes).
     bool        start_in_item_mode = false;
     bool        start_in_picker = false;
+    /// Start in mob mode, and with its strip picker open. Headless reach, same as
+    /// the item form's.
+    bool        start_in_mob_mode = false;
+    bool        start_in_mob_picker = false;
+    /// Monster class to open mob mode on, by id. 0 = the first one. Same reason as
+    /// --brush: no keystroke can change the selection under the dummy driver.
+    int         mob_class = 0;
+    /// Start with the map browser open, for the same headless reason.
+    bool        start_in_browser = false;
     /// "kind:id:cellx:celly" — bind a sprite and exit, no window needed.
     std::string bind_command;
+    /// "appearance:cellx:celly[:dirs:frames:cellw:cellh]" — bind a mob's whole
+    /// animation strip and exit.
+    std::string bind_mob_command;
 };
 
-Options parse_args(int argc, char** argv) {
+void print_usage() {
+    std::printf(
+        "usage: game_editor [options]\n"
+        "\n"
+        "  --map PATH        map to edit. A bare name ('torre'), an asset-relative\n"
+        "                    path ('maps/torre.txt') or any path that exists all\n"
+        "                    work; a name that does not exist starts a new map.\n"
+        "                    F3 in the editor picks one from a list instead.\n"
+        "  --floor N         floor to open on (default 0)\n"
+        "  --brush N         palette index to start on (order is logged at start)\n"
+        "  --zoom N          initial zoom (default 1)\n"
+        "  --content PATH    content database (default assets/content.db)\n"
+        "  --blob PATH       baked blob written on save (assets/content.bin)\n"
+        "  --screenshot FILE render a few frames, write a BMP, exit\n"
+        "  --item-mode       start in item mode\n"
+        "  --sprite-picker   start in item mode with the sprite picker open\n"
+        "  --map-browser     start with the map browser open\n"
+        "  --mob-mode        start in mob mode (a class's animation)\n"
+        "  --mob ID          monster class to open mob mode on\n"
+        "  --mob-picker      start in mob mode with the strip picker open\n"
+        "  --bind-sprite kind:id:cellx:celly   bind a sprite and exit\n"
+        "  --bind-mob appearance:cellx:celly[:dirs:frames:cellw:cellh]\n"
+        "                    bind a whole animation strip and exit\n"
+        "  --help            this text\n");
+}
+
+Options parse_args(int argc, char** argv, bool& wants_help) {
     Options opt;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            print_usage();
+            wants_help = true;
+            return opt;
+        }
         if (arg == "--map" && i + 1 < argc) {
             opt.map_path = argv[++i];
+        } else if (arg == "--floor" && i + 1 < argc) {
+            opt.floor = std::atoi(argv[++i]);
+        } else if (arg == "--brush" && i + 1 < argc) {
+            opt.brush = std::atoi(argv[++i]);
+        } else if (arg == "--map-browser") {
+            opt.start_in_browser = true;
         } else if (arg == "--zoom" && i + 1 < argc) {
             opt.zoom = std::strtof(argv[++i], nullptr);
         } else if (arg == "--screenshot" && i + 1 < argc) {
@@ -87,6 +153,16 @@ Options parse_args(int argc, char** argv) {
         } else if (arg == "--sprite-picker") {
             opt.start_in_item_mode = true;
             opt.start_in_picker = true;
+        } else if (arg == "--mob" && i + 1 < argc) {
+            opt.mob_class = std::atoi(argv[++i]);
+            opt.start_in_mob_mode = true;
+        } else if (arg == "--mob-mode") {
+            opt.start_in_mob_mode = true;
+        } else if (arg == "--mob-picker") {
+            opt.start_in_mob_mode = true;
+            opt.start_in_mob_picker = true;
+        } else if (arg == "--bind-mob" && i + 1 < argc) {
+            opt.bind_mob_command = argv[++i];
         }
     }
     return opt;
@@ -109,6 +185,96 @@ bool write_file(const std::string& path, const std::string& data) {
     }
     out << data;
     return out.good();
+}
+
+/// Turns whatever was typed after --map into a path to open. Tries it as given
+/// (relative to the working directory), then against the asset root, then inside
+/// the asset root's maps/ directory, with and without the .txt suffix.
+///
+/// Being forgiving is not cosmetic. "--map torre", "--map maps/torre.txt" and
+/// "--map assets/maps/torre.txt" are all what people actually type, and the
+/// behaviour for a path that does not resolve is to open a BLANK canvas — a typo
+/// used to look like the editor had eaten the map.
+std::string resolve_map_path(const std::string& given) {
+    const std::string& root = platform::asset_root();
+    if (given.empty()) {
+        return root + "maps/dungeon.txt";
+    }
+    const std::string candidates[] = {given,        given + ".txt",
+                                      root + given, root + given + ".txt",
+                                      root + "maps/" + given,
+                                      root + "maps/" + given + ".txt"};
+    for (const std::string& candidate : candidates) {
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+    }
+    return given;  // a name that does not exist yet: a new map, saved on S
+}
+
+/// A map file's whole contents. The spawn, monsters and spawners travel with the
+/// grid because saving has to write them back out: the editor cannot place them
+/// yet, and a save that dropped what it could not edit would empty every map the
+/// first time a wall was moved.
+struct MapDoc {
+    sim::TileMap                   map;
+    std::optional<sim::TilePos>    spawn;
+    std::vector<sim::MonsterSpawn> monsters;
+    std::vector<sim::SpawnerSpec>  spawners;
+};
+
+/// A blank canvas, used when the requested file cannot be read.
+sim::TileMap blank_map(int width, int height, int floors) {
+    sim::TileMap map(width, height, floors);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            map.set_ground(sim::TilePos{static_cast<std::int16_t>(x),
+                                        static_cast<std::int16_t>(y), 0},
+                           sim::tiles::kStone);
+        }
+    }
+    return map;
+}
+
+MapDoc load_map_doc(const std::string& path,
+                    const sim::ItemTypeRegistry& registry) {
+    MapDoc doc;
+    std::string error;
+    const std::string text = read_file(path);
+    if (!text.empty()) {
+        if (auto parsed = sim::parse_text_map(text, registry, &error)) {
+            doc.map = std::move(parsed->map);
+            doc.spawn = parsed->spawn;
+            doc.monsters = std::move(parsed->monsters);
+            doc.spawners = std::move(parsed->spawners);
+            LOG_INFO("editing '%s' (%dx%d, %d floor(s))", path.c_str(),
+                     doc.map.width(), doc.map.height(), doc.map.floors());
+            return doc;
+        }
+        LOG_ERROR("could not parse '%s': %s", path.c_str(), error.c_str());
+    }
+    doc.map = blank_map(48, 32, 1);
+    LOG_INFO("no map at '%s'; starting a blank 48x32 canvas", path.c_str());
+    return doc;
+}
+
+/// The same map with one more empty floor on top. TileMap is a dense grid sized
+/// once for a running world and has no resize, so growing one is a rebuild — which
+/// is fine at authoring time and would not be inside the tick loop.
+sim::TileMap with_extra_floor(const sim::TileMap& src) {
+    sim::TileMap grown(src.width(), src.height(), src.floors() + 1);
+    for (int z = 0; z < src.floors(); ++z) {
+        for (int y = 0; y < src.height(); ++y) {
+            for (int x = 0; x < src.width(); ++x) {
+                const sim::TilePos pos{static_cast<std::int16_t>(x),
+                                       static_cast<std::int16_t>(y),
+                                       static_cast<std::int8_t>(z)};
+                grown.mutable_at(pos) = src.at(pos);
+            }
+        }
+    }
+    return grown;
 }
 
 struct Brush {
@@ -206,7 +372,13 @@ std::optional<std::size_t> menu_hit(float mx, float my, int viewport_h,
 
 int main(int argc, char** argv) {
     core::log_set_tag("editor");
-    Options opt = parse_args(argc, argv);
+    // Parsed before SDL so --help works on a machine with no display, the same
+    // reason the client parses twice.
+    bool wants_help = false;
+    Options opt = parse_args(argc, argv, wants_help);
+    if (wants_help) {
+        return 0;
+    }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
@@ -214,12 +386,11 @@ int main(int argc, char** argv) {
     }
     platform::paths_init("game", "game");
 
-    // Resolve the default map against the asset root, which in a dev build is the
-    // source tree — the exact directory the client reads from. A --map argument
-    // (relative to the working directory) overrides this.
-    if (opt.map_path.empty()) {
-        opt.map_path = platform::asset_root() + "maps/dungeon.txt";
-    }
+    // Resolve the map against the asset root, which in a dev build is the source
+    // tree — the exact directory the client reads from. An empty --map lands on the
+    // default map; anything else is looked up in the working directory first, so a
+    // path that already works in a shell keeps working here.
+    opt.map_path = resolve_map_path(opt.map_path);
 
     SDL_Window* window =
         SDL_CreateWindow("game_editor", 1280, 720, SDL_WINDOW_RESIZABLE);
@@ -265,47 +436,17 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // The grid lives in `view.map`, because that is the thing the renderer
+        // draws; `authored` keeps what the editor cannot edit and still has to write
+        // back on save. Its own `map` is empty from here on, having been moved out.
+        MapDoc authored = load_map_doc(opt.map_path, registry);
         client::WorldView view;
-        std::optional<sim::TilePos> spawn;
-        std::vector<sim::MonsterSpawn> authored_monsters;
-        std::vector<sim::SpawnerSpec>  authored_spawners;
-        {
-            std::string error;
-            const std::string text = read_file(opt.map_path);
-            if (!text.empty()) {
-                if (auto parsed = sim::parse_text_map(text, registry, &error)) {
-                    view.map = std::move(parsed->map);
-                    spawn = parsed->spawn;
-                    // Kept so saving writes them back: the editor cannot place a
-                    // monster yet, and a save that dropped what it could not edit
-                    // would empty every map the first time a wall got moved.
-                    authored_monsters = std::move(parsed->monsters);
-                    authored_spawners = std::move(parsed->spawners);
-                    LOG_INFO("editing '%s' (%dx%d)", opt.map_path.c_str(),
-                             view.map.width(), view.map.height());
-                } else {
-                    LOG_ERROR("could not parse '%s': %s", opt.map_path.c_str(),
-                              error.c_str());
-                }
-            }
-            if (view.map.width() == 0) {  // blank stone canvas to start on
-                view.map = sim::TileMap(48, 32, 1);
-                for (int y = 0; y < view.map.height(); ++y) {
-                    for (int x = 0; x < view.map.width(); ++x) {
-                        view.map.set_ground(
-                            sim::TilePos{static_cast<std::int16_t>(x),
-                                         static_cast<std::int16_t>(y), 0},
-                            sim::tiles::kStone);
-                    }
-                }
-                LOG_INFO("no map at '%s'; starting a blank 48x32 canvas",
-                         opt.map_path.c_str());
-            }
-        }
+        view.map = std::move(authored.map);
         view.ready = true;
 
         std::vector<Brush> palette = build_palette(item_rows, tileset);
-        std::size_t brush_i = 0;
+        std::size_t brush_i = static_cast<std::size_t>(
+            std::clamp(opt.brush, 0, static_cast<int>(palette.size()) - 1));
 
         // The item editor. Modal: while it is open, events go to it and the map is
         // not drawn, because a form over a half-visible map reads as a render bug.
@@ -327,6 +468,19 @@ int main(int argc, char** argv) {
             item_mode.open_picker();
         }
 
+        // Mob mode: the same shape as item mode, over the other half of a monster
+        // class. It writes atlas.txt and nothing else — the class's numbers live in
+        // assets/monsters.txt, where editing them needs no tool.
+        editor::MobMode mob_mode(tileset, atlas_path,
+                                 [&]() { tileset = client::Tileset::load(*renderer); });
+        bool mob_mode_active = opt.start_in_mob_mode;
+        if (opt.mob_class > 0) {
+            mob_mode.select_class(static_cast<sim::MonsterTypeId>(opt.mob_class));
+        }
+        if (opt.start_in_mob_picker) {
+            mob_mode.open_picker();
+        }
+
         // Editing an item can change what the palette shows (a new object, a
         // renamed one), so the palette is rebuilt when leaving item mode rather
         // than kept as a snapshot from boot.
@@ -342,13 +496,22 @@ int main(int argc, char** argv) {
             LOG_INFO("  [%zu] %s", i, palette[i].label.c_str());
         }
 
-        const client::iso::ScreenPos centre = client::iso::tile_to_screen(
-            static_cast<float>(view.map.width()) * 0.5F,
-            static_cast<float>(view.map.height()) * 0.5F, 0);
-        float camera_x = centre.x;
-        float camera_y = centre.y;
+        float camera_x = 0.0F;
+        float camera_y = 0.0F;
         float zoom = std::clamp(opt.zoom, 0.5F, 4.0F);
-        const int floor = 0;
+        int   floor = std::clamp(opt.floor, 0, view.map.floors() - 1);
+
+        // Which floor is being edited. Everything that reads the mouse — the hover
+        // tile, the brush, the ghost preview — goes through `floor`, so this one
+        // variable is the whole of "edit the floor above".
+        const auto recentre_camera = [&]() {
+            const client::iso::ScreenPos centre = client::iso::tile_to_screen(
+                static_cast<float>(view.map.width()) * 0.5F,
+                static_cast<float>(view.map.height()) * 0.5F, floor);
+            camera_x = centre.x;
+            camera_y = centre.y;
+        };
+        recentre_camera();
 
         float mouse_x = 640.0F;  // start the cursor mid-window
         float mouse_y = 360.0F;
@@ -386,28 +549,109 @@ int main(int argc, char** argv) {
             running = false;
         }
 
+        if (!opt.bind_mob_command.empty()) {
+            // appearance:cellx:celly[:dirs:frames:cellw:cellh] — the tail is optional
+            // because 4 directions of 3 frames in 32x32 cells is what the sheets in
+            // assets/tibia_like are, and spelling it out every time invites a typo in
+            // the part that is almost always the same.
+            int appearance = 0;
+            int cx = 0;
+            int cy = 0;
+            int dirs = 4;
+            int cycle = 3;  // not `frames`: the render loop's frame counter is that
+            int cell_w = 32;
+            int cell_h = 32;
+            std::istringstream parts(opt.bind_mob_command);
+            const bool parsed = static_cast<bool>(parts >> appearance) &&
+                                static_cast<bool>(parts.ignore(1) >> cx) &&
+                                static_cast<bool>(parts.ignore(1) >> cy);
+            if (parsed) {
+                // Each optional field only counts if the one before it was there.
+                if (parts.ignore(1) >> dirs && parts.ignore(1) >> cycle) {
+                    if (!(parts.ignore(1) >> cell_w && parts.ignore(1) >> cell_h)) {
+                        cell_w = 32;
+                        cell_h = 32;
+                    }
+                }
+            }
+            if (!parsed) {
+                LOG_ERROR("cannot parse --bind-mob '%s' (expected "
+                          "appearance:cellx:celly[:dirs:frames:cellw:cellh])",
+                          opt.bind_mob_command.c_str());
+            } else if (!mob_mode.bind_from_command(
+                           static_cast<std::uint16_t>(appearance), cx, cy, dirs,
+                           cycle, cell_w, cell_h)) {
+                LOG_ERROR("could not bind appearance %d", appearance);
+            } else {
+                LOG_INFO("bound appearance %d to cell %d,%d (%d dirs, %d frames, "
+                         "%dx%d)", appearance, cx, cy, dirs, cycle, cell_w, cell_h);
+            }
+            running = false;
+        }
+
         const auto update_title = [&]() {
-            char title[192];
+            char title[256];
             if (item_mode_active) {
                 std::snprintf(title, sizeof title,
                               "game_editor  |  ITEM MODE  |  %s  |  F2 back to map",
                               item_mode.status().c_str());
+            } else if (mob_mode_active) {
+                std::snprintf(title, sizeof title,
+                              "game_editor  |  MOB MODE  |  %s  |  F4 back to map",
+                              mob_mode.status().c_str());
             } else {
                 std::snprintf(title, sizeof title,
-                              "game_editor  |  %s%s  |  brush: %s  |  "
-                              "L place  R erase  Ctrl+Z undo  S save  F2 items",
-                              opt.map_path.c_str(), dirty ? " *" : "",
+                              "game_editor  |  %s%s  |  floor %d/%d  |  brush: %s"
+                              "  |  L place  R erase  PgUp/PgDn floor  S save  "
+                              "F2 items  F3 open  F4 mobs",
+                              opt.map_path.c_str(), dirty ? " *" : "", floor,
+                              view.map.floors() - 1,
                               palette[brush_i].label.c_str());
             }
             SDL_SetWindowTitle(window, title);
         };
         update_title();
 
-        const Brush eraser{Brush::Kind::EraseObject, sim::kItemNone, ""};
-
-        // Snapshot-based undo/redo: one entry per paint stroke.
+        // The map browser. Opening a map replaces everything the editor holds about
+        // the one before it, undo history included: an undo stack whose snapshots
+        // belong to another file is worse than no undo stack.
+        editor::MapBrowser browser(tileset);
         std::vector<sim::TileMap> undo_stack;
         std::vector<sim::TileMap> redo_stack;
+        const auto open_map = [&](const std::string& path) {
+            MapDoc loaded = load_map_doc(path, registry);
+            view.map = std::move(loaded.map);
+            authored.spawn = loaded.spawn;
+            authored.monsters = std::move(loaded.monsters);
+            authored.spawners = std::move(loaded.spawners);
+            opt.map_path = path;
+            undo_stack.clear();
+            redo_stack.clear();
+            floor = 0;
+            dirty = false;
+            recentre_camera();
+            update_title();
+        };
+
+        /// Directory the browser lists: the one the current map lives in, so
+        /// --map pointing somewhere else keeps browsing there.
+        const auto maps_dir = [&]() {
+            const std::filesystem::path parent =
+                std::filesystem::path(opt.map_path).parent_path();
+            return parent.empty() ? platform::asset_root() + "maps"
+                                  : parent.string();
+        };
+        const auto current_file = [&]() {
+            return std::filesystem::path(opt.map_path).filename().string();
+        };
+        if (opt.start_in_browser) {
+            browser.open(maps_dir(), current_file(), false);
+        }
+
+        const Brush eraser{Brush::Kind::EraseObject, sim::kItemNone, ""};
+
+        // Snapshot-based undo/redo: one entry per paint stroke. Declared with the
+        // browser above, which clears both when another map is opened.
         constexpr std::size_t kMaxUndo = 64;
         const auto push_undo = [&]() {
             undo_stack.push_back(view.map);
@@ -482,7 +726,11 @@ int main(int argc, char** argv) {
             const client::Color dim{150, 156, 170, 255};
             const client::Color bright{236, 240, 248, 255};
 
-            const std::string status = opt.map_path + (dirty ? " *" : "");
+            char floor_text[48];
+            std::snprintf(floor_text, sizeof floor_text, "  floor %d/%d", floor,
+                          view.map.floors() - 1);
+            const std::string status =
+                opt.map_path + (dirty ? " *" : "") + floor_text;
             client::ui::fill(*renderer, tileset, 0.0F, 0.0F,
                              client::ui::text_width(tileset, status, 2.0F) +
                                  2.0F * kMenuPad,
@@ -495,6 +743,24 @@ int main(int argc, char** argv) {
             client::ui::text(*renderer, tileset, palette[brush_i].label,
                              kMenuPad, menu_bar_top(vh) - 18.0F, bright, 2.0F);
 
+            // A stair with no floor to lead to is the one authoring mistake that
+            // fails in total silence at runtime: World::apply_stairs refuses when
+            // the destination is out of bounds, and a refused stair looks exactly
+            // like a stair that does not work. Say it while it is being painted.
+            const int stair_delta =
+                registry.get(palette[brush_i].id).stair_delta_z();
+            const int destination = floor + stair_delta;
+            if (stair_delta != 0 &&
+                (destination < 0 || destination >= view.map.floors())) {
+                client::ui::text(
+                    *renderer, tileset,
+                    stair_delta > 0
+                        ? "this stair leads nowhere: Ctrl+PgUp adds a floor above"
+                        : "this stair leads nowhere: there is no floor below",
+                    kMenuPad, menu_bar_top(vh) - 40.0F,
+                    client::Color{226, 132, 60, 255}, 2.0F);
+            }
+
             // To the RIGHT of the last palette cell, not below it: the bar is only
             // as wide as its cells, and anything drawn under them lands behind the
             // cell quads (which sort at kUi + 200).
@@ -503,7 +769,8 @@ int main(int argc, char** argv) {
                                (kMenuCell + kMenuPad) + kMenuPad;
             client::ui::text(*renderer, tileset,
                              "L place   R erase   Tab brush   Ctrl+Z undo   "
-                             "S save   Esc quit",
+                             "PgUp/PgDn floor   Ctrl+PgUp add floor   "
+                             "S save   F3 open   Esc quit",
                              hint_x,
                              menu_bar_top(vh) + kMenuPad +
                                  (kMenuCell - client::ui::text_height(tileset)) *
@@ -519,12 +786,51 @@ int main(int argc, char** argv) {
                 if (event.type == SDL_EVENT_KEY_DOWN &&
                     event.key.key == SDLK_F2) {
                     item_mode_active = !item_mode_active;
-                    if (!item_mode_active) {
+                    if (item_mode_active) {
+                        mob_mode_active = false;  // one modal at a time
+                    } else {
                         item_mode.on_exit();
                         rebuild_palette();
                     }
                     update_title();
                     continue;
+                }
+                // F4 does the same for mob mode. Checked here, next to F2, for the
+                // same reason: a mode switch that a captured keyboard can swallow is
+                // a mode you get stuck in.
+                if (event.type == SDL_EVENT_KEY_DOWN &&
+                    event.key.key == SDLK_F4) {
+                    mob_mode_active = !mob_mode_active;
+                    if (mob_mode_active) {
+                        item_mode_active = false;
+                    }
+                    update_title();
+                    continue;
+                }
+                // F3 opens the map browser, and closes it again: a key that only
+                // opens a modal leaves the only way out being Esc, which also means
+                // "quit" here.
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F3 &&
+                    !item_mode_active && !mob_mode_active) {
+                    if (browser.active()) {
+                        browser.close();
+                    } else {
+                        browser.open(maps_dir(), current_file(), dirty);
+                        // The button-up that ends a stroke goes to the browser, so
+                        // a stroke in flight has to be ended here or it resumes
+                        // painting the moment the list closes.
+                        painting = false;
+                        erasing = false;
+                    }
+                    continue;
+                }
+                if (browser.active() && event.type != SDL_EVENT_QUIT) {
+                    if (browser.handle_event(event, *renderer)) {
+                        if (auto chosen = browser.take_choice()) {
+                            open_map(*chosen);
+                        }
+                        continue;
+                    }
                 }
                 if (item_mode_active && event.type != SDL_EVENT_QUIT) {
                     if (item_mode.handle_event(event, *renderer)) {
@@ -533,6 +839,17 @@ int main(int argc, char** argv) {
                     }
                     // Unconsumed keys still must not reach the map: painting while a
                     // form is open would edit the map behind it invisibly.
+                    if (event.type == SDL_EVENT_KEY_DOWN ||
+                        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                        event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                        continue;
+                    }
+                }
+                if (mob_mode_active && event.type != SDL_EVENT_QUIT) {
+                    if (mob_mode.handle_event(event, *renderer)) {
+                        update_title();
+                        continue;
+                    }
                     if (event.type == SDL_EVENT_KEY_DOWN ||
                         event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                         event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
@@ -601,11 +918,37 @@ int main(int argc, char** argv) {
                             }
                         } else if (key == SDLK_ESCAPE) {
                             running = false;
+                        } else if (ctrl && key == SDLK_PAGEUP) {
+                            // Adding a floor is what makes a stair authorable: a
+                            // stair painted on the top floor of a one-floor map
+                            // refuses in silence, because there is nowhere to go.
+                            push_undo();
+                            view.map = with_extra_floor(view.map);
+                            floor = view.map.floors() - 1;
+                            camera_y -= static_cast<float>(
+                                client::iso::kFloorHeight);
+                            dirty = true;
+                            LOG_INFO("added floor %d (map is now %d floor(s))",
+                                     floor, view.map.floors());
+                            update_title();
+                        } else if (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) {
+                            const int step = key == SDLK_PAGEUP ? 1 : -1;
+                            const int next = std::clamp(floor + step, 0,
+                                                        view.map.floors() - 1);
+                            if (next != floor) {
+                                // The camera follows the projection: a floor is
+                                // kFloorHeight higher on screen, and without this
+                                // the map appears to jump away under the cursor.
+                                camera_y -= static_cast<float>(
+                                    (next - floor) * client::iso::kFloorHeight);
+                                floor = next;
+                                update_title();
+                            }
                         } else if (sc == SDL_SCANCODE_S) {
                             const std::string out =
-                                sim::write_text_map(view.map, spawn,
-                                                    authored_monsters,
-                                                    authored_spawners);
+                                sim::write_text_map(view.map, authored.spawn,
+                                                    authored.monsters,
+                                                    authored.spawners);
                             if (write_file(opt.map_path, out)) {
                                 LOG_INFO("saved '%s'", opt.map_path.c_str());
                                 dirty = false;
@@ -643,8 +986,9 @@ int main(int argc, char** argv) {
 
             // Held-key panning reads the keyboard state directly, so it bypasses the
             // event routing above and has to be suppressed explicitly: in item mode
-            // the arrows change the focused field.
-            if (!item_mode_active) {
+            // the arrows change the focused field, and in the browser they move the
+            // selection.
+            if (!item_mode_active && !mob_mode_active && !browser.active()) {
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 const float pan = 12.0F / zoom;
                 if (keys[SDL_SCANCODE_LEFT]) {
@@ -669,12 +1013,15 @@ int main(int argc, char** argv) {
             renderer->window_to_world(mouse_x, mouse_y, world_x, world_y);
             params.hover = client::iso::screen_to_tile(world_x, world_y, floor);
             params.hover_valid = view.map.in_bounds(params.hover);
+            // The editor has no actor to derive a floor from, and it is editing one
+            // specific floor: it says so rather than letting the renderer guess.
+            params.floor_override = floor;
 
             const bool over_menu =
                 mouse_y >= menu_bar_top(renderer->viewport_height());
 
-            if (!item_mode_active && (painting || erasing) &&
-                params.hover_valid && !over_menu) {
+            if (!item_mode_active && !mob_mode_active && !browser.active() &&
+                (painting || erasing) && params.hover_valid && !over_menu) {
                 apply_brush(view.map, registry, params.hover,
                             erasing ? eraser : palette[brush_i]);
                 dirty = true;
@@ -684,11 +1031,15 @@ int main(int argc, char** argv) {
             renderer->begin_frame(client::Color{18, 20, 26, 255});
             if (item_mode_active) {
                 item_mode.draw(*renderer);
+            } else if (mob_mode_active) {
+                mob_mode.draw(*renderer);
             } else {
                 client::render_world(*renderer, tileset, view, params);
 
-                // Ghost preview of the current brush under the cursor.
-                if (params.hover_valid && !over_menu) {
+                // Ghost preview of the current brush under the cursor. Suppressed
+                // under the browser: it sorts above every UI quad on purpose, so it
+                // would float on top of the modal list.
+                if (params.hover_valid && !over_menu && !browser.active()) {
                     const Brush& brush = palette[brush_i];
                     const client::AtlasEntry* entry = nullptr;
                     if (brush.kind == Brush::Kind::Ground) {
@@ -712,6 +1063,7 @@ int main(int argc, char** argv) {
                 }
 
                 draw_menu();
+                browser.draw(*renderer);
             }
 
             renderer->end_frame();

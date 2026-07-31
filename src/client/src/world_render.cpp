@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "client/animation.hpp"
 #include "client/iso.hpp"
 #include "sim/snapshot.hpp"
 
@@ -67,7 +68,7 @@ TileRange visible_tiles(const Renderer2D& renderer, int z) {
 
 void submit_entry(Renderer2D& renderer, TextureHandle texture,
                   const AtlasEntry& entry, iso::ScreenPos apex, float depth,
-                  Color tint) {
+                  Color tint, float rotation = 0.0F) {
     SpriteCmd sprite;
     sprite.texture = texture;
     sprite.uv = entry.uv;
@@ -75,6 +76,7 @@ void submit_entry(Renderer2D& renderer, TextureHandle texture,
                       entry.width, entry.height};
     sprite.depth = depth;
     sprite.tint = tint;
+    sprite.rotation = rotation;
     renderer.submit(sprite);
 }
 
@@ -145,8 +147,14 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
         return;
     }
 
-    const int actor_floor = local_floor(view);
-    const int top_floor = top_visible_floor(view, actor_floor);
+    // A forced floor also becomes the top one drawn: a tool asking to look at floor
+    // 1 wants to see floor 1, not whatever roof sits over it.
+    const bool forced = params.floor_override >= 0;
+    const int actor_floor =
+        forced ? std::min(params.floor_override, view.map.floors() - 1)
+               : local_floor(view);
+    const int top_floor =
+        forced ? actor_floor : top_visible_floor(view, actor_floor);
 
     for (int z = 0; z <= top_floor; ++z) {
         const TileRange range = visible_tiles(renderer, z);
@@ -255,9 +263,22 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
 
             const float actor_depth =
                 iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor);
+            // The walk cycle. Derived from the step's own progress, never from a
+            // local clock or a counter kept per actor: a snapshot that never arrives
+            // then costs the animation exactly as much as it costs the position,
+            // which is nothing. A static set answers 1 frame, and walk_frame answers
+            // 0 for it, so there is no branch here for "not animated".
+            const std::uint8_t frame = anim::walk_frame(
+                actor.walking, actor.walk_progress,
+                tileset.frame_count(actor.appearance));
             const AtlasEntry& sprite =
-                tileset.actor(actor.facing, actor.appearance);
-            submit_entry(renderer, texture, sprite, apex, actor_depth, tint);
+                tileset.actor(actor.facing, actor.appearance, frame);
+            // The lean is per sprite set, not per actor: it corrects how the ART was
+            // drawn, so it belongs to the art. The health bar below is submitted
+            // separately and stays upright, which is what you want — a tilted bar
+            // reads as a rendering fault, not as a leaning monster.
+            submit_entry(renderer, texture, sprite, apex, actor_depth, tint,
+                         tileset.tilt(actor.appearance));
 
             // Health bar above the head. Drawn from the hp already carried in the
             // snapshot, so it needs nothing server-side beyond what exists.

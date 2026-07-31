@@ -28,8 +28,13 @@ namespace client::ui {
 constexpr float kDepth = 1.0e7F;
 
 /// Draws one atlas entry at a window-pixel rect. Invalid entries draw nothing.
+///
+/// `rotation` is clockwise radians about the quad's bottom centre, the same pivot the
+/// world uses (SpriteCmd::rotation). It exists so the editor can preview a mob's lean
+/// with the transform the game will apply, rather than with an imitation of it.
 void sprite(Renderer2D& renderer, const Tileset& tileset, const AtlasEntry& entry,
-            float x, float y, float w, float h, Color tint, float depth = kDepth);
+            float x, float y, float w, float h, Color tint, float depth = kDepth,
+            float rotation = 0.0F);
 
 /// Filled rectangle, via the atlas' solid texel so it batches with everything
 /// else.

@@ -344,3 +344,137 @@ de carona:
 O caminho de menor risco é fazer o trânsito nascer como fila em `World` (o mesmo
 lugar onde a escada age), drenada por quem é dono do mundo — servidor ou
 `SoloSession` —, porque `sim/` não pode carregar arquivo.
+
+### Escada e seleção de mapa (2026-07-31, quarta rodada)
+
+Pedido: "a escada não me parece estar funcionando"; seleção de arquivo no editor
+("dizer qual mapa quero mexer"); e o mesmo para o cliente, por parâmetro.
+
+**A escada funciona — o que faltava era como autorar uma.** Investigado nesta ordem,
+e vale registrar porque a conclusão é contraintuitiva: `flags` de 103/104 no
+`content.db` estão certas (64/128); os 7 testes de `test_stairs.cpp` passam; o par da
+`torre.txt` está alinhado (`<` em 16,15,0 e `>` em 16,15,1); o servidor manda chunk de
+**todos** os andares (`stream_chunks` itera `z`), então rede não perde o andar de
+cima. Fechando o laço, um teste novo anda do spawn da torre até a escada com o mapa
+real e confere a mudança de andar — passa (tick 201, `(16,15,0)` → `(16,15,1)`). E o
+andar 1 renderiza: verificado por screenshot com o spawn movido para lá.
+
+O que **não** funcionava era chegar a uma escada útil:
+
+1. Dos seis mapas commitados, **só a `torre.txt` tem escada**. Os outros cinco são
+   `size ... 1` — um andar. No `dungeon.txt`, que é o padrão de cliente, servidor e
+   editor, não existe escada para funcionar.
+2. O editor editava **só o andar 0** (`const int floor = 0;`) e não sabia criar
+   andar. Então dava para pintar a escada e era impossível pintar o destino dela —
+   e `apply_stairs` recusa em silêncio quando o destino não existe, que é
+   indistinguível de "escada quebrada" para quem está pisando.
+
+Feito: `PgUp`/`PgDn` trocam o andar editado, `Ctrl+PgUp` adiciona um andar em cima,
+`RenderParams::floor_override` faz o renderer desenhar o andar pedido (o editor não
+tem ator de onde derivar um), a câmera acompanha o `kFloorHeight`, e com a escada no
+pincel a barra de baixo avisa em laranja quando o andar de destino não existe. Esse
+aviso é o ponto: o silêncio da regra é correto, o silêncio da ferramenta não era.
+
+**Seleção de mapa.** `F3` abre `editor::MapBrowser` (`src/editor/map_browser.hpp`):
+lista os `.txt` do diretório do mapa atual, setas + `Enter`, `Esc` cancela, e com
+alteração não salva o primeiro `Enter` só arma o aviso. Usa `<filesystem>` direto e
+não `platform::vfs` — vfs não enumera, e o editor é ferramenta de desktop que escreve
+na árvore de fontes; o cliente, que precisa ler de dentro do APK, continua recebendo
+caminho. Abrir limpa o undo (snapshots de outro arquivo são pior que nenhum).
+
+**`--map` nos dois, agora tolerante.** Cliente e editor aceitam nome curto
+(`torre`), caminho relativo aos assets, e o caminho completo que o editor imprime.
+Antes, um typo caía em "mapa procedural" (cliente) ou "tela em branco 48×32"
+(editor), o que parece a flag ter sido ignorada — o cliente loga qual candidato
+resolveu. No editor um nome que não existe continua sendo um mapa novo.
+
+**Verificado:** 178 testes (4 novos em `test_shipped_maps.cpp`: os seis mapas
+parseiam; toda escada autorada leva a tile onde se pode ficar de pé; salvar um mapa
+shippado não muda tile, andar, spawn nem spawner — o caminho do `S` no editor, que é
+o que mais assusta num editor multi-andar; e a caminhada da torre acima). Build com
+`-DGAME_WERROR=ON` limpo, `check-layering.sh` ok. Screenshots headless: andar 1 da
+torre no editor, a lista de mapas por cima da paleta, e o aviso de escada sem destino
+no `dungeon.txt`.
+
+**Não verificado:** o teclado do editor, de novo — `PgUp`/`PgDn`/`Ctrl+PgUp`/`F3`
+foram alcançados por flag (`--floor`, `--brush`, `--map-browser`), que é o mesmo
+compromisso do `--item-mode`: o estado é observável, o caminho tecla→estado não.
+`with_extra_floor` e o `S` depois de adicionar andar só foram exercitados por
+inspeção e pelo round-trip do writer.
+
+**Achado de passagem, não consertado:** no renderer headless (software) a fonte perde
+a última linha de pixels de cada glifo, então `2`, `3` e `5` viram `?`/`7` num
+screenshot — "floor 1/2" lê como "floor 1/7", e os ids do modo item ("102") como
+"10?". Suspeita: o inset de meio texel de `entry_from_pixels` sobre uma célula de 8
+texels, amostrado em NEAREST. Pode ser artefato só do driver dummy; numa janela de
+verdade vale conferir antes de mexer.
+
+Nota de bancada da mesma rodada: o `content.bin` da árvore estava **velho** (16 itens
+contra 19 no `content.db` — alguém criou um item no editor e não rebakeou), e em rede
+isso aparece como `content mismatch: re-run game_bake` no login, que é o
+comportamento correto. Rodado o `game_bake`. O `run-local.sh` ganhou `GAME_MAP`
+porque quem precisa do mapa em rede é o **servidor** — sem isso ele sempre subia o
+`dungeon.txt`, de um andar, e "escada não funciona" em rede era literalmente "não
+existe escada neste mundo".
+
+## Animação de sprite — PRONTA (esta sessão)
+
+Pedido como "o Tibia tem animação, dá uma estudada como fazer" e implementado de ponta
+a ponta. O fundo, as medidas das folhas e as receitas estão em
+[animation.md](animation.md); aqui fica só o handoff.
+
+**Onde a decisão foi tomada:** o frame vem de `ActorState::walk_progress`, que o
+snapshot já carrega. Isso deixou `sim/`, o servidor e `kProtocolVersion` (6) intactos —
+animação é apresentação — e dá de graça a propriedade que importa: a fase é *derivada*
+da posição no passo, não acumulada num contador local, então snapshot perdido não
+dessincroniza animação como não dessincroniza posição.
+
+**O que foi tocado:**
+
+| Peça | O quê |
+|---|---|
+| `client/animation.hpp` | `walk_frame` + `art_direction`, header puro, sem SDL |
+| `client/tileset.*` | kind `mobstrip`, `MobSprites`, `actor(facing, appearance, frame)` |
+| `client/world_render.cpp` | passa o frame; `battle_list.cpp` usa `SouthEast` (a câmera) |
+| `editor/mob_mode.*` | modo `F4`: lista as classes, edita a tira, preview animado |
+| `editor/atlas_meta.*` | writer da linha `mobstrip` (puro, testado) |
+| `tools/import_otsp.py` | recorta a folha, tira o magenta, cola no atlas, escreve a linha |
+| `assets/tilesets/atlas.*` | atlas 256×440 → **512×512**; aparências 2 e 3 animadas |
+| `renderer2d.hpp` + `sdl_backend.cpp` | `SpriteCmd::rotation`, pivô no pé, 0 draw call extra |
+
+**Verificado:** 186 testes (8 novos em `test_animation.cpp`, 5 em `test_atlas_meta.cpp`);
+build com `-DGAME_WERROR=ON` limpo; `check-layering.sh` ok; screenshot do jogo em quatro
+frames do mesmo passo mostrando a silhueta do fantasma mudando enquanto ele anda;
+screenshot do modo mob nas três classes (rato estático, esqueleto e ogro animados) e do
+seletor de tira — tudo em **1 draw call**.
+
+**Não verificado, mesmo limite de sempre:** o clique e o teclado no formulário. O driver
+dummy não entrega input, então `--mob`, `--mob-picker` e `--bind-mob` alcançam os
+caminhos, e `--bind-mob` chama a mesma função que o clique chama, mas o input em si
+segue território não testado.
+
+**Segunda passada, depois de olhar na tela:** os mobs ficavam **tombados**. Não era
+direção errada — as quatro direções da arte são a mesma silhueta inclinada, porque a
+arte é desenhada para uma grade alinhada aos eixos da tela e esta é isométrica. Virou um
+campo `tilt` (graus, opcional, no fim da linha `mobstrip`), com as duas aparências
+importadas em **30°**, ajustável ao vivo no `F4`. O pivô é o pé do sprite; a barra de
+vida não inclina e o retrato da battle list inclina.
+
+**Escolhas que valem revisitar:**
+
+1. **Esquerda e direita da arte podem estar trocadas.** As folhas OTSP têm dois blocos
+   com rosto e dois sem, o que não mapeia em `costas/direita/frente/esquerda` sem uma
+   escolha arbitrária; frente e costas estão certas. O knob é `--dir-order` no
+   importador (padrão `2,3,0,1`), e o preview do `F4` é onde se vê.
+2. **Um ciclo completo por passo.** Todo passo toca os 3 frames na mesma ordem, em vez de
+   alternar perna como o Tibia faz avançando um contador contínuo. Para esta arte (3
+   poses de um loop, não neutro + 2 balanços) está certo; se um dia a arte tiver poses
+   assimétricas, a alternância sai da paridade de `tile.x + tile.y` — derivada, não
+   contada, para não perder a propriedade acima.
+3. **O jogador não anima.** As linhas `actor <dir>` são 8 direções de 1 frame. Falta
+   arte, não código: um `actorstrip` (ou mover o jogador para uma aparência) é pequeno.
+4. **Criatura de 64×64 não foi importada.** Importador e formato aceitam
+   (`--cell 64x64 --order cols`); a tira de 12 células alargaria o atlas para 1024.
+5. **`assets/tibia_like/otsp_equipment_01.png` está intocada** — 690 células de item
+   contra 19 itens no `content.db`. Não é animação: é recortar, `item <id> ...` no
+   atlas.txt e uma linha no banco. `--bind-sprite` já vincula em lote.

@@ -15,12 +15,14 @@ add_executable(game_tests
     test_content_hash.cpp
     test_map_io.cpp
     test_stairs.cpp
+    test_shipped_maps.cpp
     test_monsters.cpp
     test_spawners.cpp
     test_chase.cpp
     test_combat.cpp
     test_atlas_meta.cpp
     test_input.cpp
+    test_animation.cpp
     test_battle_list.cpp)
 
 target_link_libraries(game_tests PRIVATE
@@ -34,6 +36,13 @@ target_link_libraries(game_tests PRIVATE
 # without linking the client executable.
 target_include_directories(game_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/client/include")
+
+# test_shipped_maps.cpp reads the maps that ship in the repository, so it needs to
+# know where they are: the suite must pass from any working directory (ctest runs it
+# from the build tree). Baked in rather than resolved through platform::vfs, which
+# the tests deliberately do not link — see the comment at the top of this file.
+target_compile_definitions(game_tests PRIVATE
+    GAME_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/")
 
 # The editor's atlas.txt writer is deliberately SDL-free string manipulation, so it
 # is compiled straight into the tests. It edits a file people edit by hand, and a

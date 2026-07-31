@@ -11,6 +11,15 @@ struct RenderParams {
     /// Tile under the cursor, highlighted when valid.
     sim::TilePos hover;
     bool         hover_valid = false;
+
+    /// Floor the view is centred on, or -1 to use the local actor's.
+    ///
+    /// Exists for the editor, which has no actor and edits one floor at a time:
+    /// without it every tool that draws the world would be stuck on floor 0, which
+    /// is exactly why a stair could be painted but never authored end to end. Set,
+    /// it also caps what is drawn — the floors above are the thing you are trying
+    /// to see under.
+    int floor_override = -1;
 };
 
 /// Where the camera should sit to follow the local actor, in world-screen pixels.

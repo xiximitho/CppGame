@@ -51,3 +51,6 @@ DerivedData/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Python bytecode de tools/*.py. Derivado e nunca committado.
+__pycache__/

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "client/battle_list.hpp"
 #include "client/content.hpp"
@@ -59,9 +60,11 @@ void print_usage() {
         "  --name NAME          player name sent to the server\n"
         "  --seed N             solo world seed\n"
         "  --wanderers N        extra random mobs on top of the map's (default 0)\n"
-        "  --map PATH           solo map, asset-relative (default\n"
-        "                       maps/dungeon.txt); falls back to the seeded\n"
-        "                       generated map when it cannot be read\n"
+        "  --map PATH           solo map. A bare name ('torre'), an asset-relative\n"
+        "                       path ('maps/torre.txt') or a full path inside the\n"
+        "                       asset tree all work (default maps/dungeon.txt);\n"
+        "                       falls back to the seeded generated map when it\n"
+        "                       cannot be read\n"
         "  --zoom N             initial zoom (default 2)\n"
         "  --screenshot FILE    render a few frames, write a BMP, exit\n"
         "  --screenshot-frame N  which frame to capture (default 45)\n"
@@ -165,6 +168,63 @@ void apply_config_file(Options& options) {
     LOG_INFO("applied overrides from client.cfg");
 }
 
+/// Turns whatever was passed to --map into a path the VFS can read.
+///
+/// Asset paths are relative to the asset root — on Android they are not files at
+/// all — but what people type is "torre", or the full path the editor printed. Both
+/// used to land on "no map; using generated map", which looks like the map argument
+/// was ignored rather than misspelt. Probing is a read of a few KB, once, at start.
+std::string resolve_map_asset(const std::string& given) {
+    if (given.empty()) {
+        return given;
+    }
+
+    std::vector<std::string> candidates;
+    candidates.push_back(given);
+    // A full path inside the asset tree: keep only the part below the root, which
+    // is the only form read_asset understands.
+    const std::string& root = platform::asset_root();
+    if (!root.empty() && given.size() > root.size() &&
+        given.compare(0, root.size(), root) == 0) {
+        candidates.push_back(given.substr(root.size()));
+    }
+    // A path relative to the working directory, "assets/maps/x.txt" — the form the
+    // server takes, and the one a shell tab-completes. Derived from the root's own
+    // last component rather than hardcoding "assets", so it follows if that is ever
+    // renamed. Empty on Android, where there is no directory to strip.
+    const std::size_t last = root.find_last_not_of('/');
+    if (last != std::string::npos) {
+        const std::size_t slash = root.find_last_of('/', last);
+        const std::size_t from = slash == std::string::npos ? 0 : slash + 1;
+        const std::string name = root.substr(from, last + 1 - from);
+        if (!name.empty() && given.compare(0, name.size() + 1, name + "/") == 0) {
+            candidates.push_back(given.substr(name.size() + 1));
+        }
+    }
+    if (given.find('/') == std::string::npos) {
+        candidates.push_back("maps/" + given);
+    }
+    // Same list again with the extension, rather than guessing whether a name that
+    // happens to contain a dot already has one. The bound is read once: pushing
+    // into the vector being iterated is how this loop would never end.
+    const std::size_t bare = candidates.size();
+    for (std::size_t i = 0; i < bare; ++i) {
+        candidates.push_back(candidates[i] + ".txt");
+    }
+
+    std::string text;
+    for (const std::string& candidate : candidates) {
+        if (platform::vfs::read_asset_text(candidate, text)) {
+            if (candidate != given) {
+                LOG_INFO("--map '%s' resolved to asset '%s'", given.c_str(),
+                         candidate.c_str());
+            }
+            return candidate;
+        }
+    }
+    return given;  // build_solo_world logs the fallback to the generated map
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -188,6 +248,8 @@ int main(int argc, char** argv) {
     platform::paths_init("game", "game");
     apply_config_file(options);
     parse_args(argc, argv, options);
+    // After both, so it also fixes up a map named in client.cfg.
+    options.map_path = resolve_map_asset(options.map_path);
 
     SDL_Window* window = SDL_CreateWindow(
         "Isometric Prototype", options.window_width, options.window_height,

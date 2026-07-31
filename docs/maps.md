@@ -153,6 +153,15 @@ o detalhe de que quem chegou por escada pode sair andando — e `validate` repro
 escada que dá em rocha ("leads nowhere"). Foi assim que os três andares da
 `torre.txt` passaram a ser verificados de verdade e não "por design inalcançáveis".
 
+**Escada que não parece funcionar é quase sempre escada sem destino.** O
+`apply_stairs` recusa em silêncio quando o andar de destino não existe (mapa de um
+andar só), é rocha, ou está ocupado — e recusar é igualzinho a "não funciona" para
+quem está pisando nela. Dois anteparos contra isso: o editor avisa na barra de baixo
+quando a escada na mão não tem para onde levar (e `Ctrl+PgUp` adiciona o andar), e
+`tests/test_shipped_maps.cpp` reprova qualquer escada dos mapas commitados que dê num
+tile onde não se pode ficar de pé. Dos seis mapas, **só a `torre.txt` tem escada** —
+os outros cinco são de um andar, então não há escada para funcionar neles.
+
 O `.txt` continua editável à mão e no `game_editor` depois de gerado; se você for
 editar, edite o `.txt` e ignore o gerador (ou o próximo `gen_maps.py` passa por
 cima).
@@ -161,21 +170,34 @@ cima).
 
 ```bash
 ./build/debug/bin/game_client --solo --map maps/ilha.txt     # relativo aos assets
+./build/debug/bin/game_client --solo --map ilha              # o nome também serve
 ./build/debug/bin/game_server --map assets/maps/vila.txt     # relativo ao CWD
-./build/debug/bin/game_editor --map assets/maps/vila.txt
+./build/debug/bin/game_editor --map vila                     # ou qualquer caminho
 ```
 
-Os caminhos diferem porque as bordas diferem: o cliente resolve pelo
-`platform::vfs` (no Android o mapa está dentro do pacote), o servidor abre um
-arquivo comum. Sem a flag, o padrão de cada um continua sendo o calabouço. Um
-caminho ilegível ou que não parseia cai no mapa procedural por seed, com
+Cliente e editor aceitam a forma curta: um nome (`ilha`), um caminho relativo aos
+assets (`maps/ilha.txt`), ou o caminho completo que o editor imprime no log — cada
+um tenta os candidatos em ordem e loga qual resolveu. Isso existe porque a
+alternativa era um typo silenciosamente virar "mapa procedural" (cliente) ou "tela
+em branco" (editor), o que parece a flag ter sido ignorada. O editor ainda aceita um
+nome que **não** existe: é um mapa novo, gravado no `S`.
+
+Por baixo os caminhos ainda diferem, porque as bordas diferem: o cliente resolve
+pelo `platform::vfs` (no Android o mapa está dentro do pacote), o servidor e o editor
+abrem um arquivo comum. Sem a flag, o padrão de cada um continua sendo o calabouço.
+Um caminho ilegível ou que não parseia cai no mapa procedural por seed, com
 `LOG_WARN` dizendo o motivo — um clone sem os assets continua rodando.
 
 O cliente também aceita `map=maps/ilha.txt` no `client.cfg`; a linha de comando
 ganha do arquivo.
 
 Em rede, quem manda é o servidor: o mapa do cliente é irrelevante, ele recebe o
-do servidor em chunks. `--map` no cliente vale para `--solo`.
+do servidor em chunks. `--map` no cliente vale para `--solo`. No `run-local.sh` é o
+servidor que precisa da flag, então existe `GAME_MAP`:
+
+```bash
+GAME_MAP=torre ./scripts/run-local.sh          # o único mapa com escada
+```
 
 ## O editor (`game_editor`)
 
@@ -203,6 +225,9 @@ Controles:
 | `Tab` / `]` / `[` | próximo / anterior brush |
 | `0`–`9` | escolhe brush pelo índice |
 | `Ctrl+Z` / `Ctrl+Y` | desfaz / refaz (um passo por traço) |
+| `PgUp` / `PgDn` | sobe / desce o andar editado |
+| `Ctrl+PgUp` | adiciona um andar vazio em cima |
+| `F3` | abre a lista de mapas do diretório atual |
 | setas | pan · roda do mouse ou `+`/`-` | zoom |
 | `S` | salvar · `Esc` | sair |
 
@@ -210,11 +235,30 @@ Um "fantasma" do brush é desenhado sob o cursor, então dá para ver o que o cl
 vai colocar. Sem arquivo em `--map`, ele começa numa tela de pedra 48×32 em
 branco. Salvar só acontece no `S` — o editor nunca escreve o arquivo sozinho.
 
-Verificação sem display (como o cliente):
+**Andares.** O andar editado aparece na barra de baixo e no título (`floor 1/2`);
+os andares abaixo continuam desenhados, escurecidos, e os de cima não — a ideia é
+enxergar o que está sob o pincel, não a laje em cima dele. Trocar de andar move a
+câmera junto (um andar é `iso::kFloorHeight` acima na tela), senão o mapa parece
+fugir do cursor. `Ctrl+PgUp` cresce o `TileMap` (que não tem resize: é uma grade
+densa dimensionada uma vez para um mundo rodando, então crescer é reconstruir —
+tranquilo na autoria, impensável no tick).
+
+**`F3` — abrir outro mapa.** Lista os `.txt` do diretório do mapa atual
+(`src/editor/map_browser.hpp`); setas escolhem, `Enter` abre, `Esc` cancela. Com
+alteração não salva, o primeiro `Enter` só arma o aviso e o segundo confirma. Abrir
+limpa o histórico de undo — um undo cujos snapshots são de outro arquivo é pior que
+nenhum.
+
+Verificação sem display (como o cliente). O driver dummy não entrega teclas, então
+as flags existem para alcançar o que normalmente é teclado:
 
 ```bash
 SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
-  --map assets/maps/dungeon.txt --screenshot /tmp/ed.bmp
+  --map dungeon --screenshot /tmp/ed.bmp
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
+  --map torre --floor 1 --brush 7 --screenshot /tmp/ed.bmp   # andar 1, brush escada
+SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
+  --map-browser --screenshot /tmp/ed.bmp                     # a lista de mapas
 ```
 
 ### Limites atuais / próximos passos
@@ -227,11 +271,12 @@ SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
 - **Colocar mob pelo editor.** O `monster` do arquivo é preservado num save (o
   editor guarda o que carregou e o writer regrava), mas não há UI para adicionar,
   mover ou trocar a classe de um. Hoje é editar o `.txt` ou o `gen_maps.py`.
-- **Multi-andar**: o editor mostra e edita só o andar 0, então a escada dá para
-  pintar mas o andar de destino não (o formato, o parser e o writer suportam
-  vários — `torre.txt` tem três). Ele guarda o `TileMap` inteiro e
-  `write_text_map` escreve todos os andares, então salvar `torre.txt` **não perde**
-  os andares 1 e 2; falta UI para trocar de andar. O que o save perde são os
-  comentários do arquivo: o writer regera o cabeçalho e a legenda.
+- **Multi-andar no editor**: resolvido. `PgUp`/`PgDn` trocam o andar editado,
+  `Ctrl+PgUp` adiciona um andar em cima, e o andar de baixo continua desenhado
+  (escurecido) para dar referência. Com a escada na mão, o editor avisa quando o
+  andar de destino não existe — o caso que a `apply_stairs` recusa em silêncio.
+  O que o save ainda perde são os comentários do arquivo: o writer regera o
+  cabeçalho e a legenda. Há teste garantindo que salvar um mapa shippado não muda
+  nenhum tile, andar nem spawner (`tests/test_shipped_maps.cpp`).
 - **Caminho de asset do servidor** robusto (hoje é relativo ao CWD, com fallback).
 - Eventualmente, assar o `.txt` para o blob binário do content.md.

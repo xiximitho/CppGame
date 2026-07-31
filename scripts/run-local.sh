@@ -10,6 +10,11 @@
 #   ./scripts/run-local.sh
 #   ./scripts/run-local.sh release
 #   ./scripts/run-local.sh debug -- --name felipe --zoom 3
+#   GAME_MAP=torre ./scripts/run-local.sh          # a map with stairs
+#
+# GAME_MAP picks the SERVER's map, because in network play the client's is
+# irrelevant — it receives the server's in chunks. Without it the server loads
+# dungeon.txt, which has one floor, so there is no stair anywhere in the world.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -23,6 +28,7 @@ fi
 
 BIN="build/${PRESET}/bin"
 PORT="${GAME_PORT:-7777}"
+MAP="${GAME_MAP:-}"
 
 if [[ ! -x "${BIN}/game_server" || ! -x "${BIN}/game_client" ]]; then
   echo "binaries not found in ${BIN}" >&2
@@ -41,8 +47,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+SERVER_ARGS=(--port "${PORT}")
+if [[ -n "${MAP}" ]]; then
+  # A bare name is resolved here rather than by the server, which takes a path
+  # relative to the working directory and nothing else.
+  [[ -f "${MAP}" ]] || MAP="assets/maps/${MAP%.txt}.txt"
+  SERVER_ARGS+=(--map "${MAP}")
+  echo "server map: ${MAP}"
+fi
+
 echo "starting server on port ${PORT}"
-"${BIN}/game_server" --port "${PORT}" &
+"${BIN}/game_server" "${SERVER_ARGS[@]}" &
 SERVER_PID=$!
 
 # Give the socket a moment to bind, then confirm the server is actually alive

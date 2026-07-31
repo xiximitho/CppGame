@@ -72,17 +72,24 @@ void draw_battle_list(Renderer2D& renderer, const Tileset& tileset,
                      kUi + 2.0F);
         }
 
-        // The creature's own sprite, facing south so the row reads as a portrait.
+        // The creature's own sprite, facing the camera so the row reads as a
+        // portrait. That is grid SOUTH-EAST, not south: south is screen-down-LEFT in
+        // the 2:1 projection, and on four-direction art it picks the profile view
+        // (see anim::art_direction). Frame 0 always exists, animated or not.
         const AtlasEntry& sprite =
-            tileset.actor(sim::Direction::South, entry.appearance);
+            tileset.actor(sim::Direction::SouthEast, entry.appearance);
         if (sprite.valid) {
             const float scale =
                 kThumb / std::max(sprite.width, sprite.height);
             const float w = sprite.width * scale;
             const float h = sprite.height * scale;
+            // Leaned the same way the world leans it: a portrait of a creature lying
+            // on its side, next to the same creature standing up on the map, reads as
+            // two different sprites.
             ui::sprite(renderer, tileset, sprite, x + kPad + (kThumb - w) * 0.5F,
                        y + (kRowH - 3.0F - h) * 0.5F, w, h,
-                       Color{255, 255, 255, 255}, kUi + 3.0F);
+                       Color{255, 255, 255, 255}, kUi + 3.0F,
+                       tileset.tilt(entry.appearance));
         }
 
         const float text_x = x + kPad + kThumb + kPad;

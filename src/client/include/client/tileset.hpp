@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "client/animation.hpp"
 #include "client/renderer2d.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
@@ -22,6 +23,28 @@ struct AtlasEntry {
     float origin_x = 0.0F;
     float origin_y = 0.0F;
     bool  valid = false;
+};
+
+/// One appearance's sprite set: `dirs` directions of `frames` frames each.
+///
+/// Fixed-size rather than a vector because the render path looks this up once per
+/// actor per frame, and because a set is small: the whole array is a few hundred
+/// bytes and there is one per mob class, not one per mob.
+struct MobSprites {
+    /// 8 (one per grid direction) or 4 (Tibia art) — see anim::art_direction.
+    std::uint8_t dirs = anim::kArtDirsFull;
+    std::uint8_t frames = 1;
+    /// Clockwise lean, in radians, about the sprite's feet.
+    ///
+    /// Tibia-style art is drawn for a world whose grid is axis-aligned on screen; this
+    /// one is isometric, and a creature the artist drew as a diagonal streak lands on
+    /// the diamond looking like it fell over. A per-set lean is the cheap fix, and it
+    /// has to be per set because how far a creature is off depends on how that creature
+    /// was drawn, not on anything the engine knows. 0 for every set that does not ask.
+    float tilt = 0.0F;
+    /// [art direction][frame].
+    std::array<std::array<AtlasEntry, anim::kMaxFrames>, anim::kArtDirsFull>
+        entry{};
 };
 
 /// The atlas plus the id-to-sprite lookup.
@@ -51,13 +74,26 @@ public:
     const AtlasEntry& ground(sim::TileId id) const;
     const AtlasEntry& object(sim::TileId id) const;
 
-    /// `facing` is a grid direction; the frame chosen already accounts for the
+    /// `facing` is a grid direction; the sprite chosen already accounts for the
     /// isometric rotation. `appearance` selects the sprite set (0 is the player,
-    /// the rest come from `mob` lines); an appearance the atlas does not have
-    /// falls back to 0, so a mob whose art is missing draws as a knight instead
-    /// of vanishing.
-    const AtlasEntry& actor(sim::Direction facing,
-                            std::uint16_t appearance = 0) const;
+    /// the rest come from `mob`/`mobstrip` lines); an appearance the atlas does not
+    /// have falls back to 0, so a mob whose art is missing draws as a knight instead
+    /// of vanishing. `frame` is the walk cycle position from anim::walk_frame; a
+    /// frame the set does not have falls back to 0 rather than to nothing.
+    const AtlasEntry& actor(sim::Direction facing, std::uint16_t appearance = 0,
+                            std::uint8_t frame = 0) const;
+
+    /// Clockwise lean in radians for `appearance`, 0 when it has none.
+    float tilt(std::uint16_t appearance) const;
+
+    /// How many frames `appearance`'s walk cycle has; 1 for a static set and for an
+    /// appearance with no art, which is exactly what makes anim::walk_frame answer 0
+    /// for both. Callers therefore need no special case for "not animated".
+    std::uint8_t frame_count(std::uint16_t appearance) const;
+
+    /// The whole set, for the editor's preview and binding UI. Null when the atlas
+    /// has no art for that appearance.
+    const MobSprites* mob_sprites(std::uint16_t appearance) const;
 
     /// Diamond outline drawn under the mouse cursor.
     const AtlasEntry& highlight() const { return highlight_; }
@@ -101,8 +137,8 @@ private:
     std::unordered_map<sim::TileId, AtlasEntry> ground_;
     std::unordered_map<sim::TileId, AtlasEntry> object_;
     std::array<AtlasEntry, 8> actor_frames_{};
-    /// One 8-direction set per non-zero appearance, from the atlas `mob` lines.
-    std::unordered_map<std::uint16_t, std::array<AtlasEntry, 8>> mob_frames_;
+    /// One set per non-zero appearance, from the atlas `mob`/`mobstrip` lines.
+    std::unordered_map<std::uint16_t, MobSprites> mob_frames_;
     AtlasEntry highlight_{};
     AtlasEntry solid_{};
     std::unordered_map<sim::TileId, AtlasEntry>      icons_;
