@@ -149,3 +149,7 @@ isolada: a migração seria contida.
 - que existe tela
 
 Isso é o que permite o servidor não ter arquivo de definição de tileset nenhum.
+
+## Ver também
+
+- [classes.md](classes.md) — diagramas de classes, ECS, fluxos solo/rede/ataque e **autoria de item/mob**.

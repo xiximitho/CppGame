@@ -26,6 +26,172 @@ nenhum recompilar.
 
 Servidor lê `content.db` direto; cliente lê `content.bin`.
 
+## Loot estilo Tibia — inventário de mob e drops (PROPOSTA)
+
+Pedido: inventário por mob como no Tibia, com **chance por item** na morte. O
+`pendencias.md` já existia; esta seção é o desenho. Cookbook de mob continua em
+[monsters.md](monsters.md); combate/loot antigo em [combat.md](combat.md) (fase 4
+parcialmente superada no código).
+
+### O que já existe (não partir do zero)
+
+| Peça | Onde | Comportamento hoje |
+|---|---|---|
+| `CInventory` / `CEquipment` | `components.hpp` | Mesmas structs do jogador; mob **pode** carregar itens |
+| `MonsterType::loot` | `monster_type.hpp` + `monsters.txt` | **Um** id; em `spawn_monster` vira `CInventory{{loot, 1}}` — drop **garantido** |
+| Morte de mob | `World::apply_damage` | Despeja `CInventory` + `CEquipment` no tile, depois `despawn` |
+| Chão | `World::ground_` / `drop_item` | Vários stacks por tile (merge se stackable) |
+| Coleta | `World::step` | Andar **em cima** do pile pega tudo (auto-loot), só quem tem mochila |
+| Solo | `SoloSession` | Preenche `WorldView::ground_items` — **só o primeiro** item do pile |
+| Rede | `RemoteSession` | `ground_items` **vazio** (TODO conhecido) |
+| RNG | `sim::Rng` | Obrigatório para rolls; **não** usar `<random>` |
+
+Ou seja: o esqueleto de “mob tinha item → cai no chão → jogador pega” já roda nos
+testes (`test_monsters`, `test_combat`). Falta **tabela com chance**, UX de **cadáver**
+(estilo Tibia) e **sync em rede** do que ficou no chão.
+
+### Tibia vs hoje (o que “igual ao Tibia” implica)
+
+No Tibia, na prática:
+
+1. **Loot não fica no inventário do mob em vida** — na morte rola uma **tabela**
+   (várias linhas, cada uma com chance e quantidade máxima; rolls independentes).
+2. O resultado vai para um **container de cadáver** no tile (não some direto na
+   mochila ao pisar).
+3. O jogador **abre o corpo** e move itens (mesma semântica de container/backpack).
+
+Hoje o jogo faz (1) errado para Tibia — item garantido no spawn — e (2)/(3) simplificados:
+pile no chão + auto-pickup ao chegar no tile. Dá para chegar no Tibia em fases sem
+jogar fora `ground_` / `CInventory`.
+
+### Formato de dado (recomendação)
+
+Manter fora do `content.db` (como stats de mob): servidor e solo leem o mesmo arquivo,
+**sem** entrar no `content_hash` — igual `monsters.txt` hoje.
+
+**Opção A — bloco dentro de `monsters.txt`** (menos arquivos, parser único):
+
+```
+class 1 rato
+  appearance   1
+  hp           14
+  ...
+  loot 306 1 80000      # item_id  max_count  chance_per_million
+  loot 302 1 12000
+```
+
+- Denominador fixo documentado (`kLootChanceScale = 1'000'000`), como OT.
+- Chave `loot` **antiga** (`loot 306` só) vira atalho: `max_count=1`, chance=100%.
+- Chave desconhecida continua erro fatal no parse (não ignorar typo de chance).
+
+**Opção B — `assets/loot.txt` ou `assets/loot/<class_id>.txt`**
+
+- `monsters.txt` fica só stats; tabela referencia `class_id`.
+- Melhor quando a lista de drops crescer; exige um include ou segundo parse no boot.
+
+**Opção C — tabela SQLite no `content.db`**
+
+- Só vale se quiser UI no editor (`F2`/modo mob) e um só lugar de conteúdo.
+- Custo: migração de schema, possivelmente **entrar no hash de conteúdo** (servidor
+  lê DB), rebake obrigatório, e UI — o oposto do motivo de `monsters.txt` existir.
+
+**Recomendação:** começar com **Opção A**; extrair para B quando alguma classe passar
+de ~15 linhas de loot.
+
+Modelo C++ alvo:
+
+```cpp
+struct LootEntry {
+    ItemTypeId    item = kItemNone;
+    std::uint16_t max_count = 1;
+    std::uint32_t chance;  // de kLootChanceScale; 0 = nunca
+};
+// MonsterType: std::vector<LootEntry> loot_table;
+// Remover o campo único `loot` depois da migração do txt + default_monsters().
+```
+
+### Mudanças em `sim/` (por fase)
+
+#### Fase L1 — Tabela + roll na morte (mínimo jogável)
+
+| O quê | Detalhe |
+|---|---|
+| `MonsterType` + parser | `loot_table`; compat com linha `loot` única |
+| `spawn_monster` | **Parar** de encher `CInventory` só por causa da tabela (opcional: flag `carries_loot` se no futuro mob “segura” item visível) |
+| `roll_monster_loot(spec, Rng)` | Função pura em `systems.hpp` ou `loot.hpp`; retorna `vector<ItemStack>` |
+| `apply_damage` (mob) | Chama roll → `drop_item` para cada stack; **não** ler tabela do inventário pré-spawn |
+| `default_monsters()` + `monsters.txt` | Mesmas entradas; rat/skeleton/ogro com chance 100% no item atual (comportamento igual ao shippado) |
+| Testes | RNG fixo: 0% nunca cai, 100% sempre; dois rolls independentes; soma de chances > scale ok (Tibia permite) |
+
+**RNG:** o roll usa o `Rng` do **dono do World** (servidor / `SoloSession`), não
+`tick` sozinho — senão replay e debug ficam ruins. Passar `Rng&` para a função de
+morte ou ter `World` guardar um gerador só para loot (decidir uma vez).
+
+#### Fase L2 — Chão honesto (solo + rede)
+
+| O quê | Detalhe |
+|---|---|
+| `GroundItemView` | Vários itens por tile ou “+N” / ícone de pile |
+| `RemoteSession` | Enviar piles na AoI (chunk confiável, delta por tile, ou snapshot parcial) — **provavelmente bump de protocolo** |
+| Servidor | AoI hoje é só atores; chão precisa de regra (tiles com pile dentro da janela) |
+
+Sem L2, multiplayer continua “mato e não vejo drop”.
+
+#### Fase L3 — Cadáver estilo Tibia (UX + sim)
+
+| O quê | Detalhe |
+|---|---|
+| Entidade **cadáver** | Sem `CActor` (invisível à battle list) ou com `CCorpse { NetId?, duration }` + `CInventory` + `CPosition` |
+| Morte | Roll preenche inventário do cadáver; tile continua **ocupado** até esvaziar ou expirar |
+| Cliente | Clique no cadáver → painel loot (reutilizar metade de `inventory_ui`) |
+| Coleta | **Desligar** auto-pickup ao pisar (ou só para piles “de cadáver”) — config ou regra fixa Tibia |
+| Rede | Intenção `C2S_Loot` / mover stack cadáver → mochila (espelhar `equip` validado) |
+
+#### Fase L4 — Autoria
+
+| O quê | Detalhe |
+|---|---|
+| Editor | `F4` ou submodo: editar linhas `loot` da classe (hoje `MobMode` **não** escreve `monsters.txt`) |
+| Validação | Item id existe no `content.db`; chance ≤ scale; log no boot se classe referencia item aposentado |
+
+### O que **não** precisa mudar (de primeira)
+
+- `content_hash` / `game_bake` — se loot ficar em `monsters.txt`.
+- `kProtocolVersion` — só na Fase L2/L3 quando sincronizar chão/cadáver.
+- `ItemType` — já tem stackable, pickable; loot só referencia ids.
+- Spawners — continuam spawnando classe; loot é propriedade da classe.
+
+### Ordem sugerida de implementação
+
+```mermaid
+flowchart LR
+  L1[L1: loot_table + roll na morte]
+  L2[L2: sync chão / render pile]
+  L3[L3: cadáver + UI loot]
+  L4[L4: editor]
+  L1 --> L2
+  L2 --> L3
+  L3 --> L4
+```
+
+1. **L1** — jogável em solo com piles no chão (já desenha um ícone) e testes.
+2. **L2** — multiplayer enxerga drops.
+3. **L3** — sensação Tibia (corpo, sem auto-loot).
+4. **L4** — conforto de autoria.
+
+### Riscos / decisões abertas
+
+- **Cadáver ocupa tile?** Tibia sim — combate em volta do corpo muda pathing; alinhar
+  com `occupant` e `can_enter`.
+- **Loot de jogador morto?** Fora de escopo até existir penalidade de morte; `CRespawn`
+  hoje não dropa.
+- **Empilhar rolls iguais:** `drop_item` já merge; roll pode emitir um stack com
+  `count > 1` se um único entry sortear quantidade (extensão: `min_count`..`max_count`).
+- **Documentação:** atualizar [monsters.md](monsters.md) e receita B3/B4 em
+  [authoring.md](authoring.md) quando L1 landar.
+
+---
+
 ## Pendências, em ordem de dependência
 
 ### A. Autenticação  (a pendência que sobrou de verdade)
@@ -279,7 +445,7 @@ ninhos foram então colocados na geometria restaurada, não na gerada.
 - **Editor não coloca mob nem ninho.** As linhas `monster`/`spawner` são preservadas
   num save (o editor guarda o que carregou e o writer regrava), mas não há UI para
   adicionar ou mover. O risco real — save esvaziar o mapa — não existe.
-- **Loot é um item por classe**, não uma tabela com chances.
+- **Loot com chances** — ver seção [Loot estilo Tibia](#loot-estilo-tibia--inventário-de-mob-e-drops-proposta) acima; hoje é um item garantido via `loot` → `CInventory` no spawn.
 - **Sem ranged de mob**: `kind ranged` parseia e nenhuma classe usa.
 - **Sem nome de classe em jogo**: o `<nome>` do `monsters.txt` é lido e descartado, o
   cliente não mostra nameplate.

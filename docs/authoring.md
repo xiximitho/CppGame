@@ -5,6 +5,8 @@ prático; o "por quê" de fundo está em [content.md](content.md) (a plataforma 
 itens), [sprites.md](sprites.md) (como a arte chega na tela) e [maps.md](maps.md)
 (formato de mapa e editor).
 
+Diagramas de fluxo (item novo, mob novo, runtime): [classes.md](classes.md#fluxo-criar-um-item-tipo-novo).
+
 ## Antes de tudo: as três camadas de um tile
 
 Um `TileId` (o número num slot de chão ou objeto do tile) carrega **três
