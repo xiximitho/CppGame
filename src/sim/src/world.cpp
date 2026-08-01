@@ -406,35 +406,67 @@ void World::respawn_actor(NetId net_id) {
     registry_.remove<CDead>(entity);
 }
 
-void World::apply_stairs(entt::entity entity) {
-    auto& pos = registry_.get<CPosition>(entity);
-    const int delta_z = item_types_.get(map_.at(pos.tile).object).stair_delta_z();
+void World::add_portal(TilePos from, TilePos to) {
+    if (from == to) {
+        return;  // could only ever be a no-op; not worth a lookup every arrival
+    }
+    portals_[tile_key(from)] = to;
+}
+
+std::optional<TilePos> World::portal_at(TilePos from) const {
+    const auto it = portals_.find(tile_key(from));
+    if (it == portals_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::optional<TilePos> World::transition_destination(TilePos from) const {
+    // The portal is checked first: an explicit per-tile destination beats a
+    // relative one derived from the item type. It should not happen — a portal
+    // painted on a stair is an authoring mistake — but "the number the author
+    // wrote wins" is the only tie-break that is not surprising.
+    if (const std::optional<TilePos> warp = portal_at(from)) {
+        return warp;
+    }
+
+    const int delta_z = item_types_.get(map_.at(from).object).stair_delta_z();
     if (delta_z == 0) {
+        return std::nullopt;
+    }
+    return TilePos{from.x, from.y, static_cast<std::int8_t>(from.z + delta_z)};
+}
+
+void World::apply_tile_transition(entt::entity entity) {
+    auto& pos = registry_.get<CPosition>(entity);
+    const std::optional<TilePos> destination = transition_destination(pos.tile);
+    if (!destination.has_value()) {
         return;
     }
 
-    const TilePos destination{pos.tile.x, pos.tile.y,
-                              static_cast<std::int8_t>(pos.tile.z + delta_z)};
     const NetId mover = registry_.get<CActor>(entity).net_id;
 
-    // A stair leading into rock, off the top of the map, or onto an occupied tile
+    // A stair or portal leading into rock, off the map, or onto an occupied tile
     // does nothing: the actor stays where it is. Refusing beats teleporting into
-    // a wall, and beats a half-applied move that leaves occupancy lying.
-    if (!map_.is_walkable(destination)) {
+    // a wall, and beats a half-applied move that leaves occupancy lying. Checked
+    // here rather than only at parse time because the destination is geometry,
+    // and geometry has another actor standing on it now and then.
+    if (!map_.is_walkable(*destination)) {
         return;
     }
-    const NetId other = occupant(destination);
+    const NetId other = occupant(*destination);
     if (other != kInvalidNetId && other != mover) {
         return;
     }
 
     vacate(pos.tile, mover);
-    occupy(destination, mover);
-    pos.tile = destination;
+    occupy(*destination, mover);
+    pos.tile = *destination;
 
-    // A route was planned on the floor left behind, so every tile still in it is
-    // on the wrong floor. Dropping it is the only honest option; the follower
-    // would otherwise walk the actor through geometry it never checked.
+    // A route was planned from where the actor was, so every tile still in it is
+    // somewhere else — another floor for a stair, another region entirely for a
+    // portal. Dropping it is the only honest option; the follower would otherwise
+    // walk the actor through geometry it never checked.
     registry_.remove<CPathFollow>(entity);
 }
 
@@ -457,8 +489,8 @@ void World::step() {
         registry_.erase<CWalk>(entity);
 
         // Walk over loot to pick it up (actors with a backpack only). Before the
-        // stairs, so loot dropped on a stair tile is still collected by the actor
-        // that walked onto it.
+        // transition, so loot dropped on a stair or portal tile is still
+        // collected by the actor that walked onto it.
         if (auto* inventory = registry_.try_get<CInventory>(entity)) {
             const auto pile = ground_.find(tile_key(pos.tile));
             if (pile != ground_.end()) {
@@ -471,11 +503,16 @@ void World::step() {
             }
         }
 
-        // Stairs act on ARRIVAL BY WALKING, and that is what keeps a symmetric
-        // pair from ping-ponging: being placed on the down-stair above is not a
-        // walk arrival, so it does not immediately send the actor back. Stepping
-        // onto that same tile later does, which is the behaviour you want.
-        apply_stairs(entity);
+        // Stairs and portals act on ARRIVAL BY WALKING, and that is what keeps a
+        // symmetric pair from ping-ponging: being placed on the down-stair above,
+        // or on the portal that leads back here, is not a walk arrival, so it does
+        // not immediately send the actor away again. Stepping onto that same tile
+        // later does, which is the behaviour you want.
+        //
+        // For a warp this is load-bearing rather than merely tidy: a portal with a
+        // return portal at its destination is the NORMAL way to author one, so the
+        // infinite loop is the default case and not the pathological one.
+        apply_tile_transition(entity);
     }
 }
 

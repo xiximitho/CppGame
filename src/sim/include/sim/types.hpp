@@ -155,6 +155,19 @@ constexpr bool in_attack_range(TilePos from, TilePos to, int range) {
     return distance >= 1 && distance <= range;
 }
 
+/// A warp: stepping onto `from` puts the actor on `to`, anywhere in the map.
+///
+/// The destination lives per *tile*, not on the item type, and that is the whole
+/// difference from a stair. A stair is relative (z±1), so it can be a property of
+/// the type and an author only paints the tile; a warp is absolute, and item ids
+/// are shared contracts — two portals with different destinations use the same
+/// sprite. So the author writes the pair in the map file and the World holds it
+/// beside the grid. See the `portal` directive in map_io.hpp.
+struct PortalSpec {
+    TilePos from;
+    TilePos to;
+};
+
 /// A swing that landed this tick, for the client to render an effect over: a
 /// burst at `to` for melee (from == to reads as a hit), or a projectile from ->
 /// to for ranged. Pure value type so it rides in a WorldView and on the wire.

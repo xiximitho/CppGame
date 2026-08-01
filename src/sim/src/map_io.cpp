@@ -147,6 +147,36 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
                 static_cast<std::uint16_t>(seconds > 65535 ? 65535 : seconds);
             out.spawners.push_back(spec);
             ++i;
+        } else if (keyword == "portal") {
+            int x = 0;
+            int y = 0;
+            int z = 0;
+            int dx = 0;
+            int dy = 0;
+            int dz = 0;
+            if (!(fields >> x >> y >> z >> dx >> dy >> dz)) {
+                return fail("bad 'portal' line: " + line);
+            }
+            if (!sized) {
+                return fail("'portal' before 'size'");
+            }
+            const TilePos from{static_cast<std::int16_t>(x),
+                               static_cast<std::int16_t>(y),
+                               static_cast<std::int8_t>(z)};
+            const TilePos to{static_cast<std::int16_t>(dx),
+                             static_cast<std::int16_t>(dy),
+                             static_cast<std::int8_t>(dz)};
+            if (!out.map.in_bounds(from) || !out.map.in_bounds(to)) {
+                return fail("'portal' outside the map: " + line);
+            }
+            if (from == to) {
+                return fail("'portal' leads to itself: " + line);
+            }
+            // Whether the two ends are walkable cannot be answered yet: a portal
+            // line may legally precede the grid that fills those tiles in. Checked
+            // once at the end, where the geometry is known.
+            out.portals.push_back(PortalSpec{from, to});
+            ++i;
         } else if (keyword == "floor") {
             int z = 0;
             if (!(fields >> z)) {
@@ -199,13 +229,34 @@ std::optional<ParsedMap> parse_text_map(const std::string& text,
     if (!sized) {
         return fail("map has no 'size' directive");
     }
+
+    // Now that every floor has been read, a portal's ends can be judged. Both are
+    // checked: a warp onto rock is a one-way trip into a wall, and a warp FROM a
+    // tile nobody can step on is a portal that can never fire — a dead line in the
+    // file that looks live. See the note in map_io.hpp on why this is fatal.
+    for (const PortalSpec& portal : out.portals) {
+        const auto describe = [](TilePos pos) {
+            return '(' + std::to_string(pos.x) + ',' + std::to_string(pos.y) +
+                   ',' + std::to_string(static_cast<int>(pos.z)) + ')';
+        };
+        if (!out.map.is_walkable(portal.from)) {
+            return fail("'portal' starts on a tile nobody can stand on: " +
+                        describe(portal.from));
+        }
+        if (!out.map.is_walkable(portal.to)) {
+            return fail("'portal' leads to a tile nobody can stand on: " +
+                        describe(portal.to));
+        }
+    }
+
     return out;
 }
 
 std::string write_text_map(const TileMap& map,
                            const std::optional<TilePos>& spawn,
                            const std::vector<MonsterSpawn>& monsters,
-                           const std::vector<SpawnerSpec>& spawners) {
+                           const std::vector<SpawnerSpec>& spawners,
+                           const std::vector<PortalSpec>& portals) {
     // Printable glyphs assigned to distinct (ground, object) pairs as they are
     // first seen. Space and '@' are reserved (void and spawn).
     const std::string pool = ".#~oTn,-=+:*%wsxde";
@@ -284,6 +335,11 @@ std::string write_text_map(const TileMap& map,
             << static_cast<int>(spawner.max_alive) << ' '
             << static_cast<int>(spawner.radius) << ' '
             << static_cast<int>(spawner.respawn_seconds) << '\n';
+    }
+    for (const PortalSpec& portal : portals) {
+        out << "portal " << portal.from.x << ' ' << portal.from.y << ' '
+            << static_cast<int>(portal.from.z) << ' ' << portal.to.x << ' '
+            << portal.to.y << ' ' << static_cast<int>(portal.to.z) << '\n';
     }
 
     for (int z = 0; z < map.floors(); ++z) {

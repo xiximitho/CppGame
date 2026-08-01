@@ -325,14 +325,24 @@ interface.
   o que bloqueia e quanto ataca. `net::ITransport::disconnect` usa
   `enet_peer_disconnect_later` de propósito, senão o disconnect corre com o pacote de
   reject e o cliente só vê "disconnected" sem o motivo.
-- **Escada age na chegada POR PASSO, nunca na chegada por escada.** `World::step`
-  chama `apply_stairs` quando um `CWalk` termina. É isso que impede o par
-  simétrico (`<` embaixo, `>` em cima no mesmo x,y) de ficar teletransportando o
-  ator para sempre: ser *colocado* na escada de cima não conta como passo. Pisar
-  nela de novo, sim. Escada é flag de item (`StairsUp`/`StairsDown`), relativa
-  (`z±1`), e recusa em silêncio quando o destino é rocha, está ocupado ou **não
-  existe** (mapa de um andar) — não existe meio-movimento que deixe occupancy
-  pendurada. `tests/test_stairs.cpp` cobre os cinco casos.
+- **Escada e portal agem na chegada POR PASSO, nunca na chegada por transição.**
+  `World::step` chama `apply_tile_transition` quando um `CWalk` termina. É isso que
+  impede o par simétrico (`<` embaixo, `>` em cima no mesmo x,y) de ficar
+  teletransportando o ator para sempre: ser *colocado* na escada de cima não conta
+  como passo. Pisar nela de novo, sim. Escada é flag de item
+  (`StairsUp`/`StairsDown`), relativa (`z±1`), e recusa em silêncio quando o destino
+  é rocha, está ocupado ou **não existe** (mapa de um andar) — não existe
+  meio-movimento que deixe occupancy pendurada. `tests/test_stairs.cpp` cobre os
+  cinco casos.
+  **Portal (warp) é a mesma regra com destino absoluto**, autorado por tile na linha
+  `portal <x> <y> <z> <dx> <dy> <dz>` do mapa — não é flag de tipo, porque id de item
+  é contrato compartilhado e dois portais têm destinos diferentes com o mesmo sprite.
+  Aqui a regra da chegada é ainda mais crítica: ida e volta são duas linhas, uma em
+  cada ponta, então o par bidirecional é o caso **normal** e o loop infinito seria o
+  padrão. Linha malformada (ponta fora do mapa, destino igual à origem, ponta em
+  rocha) **recusa o mapa no parse** em vez de virar portal morto — o oposto de
+  `monster`, que o spawner pula. `tests/test_portals.cpp`, e receitas em
+  `docs/maps.md`.
   O preço desse silêncio é que "escada quebrada" quase sempre é escada sem destino,
   não regra errada: só a `torre.txt` tem escada, os outros cinco mapas são de um
   andar. Dois anteparos: o editor avisa quando a escada no pincel não tem para onde

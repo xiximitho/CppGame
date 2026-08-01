@@ -16,11 +16,15 @@ travado. Ver [dependencies.md](dependencies.md).
 
 ### 2. ~~Escadas / rampas~~ — FEITO
 Escada existe: flags de item `StairsUp`/`StairsDown` (ids 103/104), regra em
-`sim::World::apply_stairs`, e a `assets/maps/torre.txt` com os três andares ligados
-e verificados. A troca de andar é instantânea e dispara na **chegada por passo** —
-ver o invariante no CLAUDE.md e `tests/test_stairs.cpp`. Rampa (mudança de altura
-sem teleporte) continua não existindo, e portal **entre mapas** também não; o plano
-do portal está em [pendencias.md](pendencias.md).
+`sim::World::apply_tile_transition`, e a `assets/maps/torre.txt` com os três andares
+ligados e verificados. A troca de andar é instantânea e dispara na **chegada por
+passo** — ver o invariante no CLAUDE.md e `tests/test_stairs.cpp`.
+
+**Portal/warp usa a mesma regra e existe**, com destino absoluto autorado por tile
+(`portal x y z dx dy dz` no mapa) — a decisão é um mapa só, grande, com o portal
+levando a uma coordenada dele, e não vários mapas. Falta a UI de autoria no editor;
+ver [maps.md](maps.md) e [pendencias.md](pendencias.md). Rampa (mudança de altura
+sem teleporte) continua não existindo.
 
 O que sobrou desta linha: rampa, e o **editor mostrando/editando só o andar 0** —
 dá para pintar a escada, mas não o andar onde ela chega. Ver

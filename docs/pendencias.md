@@ -328,7 +328,7 @@ Duas features em cima do conjunto de mapas, na mesma sessão.
 
 ### Escada (`<` sobe, `>` desce; ids 103/104)
 
-Flags de item novas (`StairsUp`/`StairsDown`), regra em `sim::World::apply_stairs`,
+Flags de item novas (`StairsUp`/`StairsDown`), regra em `sim::World::apply_tile_transition` (era `apply_stairs`),
 sprites novos no atlas, editáveis no modo item do editor (dois campos de flag) e
 pintáveis na paleta do editor de mapa. A `torre.txt` liga os três andares.
 
@@ -477,24 +477,159 @@ então o hit-test compartilha a geometria com o desenho (`row_top`, uma função
 não haver dois palpites da altura do título) mas nunca foi exercitado automaticamente
 — mesmo limite do formulário do editor.
 
-### Portal entre mapas — NÃO IMPLEMENTADO
+### Portal / warp dentro de um mapa só — **T1 FEITA**, T2–T4 abertas
 
-Pedido junto com as duas acima e deixado para uma mudança própria, de propósito: é a
-única das três que não cabe em `sim/` sozinha. O que ela exige, e por isso não entrou
-de carona:
+**Premissa nova (2026-08-01):** não existe "portal entre mapas". O mundo é **um mapa
+só, grande**, e o portal leva a uma **coordenada específica dele** — o warp/teleporte
+do Tibia.
 
-1. `sim::World` por mapa, com o servidor mantendo vários e cada conexão sabendo em
-   qual está (hoje `main.cpp` tem exatamente um `world`).
-2. Mensagem nova de reset de mapa + **bump de `kProtocolVersion`** para 7: o cliente
-   cacheia o `TileMap` e o `sent_chunks` por conexão precisa ser invalidado no
-   trânsito.
-3. `characters.map_name` no save (bump de `kPlayerSchemaVersion`), senão relogar
-   devolve o jogador ao mapa errado.
-4. `SoloSession` também com vários mundos, ou solo e rede divergem.
+**Estado (2026-08-01, mesma data):** a **T1 está implementada e verificada** — a regra
+funciona e um mapa com portais carrega no solo e no servidor. Falta a UI de autoria
+(T3) e as duas afiações (T2, T4). O que ficou pronto está marcado abaixo; a seção
+segue descrevendo o desenho inteiro porque o resto dele ainda é plano.
 
-O caminho de menor risco é fazer o trânsito nascer como fila em `World` (o mesmo
-lugar onde a escada age), drenada por quem é dono do mundo — servidor ou
-`SoloSession` —, porque `sim/` não pode carregar arquivo.
+Isso é a diferença entre uma feature que toca todas as camadas e uma que cabe em
+`sim/` mais autoria. O que a versão "entre mapas" exigia, e que a decisão apagou:
+
+| O que exigia | Por que não é mais necessário |
+|---|---|
+| `sim::World` por mapa, servidor mantendo vários | Um mundo só, como hoje |
+| Reset de mapa no fio + `kProtocolVersion` 7 | O `TileMap` do cliente não é invalidado: é o mesmo mapa |
+| `characters.map_name` + bump de `kPlayerSchemaVersion` | O save já grava x/y/z, e isso basta |
+| Fila de trânsito drenada pelo dono do mundo | O trânsito é `pos.tile = destino` dentro do próprio `World`; nada de filesystem em `sim/` |
+| `SoloSession` com vários mundos | Nada a divergir: solo e rede continuam com um mundo |
+
+#### O destino vive no tile, não no tipo de item
+
+Escada é **relativa** (`z±1`) e por isso é flag de tipo: o autor pinta e acabou. Warp
+é **absoluto**, e id de item é contrato compartilhado — dois portais com destinos
+diferentes usam o mesmo sprite. Então destino é dado **do tile**, e o lugar dele é o
+arquivo de mapa, ao lado de `monster`/`spawner`:
+
+```
+portal <x> <y> <z> <dx> <dy> <dz>
+```
+
+`portal` e não `teleport` porque o comentário de `ItemFlag::StairsUp` já aponta para
+"the map file's `portal`": o nome foi escolhido quando a escada foi escrita.
+
+- `ParsedMap::portals` (vetor, ordem do arquivo) e `write_text_map` regravando —
+  mesmo trato de `monsters`/`spawners`.
+- `World` guarda um `std::unordered_map<std::uint64_t, TilePos>` com a mesma
+  `tile_key` do `ground_`: lookup O(1) na chegada, e só para tile que tem entrada.
+- Destino fora do mapa, em rocha, ou igual à origem: **erro de parse**, não recusa
+  silenciosa em runtime. Ao contrário da escada, aqui o autor escreveu números
+  explícitos — errar é typo, e typo tem que falhar alto.
+
+#### A regra: mesmo ponto da escada, e mais dependente dele
+
+`World::apply_stairs` **virou** `World::apply_tile_transition`, chamada do mesmo lugar
+em `World::step`: **chegada por passo, nunca chegada por transição**. Ela resolve o
+destino em `transition_destination` (escada por `stair_delta_z`, portal por lookup) e
+aplica **uma vez** o que já existia — recusa em silêncio se não caminhável / ocupado
+por outro / fora de bounds, `vacate`/`occupy`, e `remove<CPathFollow>` porque a rota
+era de outro lugar. Portal ganha do `stair_delta_z` no mesmo tile: o número que o
+autor escreveu ganha do derivado do tipo.
+
+Aqui o invariante é mais load-bearing que na escada: no par de escadas o ping-pong
+infinito era o caso patológico; num warp o **par bidirecional é o caso normal**
+(portal de ida, portal de volta no destino). Só a chegada por passo disparar é o que
+faz "ser colocado no portal de destino" não ser um loop eterno. Vale um teste
+explícito com A→B e B→A no mesmo mapa.
+
+Portal cujo destino é outro portal, pelo mesmo motivo, **não** encadeia. Se um dia
+encadear for desejado, é decisão nova e não bug.
+
+#### No fio: nenhum bump, mas o ritmo dos chunks morde
+
+Nada novo no protocolo: o cliente já cacheia o `TileMap` inteiro (o `Welcome` traz as
+dimensões) e já recebe chunks de todos os andares.
+
+O que morde é o `stream_chunks`: ele manda no máximo `kMaxChunksPerTick` (6) chunks
+por tick em volta da posição **atual** e lembra o que já mandou por conexão. Saltar
+para uma região nunca visitada custa alguns ticks de **buraco preto** em volta do
+jogador. O conserto é priorizar o destino — pré-enviar a vizinhança de cada portal que
+entra na AoI, ou dar orçamento extra de chunk no tick do warp —, não bump de
+protocolo. Em rede local não aparece; com latência, sim.
+
+Persistência não muda, e relogar em cima de um portal é seguro exatamente porque ser
+*colocado* não dispara.
+
+#### Autoria — é aqui que está o trabalho real
+
+A regra é pequena; autorar destino é que não tem UI. Enquanto não tiver, editar o
+`.txt` na mão funciona, e o editor **preserva** o que não sabe editar (já faz isso com
+`monster`/`spawner`), então salvar no editor não apaga portais.
+
+| O quê | Detalhe |
+|---|---|
+| Editor | Pintar o tile do portal e um segundo passo "agora clique o destino", que pode estar em outro andar (`PgUp`/`PgDn`). O `MobMode` é o padrão de submodo a copiar |
+| Aviso | Barra de baixo em laranja quando o destino não é caminhável — igual ao aviso de escada sem destino, e pelo mesmo motivo: o silêncio da regra é correto, o da ferramenta não |
+| Sprite | Item novo com flag `Teleport` que serve só para cruzar validação: linha `portal` sem item flagueado = portal invisível mas vivo; item flagueado sem linha = portal morto. Item novo é linha no `content.db` + `game_bake`, não C++ |
+| `test_shipped_maps.cpp` | Todo `portal` autorado leva a tile onde se pode ficar de pé — literalmente o mesmo teste que já existe para escada |
+| `gen_maps.py` | O `validate` tem que tratar portal como **aresta** no flood fill. Sem isso "all reachable" mente no primeiro mapa grande em que a única ligação entre duas regiões é um portal — que é justamente para o que o portal serve |
+
+#### Tamanho do "mapa grande" — os tetos, medidos
+
+`TileMap` é denso (6 bytes por tile) e o cliente aloca o mapa inteiro no `Welcome`:
+
+| Mapa | Denso em memória | Grid em texto (1 char/tile) |
+|---|---|---|
+| 1024×1024×8 | ~48 MB | ~8,4 MB |
+| 2048×2048×8 | ~192 MB | ~34 MB |
+| 4096×4096×8 | ~805 MB | ~134 MB |
+
+`net::kMaxCoord` é 4095, então 4096² é o teto **sem** tocar no fio — mas o grid denso
+e o `.txt` estouram muito antes disso. A ordem de grandeza confortável hoje é
+**1024×1024**, e nesse tamanho o `.txt` já é desconfortável para diff e para parse.
+Passar disso pede mapa por região (arquivo por chunk, carregado sob demanda), que é
+decisão à parte — e é só nesse dia que "vários mundos" volta a valer a discussão, por
+streaming e não por portal.
+
+#### Ordem sugerida
+
+1. ~~**T1** — `portal` no parser + `ParsedMap::portals` + writer; a transição no
+   `World`; testes~~ — **FEITA**, ver abaixo.
+2. **T2** — prioridade de chunk no destino (o buraco preto).
+3. **T3** — UI no editor, item de sprite, aviso de destino ruim.
+4. **T4** — portal como aresta no `validate` do gerador.
+
+#### T1, como ficou (2026-08-01)
+
+| Peça | O quê |
+|---|---|
+| `sim/types.hpp` | `PortalSpec{from, to}` |
+| `sim/map_io.*` | diretiva `portal`, `ParsedMap::portals`, writer, validação no fim do parse |
+| `sim/world.*` | `add_portal`/`portal_at`/`portal_count`, `portals_`, `transition_destination`, `apply_stairs` → `apply_tile_transition` |
+| `server/main.cpp`, `client/solo_session.cpp` | instalam os portais no `World` recém-construído e logam a contagem |
+| `editor/main.cpp` | `MapDoc::portals` — carrega, preserva e regrava; **não** autora |
+| `tests/test_portals.cpp` | 10 casos novos |
+| `tests/test_map_io.cpp` | 2 casos novos (parse + round-trip; 7 formas de linha errada) |
+| `tests/test_shipped_maps.cpp` | portais no round-trip do `S` |
+
+**Decisões tomadas na implementação** (não estavam no desenho):
+
+- **Walkability é checada no fim do parse, não na linha.** Uma linha `portal` pode vir
+  antes da grade que preenche aqueles tiles, igual a `monster`. Tem teste da ordem
+  invertida.
+- **Ponta de origem em rocha também é erro**, não só o destino: é um portal que nunca
+  dispara — uma linha morta com aparência de viva.
+- **`add_portal` com `from == to` é descartado** em vez de armazenado. O parser já
+  recusa, mas o `World` também é dirigido por testes e pelo editor.
+- **Portais não são do `TileMap`.** Ficaram no `World` de propósito: o cliente também
+  tem um `TileMap`, montado de chunks de tiles, e guardar regra ali daria aos dois
+  lados o mesmo tipo com conteúdos diferentes. Autoridade fica com o `World`.
+
+**Verificado:** 204 testes passando (12 novos); build com `-DGAME_WERROR=ON` limpo;
+`check-layering.sh` ok; e um mapa de sonda com par de portais carregado de verdade —
+cliente solo (`loaded map ... 0 monster(s) + 0 spawner(s) + 2 portal(s)`) e servidor
+(mesma linha), depois apagado.
+
+**Não verificado:** o warp **numa sessão de verdade com input**. O driver dummy não
+entrega teclas, então quem anda até o portal nos testes é o `World` dirigido
+diretamente (incluindo o caso da rota, que atravessa o portal com o path follower
+rodando). É o mesmo limite de sempre. E **nenhum mapa commitado tem portal ainda** —
+qual mapa ganha o primeiro é decisão de conteúdo.
 
 ### Escada e seleção de mapa (2026-07-31, quarta rodada)
 

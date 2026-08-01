@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -50,6 +51,23 @@ public:
     /// The monster classes this world spawns from. Held here because spawners run
     /// inside the simulation and need it at runtime, not just at world build.
     const MonsterRegistry& monsters() const { return monsters_; }
+
+    /// Registers a warp: an actor that *steps onto* `from` lands on `to`. Static
+    /// map data, so the owner of the world installs it right after building —
+    /// unlike authored monsters, there is nothing left for the caller to do.
+    ///
+    /// Stores what it is given. Whether the destination is sane is the map
+    /// parser's job (a bad `portal` line is a fatal parse error, because the
+    /// author typed those numbers), and the step-time rules below refuse
+    /// anything that has since become impassable. A portal onto itself is
+    /// dropped, since it could only ever be a no-op.
+    void add_portal(TilePos from, TilePos to);
+
+    /// Where a portal on this tile leads, if there is one. For tests and for the
+    /// editor's authoring warning; the tick loop uses it through the transition.
+    std::optional<TilePos> portal_at(TilePos from) const;
+
+    std::size_t portal_count() const { return portals_.size(); }
 
     entt::registry&       registry() { return registry_; }
     const entt::registry& registry() const { return registry_; }
@@ -159,9 +177,18 @@ private:
     void occupy(TilePos pos, NetId net_id);
     void vacate(TilePos pos, NetId net_id);
 
-    /// Moves the actor a floor when it just walked onto a stair tile. No-op when
-    /// the tile is not a stair or the destination cannot take it.
-    void apply_stairs(entt::entity entity);
+    /// Where the tile an actor just walked onto sends it, if anywhere: a stair
+    /// (relative, z±1, from the item flag) or a portal (absolute, from the map
+    /// file). std::nullopt for the overwhelmingly common case of a plain tile.
+    std::optional<TilePos> transition_destination(TilePos from) const;
+
+    /// Moves the actor when it just walked onto a stair or a portal. No-op when
+    /// the tile sends it nowhere or the destination cannot take it.
+    ///
+    /// Called ONLY from World::step, on arrival by a walk. Never on arrival by a
+    /// transition — see the comment at the call site: that is what keeps a pair of
+    /// portals pointing at each other from teleporting an actor forever.
+    void apply_tile_transition(entt::entity entity);
 
     TileMap                  map_;
     ItemTypeRegistry         item_types_;
@@ -172,6 +199,12 @@ private:
     std::unordered_map<NetId, entt::entity>       by_net_id_;
     std::unordered_map<std::uint64_t, NetId>      occupancy_;
     std::unordered_map<std::uint64_t, GroundPile> ground_;
+
+    /// Warp source tile -> destination, keyed like occupancy_. Deliberately NOT
+    /// inside TileMap: the client holds a TileMap too, streamed as chunks of
+    /// tiles, and putting rule data there would give the two sides the same type
+    /// with different contents. Authority lives with the World.
+    std::unordered_map<std::uint64_t, TilePos> portals_;
 
     /// Mutable scratch, not logical state: reused across calls so pathfinding does
     /// not allocate a map-sized working set per request.

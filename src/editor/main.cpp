@@ -222,6 +222,7 @@ struct MapDoc {
     std::optional<sim::TilePos>    spawn;
     std::vector<sim::MonsterSpawn> monsters;
     std::vector<sim::SpawnerSpec>  spawners;
+    std::vector<sim::PortalSpec>   portals;
 };
 
 /// A blank canvas, used when the requested file cannot be read.
@@ -248,6 +249,7 @@ MapDoc load_map_doc(const std::string& path,
             doc.spawn = parsed->spawn;
             doc.monsters = std::move(parsed->monsters);
             doc.spawners = std::move(parsed->spawners);
+            doc.portals = std::move(parsed->portals);
             LOG_INFO("editing '%s' (%dx%d, %d floor(s))", path.c_str(),
                      doc.map.width(), doc.map.height(), doc.map.floors());
             return doc;
@@ -624,6 +626,7 @@ int main(int argc, char** argv) {
             authored.spawn = loaded.spawn;
             authored.monsters = std::move(loaded.monsters);
             authored.spawners = std::move(loaded.spawners);
+            authored.portals = std::move(loaded.portals);
             opt.map_path = path;
             undo_stack.clear();
             redo_stack.clear();
@@ -744,7 +747,7 @@ int main(int argc, char** argv) {
                              kMenuPad, menu_bar_top(vh) - 18.0F, bright, 2.0F);
 
             // A stair with no floor to lead to is the one authoring mistake that
-            // fails in total silence at runtime: World::apply_stairs refuses when
+            // fails in total silence at runtime: World::apply_tile_transition refuses when
             // the destination is out of bounds, and a refused stair looks exactly
             // like a stair that does not work. Say it while it is being painted.
             const int stair_delta =
@@ -948,7 +951,8 @@ int main(int argc, char** argv) {
                             const std::string out =
                                 sim::write_text_map(view.map, authored.spawn,
                                                     authored.monsters,
-                                                    authored.spawners);
+                                                    authored.spawners,
+                                                    authored.portals);
                             if (write_file(opt.map_path, out)) {
                                 LOG_INFO("saved '%s'", opt.map_path.c_str());
                                 dirty = false;

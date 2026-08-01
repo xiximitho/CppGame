@@ -199,7 +199,7 @@ No editor, do começo ao fim:
 1. `F3`, escolha o mapa (ou `--map <nome>`).
 2. O mapa tem um andar só? `Ctrl+PgUp` adiciona o de cima. Com a escada no pincel, a
    barra de baixo avisa em laranja quando o andar de destino não existe — é
-   exatamente o caso que `apply_stairs` recusa em silêncio, e a fonte da impressão
+   exatamente o caso que `apply_tile_transition` recusa em silêncio, e a fonte da impressão
    de que "escada não funciona".
 3. `PgDn` até o andar de baixo, pinte `stairs up` (103) num tile caminhável.
 4. `PgUp`, e **no mesmo x,y** pinte `stairs down` (104) — e chão em volta, senão

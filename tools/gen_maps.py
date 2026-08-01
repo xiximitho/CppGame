@@ -138,7 +138,7 @@ def reachable(g, spawn):
 def reachable3(floors, spawn):
     """Same flood fill across every floor, taking stairs.
 
-    Mirrors sim::World::apply_stairs: arriving on a stair glyph moves the actor to
+    Mirrors sim::World::apply_tile_transition: arriving on a stair glyph moves the actor to
     the same x,y one floor up or down, and only when that tile is walkable. A
     stair whose destination is rock is a dead end here exactly like it is in game.
     """

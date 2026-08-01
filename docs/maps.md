@@ -34,6 +34,7 @@ legend <char> <ground_id> [object_id]   # liga um caractere da grade a tiles
 spawn <char>                             # marca esse caractere como spawn
 monster <x> <y> <z> <classe>             # um mob que não volta
 spawner <x> <y> <z> <classe> <n> <raio> <seg>   # uma população que repõe
+portal <x> <y> <z> <dx> <dy> <dz>        # warp: pisa em x,y,z e cai em dx,dy,dz
 floor <z>                                # as próximas <h> linhas são a grade
 <h linhas de até w caracteres>
 ```
@@ -44,6 +45,7 @@ floor <z>                                # as próximas <h> linhas são a grade
   `find_spawn_tile` quando o tile está ocupado.
 - `monster` e `spawner`: opcionais, repetíveis. Ver "Mobs autorados" abaixo e
   [monsters.md](monsters.md).
+- `portal`: opcional, repetível. Ver "Portais (warp)" abaixo.
 - Um **espaço** (ou uma linha mais curta que `w`) é **vazio**: sem chão, um buraco
   não-caminhável — como se desenha a área escura fora do calabouço.
 - Caractere não declarado na legenda é erro (pega typo). `parse_text_map` devolve
@@ -142,9 +144,9 @@ todo jogador novo dentro da rocha.
 ### Escadas
 
 `<` sobe um andar, `>` desce (ids 103/104, flags `StairsUp`/`StairsDown`). A regra
-mora em `sim::World::apply_stairs` e dispara quando um passo **termina** naquele
-tile: o ator vai para o mesmo x,y no andar de destino, se lá for caminhável e
-estiver livre. Um par simétrico (`<` embaixo, `>` no mesmo x,y em cima) é o que
+mora em `sim::World::apply_tile_transition` (a mesma do portal) e dispara quando um
+passo **termina** naquele tile: o ator vai para o mesmo x,y no andar de destino, se
+lá for caminhável e estiver livre. Um par simétrico (`<` embaixo, `>` no mesmo x,y em cima) é o que
 permite voltar, e não fica em loop porque ser *colocado* numa escada não conta como
 passo.
 
@@ -154,8 +156,8 @@ escada que dá em rocha ("leads nowhere"). Foi assim que os três andares da
 `torre.txt` passaram a ser verificados de verdade e não "por design inalcançáveis".
 
 **Escada que não parece funcionar é quase sempre escada sem destino.** O
-`apply_stairs` recusa em silêncio quando o andar de destino não existe (mapa de um
-andar só), é rocha, ou está ocupado — e recusar é igualzinho a "não funciona" para
+`apply_tile_transition` recusa em silêncio quando o andar de destino não existe
+(mapa de um andar só), é rocha, ou está ocupado — e recusar é igualzinho a "não funciona" para
 quem está pisando nela. Dois anteparos contra isso: o editor avisa na barra de baixo
 quando a escada na mão não tem para onde levar (e `Ctrl+PgUp` adiciona o andar), e
 `tests/test_shipped_maps.cpp` reprova qualquer escada dos mapas commitados que dê num
@@ -165,6 +167,39 @@ os outros cinco são de um andar, então não há escada para funcionar neles.
 O `.txt` continua editável à mão e no `game_editor` depois de gerado; se você for
 editar, edite o `.txt` e ignore o gerador (ou o próximo `gen_maps.py` passa por
 cima).
+
+### Portais (warp)
+
+```
+portal <x> <y> <z> <dx> <dy> <dz>
+```
+
+Pisar em `x,y,z` põe o ator em `dx,dy,dz`, em qualquer lugar do mapa — o warp do
+Tibia. Uma linha por portal, repetível, em qualquer lugar depois do `size`.
+
+**Por que o destino está no mapa e não no tipo de item.** Escada é *relativa*
+(`z±1`), então cabe numa flag do tipo e o autor só pinta o tile. Warp é *absoluto*, e
+id de item é contrato compartilhado: dois portais com destinos diferentes usam o mesmo
+sprite. Então o par de coordenadas é dado do **tile**, e mora aqui.
+
+Ida e volta são **duas** linhas — uma em cada ponta. É o jeito normal de autorar, e é
+por isso que a regra "dispara na chegada por passo, nunca na chegada por transição" é
+essencial e não cosmética: sem ela, todo par bidirecional teleportaria seu usuário para
+sempre. Mesmo ponto do código onde a escada age (`World::apply_tile_transition`), com
+as mesmas recusas em silêncio (destino em rocha, ocupado, fora do mapa).
+
+**Linha errada é erro de parse, não portal morto.** Ao contrário de `monster` — que o
+spawner pula quando não dá para colocar —, um `portal` com ponta fora do mapa, com
+destino igual à origem, ou com qualquer das duas pontas num tile onde não se pode ficar
+de pé **recusa o mapa inteiro**, com razão legível. A diferença é quem digitou as
+coordenadas: destino de warp é número escrito à mão, e o runtime recusa em silêncio, o
+que seria indistinguível de "o portal não funciona". Walkability é checada no **fim** do
+parse, então a linha `portal` pode vir antes da grade que preenche aqueles tiles.
+
+**Nenhum dos seis mapas commitados tem portal ainda, e o editor não autora um** — as
+linhas são preservadas num save (`ParsedMap::portals` → writer), mas não há UI para
+criar ou mover. Ver [pendencias.md](pendencias.md) para as fases T2–T4 (prioridade de
+chunk no destino, UI, e portal como aresta no `validate` do gerador).
 
 ## Escolher qual mapa carregar
 
@@ -274,7 +309,7 @@ SDL_VIDEODRIVER=dummy ./build/debug/bin/game_editor \
 - **Multi-andar no editor**: resolvido. `PgUp`/`PgDn` trocam o andar editado,
   `Ctrl+PgUp` adiciona um andar em cima, e o andar de baixo continua desenhado
   (escurecido) para dar referência. Com a escada na mão, o editor avisa quando o
-  andar de destino não existe — o caso que a `apply_stairs` recusa em silêncio.
+  andar de destino não existe — o caso que a `apply_tile_transition` recusa em silêncio.
   O que o save ainda perde são os comentários do arquivo: o writer regera o
   cabeçalho e a legenda. Há teste garantindo que salvar um mapa shippado não muda
   nenhum tile, andar nem spawner (`tests/test_shipped_maps.cpp`).

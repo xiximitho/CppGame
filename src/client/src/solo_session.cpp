@@ -48,13 +48,21 @@ SoloWorld build_solo_world(std::uint64_t seed, const char* map_path) {
     if (platform::vfs::read_asset_text(map_path, text)) {
         std::string error;
         if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
-            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)",
+            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)"
+                     " + %zu portal(s)",
                      map_path, parsed->map.width(), parsed->map.height(),
-                     parsed->monsters.size(), parsed->spawners.size());
-            return SoloWorld{
-                sim::World(std::move(parsed->map), item_types, monsters),
-                parsed->spawn, std::move(parsed->monsters),
-                std::move(parsed->spawners)};
+                     parsed->monsters.size(), parsed->spawners.size(),
+                     parsed->portals.size());
+            sim::World world(std::move(parsed->map), item_types, monsters);
+            // Same install as the server, deliberately: a warp that only worked in
+            // multiplayer would be exactly the solo/network divergence the layering
+            // rule exists to prevent.
+            for (const sim::PortalSpec& portal : parsed->portals) {
+                world.add_portal(portal.from, portal.to);
+            }
+            return SoloWorld{std::move(world), parsed->spawn,
+                             std::move(parsed->monsters),
+                             std::move(parsed->spawners)};
         }
         LOG_WARN("map '%s' failed to parse: %s; using generated map", map_path,
                  error.c_str());

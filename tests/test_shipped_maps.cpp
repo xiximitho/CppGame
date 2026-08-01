@@ -2,10 +2,14 @@
 //
 // These are the only tests that read the repository. They exist because of one
 // failure mode that nothing else catches: a stair painted on a tile with no floor
-// to lead to. sim::World::apply_stairs refuses such a step in silence — which is
-// the right behaviour, and is indistinguishable from "stairs are broken" when you
-// are the one walking onto it. A parse succeeds, a screenshot looks right, and the
-// map is simply missing the thing it was drawn for.
+// to lead to. sim::World::apply_tile_transition refuses such a step in silence —
+// which is the right behaviour, and is indistinguishable from "stairs are broken"
+// when you are the one walking onto it. A parse succeeds, a screenshot looks right,
+// and the map is simply missing the thing it was drawn for.
+//
+// A portal cannot fail this way: a bad `portal` line fails the parse outright, so a
+// map with one never loads. The round-trip case below still checks portals, for the
+// day the editor can author them.
 
 #include <doctest/doctest.h>
 
@@ -93,7 +97,8 @@ TEST_CASE("saving a shipped map from the editor changes nothing") {
         REQUIRE(first.has_value());
         const std::string written = write_text_map(first->map, first->spawn,
                                                    first->monsters,
-                                                   first->spawners);
+                                                   first->spawners,
+                                                   first->portals);
         std::string error;
         const auto again = parse_text_map(written, items, &error);
         REQUIRE_MESSAGE(again.has_value(), name << ": " << error);
@@ -105,6 +110,13 @@ TEST_CASE("saving a shipped map from the editor changes nothing") {
         CHECK(again->spawn == first->spawn);
         CHECK(again->monsters.size() == first->monsters.size());
         CHECK(again->spawners.size() == first->spawners.size());
+        // No shipped map has a portal yet. The check is here so the day one does,
+        // a save that dropped it fails the suite instead of the map.
+        REQUIRE(again->portals.size() == first->portals.size());
+        for (std::size_t i = 0; i < first->portals.size(); ++i) {
+            CHECK(again->portals[i].from == first->portals[i].from);
+            CHECK(again->portals[i].to == first->portals[i].to);
+        }
 
         bool identical = true;
         for (int z = 0; z < first->map.floors() && identical; ++z) {

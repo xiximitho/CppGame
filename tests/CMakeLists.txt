@@ -15,6 +15,7 @@ add_executable(game_tests
     test_content_hash.cpp
     test_map_io.cpp
     test_stairs.cpp
+    test_portals.cpp
     test_shipped_maps.cpp
     test_monsters.cpp
     test_spawners.cpp

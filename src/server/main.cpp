@@ -96,13 +96,20 @@ ServerWorld build_server_world(const std::string& map_path, std::uint64_t seed,
     if (!text.empty()) {
         std::string error;
         if (auto parsed = sim::parse_text_map(text, item_types, &error)) {
-            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)",
+            LOG_INFO("loaded map '%s' (%dx%d), %zu monster(s) + %zu spawner(s)"
+                     " + %zu portal(s)",
                      map_path.c_str(), parsed->map.width(), parsed->map.height(),
-                     parsed->monsters.size(), parsed->spawners.size());
-            return ServerWorld{
-                sim::World(std::move(parsed->map), item_types, monsters),
-                parsed->spawn, std::move(parsed->monsters),
-                std::move(parsed->spawners)};
+                     parsed->monsters.size(), parsed->spawners.size(),
+                     parsed->portals.size());
+            sim::World world(std::move(parsed->map), item_types, monsters);
+            // Portals go straight in: static map data, nothing for the caller to
+            // decide later, unlike the mobs below which still have to be spawned.
+            for (const sim::PortalSpec& portal : parsed->portals) {
+                world.add_portal(portal.from, portal.to);
+            }
+            return ServerWorld{std::move(world), parsed->spawn,
+                               std::move(parsed->monsters),
+                               std::move(parsed->spawners)};
         }
         LOG_WARN("map '%s' failed to parse: %s; using generated map",
                  map_path.c_str(), error.c_str());
