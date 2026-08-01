@@ -224,14 +224,37 @@ aparência que ganha `mobstrip`.
 Conjunto estático responde `frames == 1`, e `walk_frame` responde 0 para ele — por isso
 nenhum caller tem `if` de "não animado".
 
-A linha tem um campo `tilt` **opcional** no fim, em graus: arte estilo Tibia é desenhada
-para uma grade alinhada aos eixos da tela, e numa isométrica a criatura desenhada como
-risco diagonal parece tombada (~30° põe as folhas do OTSP de pé). `SpriteCmd::rotation`
-gira em torno do **pé** do sprite, não do meio — a única coisa que um sprite girado tem
-que preservar é o contato com o chão — e não custa draw call, porque o backend já emite
-quatro vértices por sprite. `rotation == 0` desvia do `sin`/`cos`: todo tile de chão
-passa por ali. Arte, medidas das folhas e receitas em
-`docs/animation.md`; crédito da arte (CC BY 4.0) em `assets/tibia_like/CREDITS.md`.
+A linha tem um campo `tilt` **opcional** no fim, em graus, e o valor certo para as
+folhas OTSP é **0**. Ele já foi 30 com a justificativa de que a arte estilo Tibia é
+desenhada para uma grade alinhada aos eixos da tela e "cairia" numa isométrica; isso
+estava **errado** e foi medido: as células da folha estão de pé, o importador copia
+pixel a pixel (conferido bbox por bbox contra `otsp_creatures_03.png`), e como
+`SpriteCmd::rotation` gira em torno do **pé** do sprite, 30° empurra um corpo de 32px
+uns 16px para o lado — o ator fica plantado e o corpo sai do losango. Era exatamente o
+sintoma de "sprite deslocado". O knob continua existindo para arte que realmente venha
+tombada; o default do `--tilt` do importador agora é 0.
+
+`rotation == 0` desvia do `sin`/`cos`: todo tile de chão passa por ali, e girar não
+custa draw call porque o backend já emite quatro vértices por sprite. Arte, medidas
+das folhas e receitas em `docs/animation.md`; crédito da arte (CC BY 4.0) em
+`assets/tibia_like/CREDITS.md`.
+
+### Ancoragem: o pé do sprite vai no CENTRO do tile, menos quando a arte é o losango
+
+`origin_y = 16 - altura` e `origin_x = -largura/2` é a regra para tudo que **fica de
+pé** num tile: ator 32×48 → `(-16,-32)`, rato 24×24 → `(-12,-8)`, tira de mob 32×32 →
+`(-16,-16)`. Em todos, a base do sprite cai em `apex + 16`, que é o centro do losango.
+
+A exceção é arte cuja **própria base é o losango do tile** — parede em bloco, escada,
+portal: aí `origin_y = -32` faz o losango da arte coincidir com o do tile. Dá para
+distinguir medindo as últimas linhas opacas da célula: `24,20,16,12,8,4` afunilando é
+base em losango (`-32`); `12,12,12,10,3,2` é um tronco e `52,52,50,50,48,48` é base
+chapada de arte de grade quadrada — as duas querem `-48` num sprite de 64×64, senão o
+objeto é desenhado 16px baixo demais e derrama no tile da frente.
+
+Isso morde ao importar arte do Tibia: **Tibia não é isométrico** (grade de 32×32
+alinhada à tela), então uma caixa importada tem pegada quadrada e nunca casa com o
+losango — dá para plantá-la certo, não para fazer a pegada bater sem redesenhar.
 
 ### Mobs: classe é dado, comportamento é sistema
 

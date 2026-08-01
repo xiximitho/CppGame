@@ -95,15 +95,24 @@ do editor é onde se vê.
 
 ## A inclinação
 
-Arte estilo Tibia é desenhada para um mundo cuja grade é **alinhada aos eixos da
-tela**. Esta é isométrica. Uma criatura que o artista desenhou como um risco diagonal
-cai no losango parecendo que tombou — foi exatamente o que aconteceu com a primeira
-importação, e não é mapeamento de direção errado: **as quatro direções da arte são a
-mesma silhueta inclinada**, mudando só onde está o rosto.
+⚠️ **Esta seção afirmava o contrário até 2026-08-01, e o contrário estava errado.** O
+texto dizia: arte estilo Tibia é desenhada para uma grade alinhada aos eixos da tela,
+numa isométrica a criatura "tomba", e ~30° a põe de pé — com 30 sendo o default do
+importador. Foi medido e é falso:
 
-O conserto é uma inclinação por conjunto de sprites, em graus, no fim da linha
-`mobstrip`. **~30° põe estas folhas de pé**, e é o padrão do `--tilt` do importador
-(passe `--tilt 0` para arte já em pé).
+- as células de `otsp_creatures_03.png` estão **de pé** na folha;
+- o importador copia pixel a pixel (as bbox de conteúdo das 12 células do atlas batem
+  uma a uma com as da folha, só permutadas pelo `--dir-order`);
+- e como o pivô é o **pé** do sprite, 30° empurra um corpo de 32px uns **16px para o
+  lado**: os pés ficam no tile e o corpo sai dele.
+
+Ou seja, o `tilt` de 30° não corrigia inclinação nenhuma — ele criava o deslocamento
+que parecia ser problema de ângulo de visão. O valor certo para estas folhas é **0**,
+que é o novo default do `--tilt`.
+
+O campo continua existindo, porque é barato e uma folha pode de fato trazer arte
+tombada. Mas a suspeita, ao ver um mob desalinhado, deve começar pela **ancoragem**
+(`origin_x`/`origin_y`) e não pela rotação.
 
 Duas decisões dentro disso:
 

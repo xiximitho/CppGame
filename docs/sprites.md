@@ -91,6 +91,31 @@ highlight           0    32   64  32  -32      0
   e um ator 32×48 caírem certos no mesmo tile 64×32. Ver `client/iso.hpp`. Valores
   canônicos: chão `-32 0`, bloco 64×64 `-32 -32`, ator 32×48 `-16 -32`.
 
+### Qual origin a sua arte quer (e como descobrir sem chutar)
+
+Duas famílias, e confundi-las é o bug de "sprite deslocado":
+
+| A arte é… | `origin_y` | Por quê |
+|---|---|---|
+| algo que **fica de pé** no tile (ator, mob, árvore, poste) | `16 - altura` | a base do sprite cai em `apex+16`, o **centro** do losango |
+| o **próprio losango** do tile (bloco de parede, escada, portal) | `-32` (num 64×64) | o losango da arte coincide com o do tile |
+
+`origin_x` é `-largura/2` nas duas.
+
+Para saber em qual família uma célula cai, meça as **últimas linhas opacas** dela:
+
+```
+24, 20, 16, 12, 8, 4     -> afunila num ponto: base em losango  -> -32
+12, 12, 12, 10, 3, 2     -> um tronco: contato pontual          -> 16-h  (-48 em 64x64)
+52, 52, 50, 50, 48, 48   -> base chapada (grade quadrada)       -> 16-h, e ver abaixo
+```
+
+**Arte do Tibia cai quase sempre na terceira linha.** Tibia não é isométrico: a grade
+dele é de 32×32 alinhada à tela, então a pegada de uma caixa importada é um
+**quadrado** e nunca vai casar com o losango — dá para plantá-la no lugar certo, não
+para fazer a pegada bater sem redesenhar. Foi o caso do 101 (árvore) e do 102 (caixa),
+que estavam com `-32` e desenhavam 16px baixo demais, derramando no tile da frente.
+
 Trocar só a arte (redesenhar o PNG) não exige recompilar nada. Mudar o layout
 (mover regiões) é editar o `atlas.txt`. Só quando o *comportamento de jogo* muda é
 que se toca em C++.

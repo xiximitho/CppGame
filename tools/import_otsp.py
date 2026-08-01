@@ -228,13 +228,15 @@ def main(argv):
                          "and right are a coin toss on a creature with no face, so "
                          "this is the knob to flip when a mob walks sideways wrong.")
     ap.add_argument("--assets", default="assets", help="asset root to write into")
-    ap.add_argument("--tilt", type=int, default=30, metavar="DEG",
+    ap.add_argument("--tilt", type=int, default=0, metavar="DEG",
                     help="clockwise lean in degrees, about the sprite's feet "
-                         "(default 30). These sheets draw creatures for a world whose "
-                         "grid is axis-aligned on screen; on an isometric diamond they "
-                         "land looking like they fell over, and ~30 stands them up. "
-                         "Pass 0 for art that is already upright, or tune it by eye in "
-                         "the editor's F4 preview.")
+                         "(default 0, upright). The OTSP creatures are drawn UPRIGHT "
+                         "in the sheet and the importer copies cells verbatim, so any "
+                         "lean here is a lean the art did not have: the pivot is the "
+                         "sprite's feet, and 30 degrees slides a 32px body ~16px "
+                         "sideways, which reads as the creature falling off its tile. "
+                         "Keep 0 unless a sheet really draws a creature leaning, and "
+                         "check it in the editor's F4 preview.")
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would happen and write nothing")
     opt = ap.parse_args(argv)
