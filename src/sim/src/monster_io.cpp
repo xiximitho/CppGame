@@ -134,7 +134,38 @@ bool parse_monster_catalogue(const std::string& text, MonsterRegistry& out,
         } else if (key == "leash") {
             current->leash = static_cast<std::uint8_t>(clamped(value, 0, 255));
         } else if (key == "loot") {
-            current->loot = static_cast<ItemTypeId>(clamped(value, 0, 65535));
+            // Forms:
+            //   loot <item_id>                         → max 1, chance 100%
+            //   loot <item_id> <max_count>             → chance 100%
+            //   loot <item_id> <max_count> <chance>    → chance / kLootChanceScale
+            // loot 0 is "nothing" (no row).
+            const auto item =
+                static_cast<ItemTypeId>(clamped(value, 0, 65535));
+            if (item == kItemNone) {
+                continue;
+            }
+            std::int64_t max_count = 1;
+            std::int64_t chance = static_cast<std::int64_t>(kLootChanceScale);
+            std::int64_t second = 0;
+            if (fields >> second) {
+                max_count = second;
+                std::int64_t third = 0;
+                if (fields >> third) {
+                    chance = third;
+                }
+            }
+            if (max_count < 1) {
+                return fail("'loot' max_count must be at least 1" + where);
+            }
+            if (chance < 0) {
+                return fail("'loot' chance must be >= 0" + where);
+            }
+            current->loot_table.push_back(LootEntry{
+                item,
+                static_cast<std::uint16_t>(clamped(max_count, 1, 65535)),
+                static_cast<std::uint32_t>(
+                    clamped(chance, 0, static_cast<std::int64_t>(kLootChanceScale))),
+            });
         } else {
             // Unknown keys are an error, not ignored: a silently dropped `speed`
             // where the field is called `step_ticks` is a mob that keeps its old

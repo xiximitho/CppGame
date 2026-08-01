@@ -185,19 +185,75 @@ TEST_CASE("authored spawns skip what they cannot place") {
     CHECK(world.occupant(TilePos{4, 4, 0}) == kInvalidNetId);
 }
 
-TEST_CASE("a monster drops its class loot when it dies") {
+TEST_CASE("a monster leaves a phantom corpse with class loot when it dies") {
     World world = open_world();
     const entt::entity rat = spawn_monster(world, monsters::kRat, TilePos{8, 8, 0});
     REQUIRE((rat != entt::null));
     const NetId id = world.registry().get<CActor>(rat).net_id;
+    const TilePos where{8, 8, 0};
 
     REQUIRE(world.apply_damage(id, default_monsters().get(monsters::kRat).max_hp));
 
-    // No CRespawn on a monster: it is gone, and what it carried is on the floor.
+    // No CRespawn on a monster: it is gone; loot sits on a CCorpse, not the floor.
     CHECK((world.lookup(id) == entt::null));
-    const std::vector<ItemStack>* pile =
-        world.ground_items_at(TilePos{8, 8, 0});
-    REQUIRE(pile != nullptr);
-    REQUIRE(pile->size() == 1U);
-    CHECK((*pile)[0].id == default_monsters().get(monsters::kRat).loot);
+    CHECK(world.ground_items_at(where) == nullptr);
+    CHECK(world.occupant(where) == kInvalidNetId);  // corpse is not occupancy
+
+    entt::entity corpse = entt::null;
+    for (const auto [entity, pos] :
+         world.registry().view<CCorpse, CPosition>().each()) {
+        if (pos.tile == where) {
+            corpse = entity;
+            break;
+        }
+    }
+    REQUIRE((corpse != entt::null));
+    const auto& pack = world.registry().get<CInventory>(corpse);
+    REQUIRE(pack.items.size() == 1U);
+    CHECK(pack.items[0].id ==
+          default_monsters().get(monsters::kRat).loot_table[0].item);
+}
+
+TEST_CASE("walking onto a corpse does not auto-loot; take_from_corpse does") {
+    World world = open_world();
+    const TilePos where{6, 5, 0};
+    const NetId hero = world.allocate_net_id();
+    world.spawn_actor(hero, TilePos{5, 5, 0}, 0);
+    world.registry().emplace<CInventory>(world.lookup(hero));
+
+    const entt::entity rat = spawn_monster(world, monsters::kRat, where);
+    REQUIRE((rat != entt::null));
+    const NetId mob = world.registry().get<CActor>(rat).net_id;
+    REQUIRE(world.apply_damage(mob, default_monsters().get(monsters::kRat).max_hp));
+    REQUIRE_FALSE(world.registry().view<CCorpse>().empty());
+
+    world.request_walk(hero, Direction::East);
+    for (int i = 0; i < static_cast<int>(kDefaultStepTicks) + 3; ++i) {
+        world.step();
+    }
+    // Still there: walk-over no longer scoops the bag.
+    REQUIRE_FALSE(world.registry().view<CCorpse>().empty());
+    CHECK(world.registry().get<CInventory>(world.lookup(hero)).items.empty());
+
+    REQUIRE(world.take_from_corpse(hero, where, 0));
+    CHECK(world.registry().view<CCorpse>().empty());
+    const auto& pack = world.registry().get<CInventory>(world.lookup(hero));
+    REQUIRE_FALSE(pack.items.empty());
+    CHECK(pack.items[0].id ==
+          default_monsters().get(monsters::kRat).loot_table[0].item);
+}
+
+TEST_CASE("take_from_corpse refuses when the taker is too far") {
+    World world = open_world();
+    const TilePos where{8, 8, 0};
+    const NetId hero = world.allocate_net_id();
+    world.spawn_actor(hero, TilePos{2, 2, 0}, 0);
+    world.registry().emplace<CInventory>(world.lookup(hero));
+
+    const entt::entity rat = spawn_monster(world, monsters::kRat, where);
+    const NetId mob = world.registry().get<CActor>(rat).net_id;
+    REQUIRE(world.apply_damage(mob, default_monsters().get(monsters::kRat).max_hp));
+
+    CHECK_FALSE(world.take_from_corpse(hero, where, 0));
+    CHECK_FALSE(world.registry().view<CCorpse>().empty());
 }

@@ -19,6 +19,13 @@ struct GroundItemView {
     sim::ItemTypeId id = sim::kItemNone;
 };
 
+/// A non-empty phantom corpse (loot bag) on a tile. Drawn as a bag icon; contents
+/// feed the loot panel when the player opens it.
+struct CorpseView {
+    sim::TilePos                tile;
+    std::vector<sim::ItemStack> items;
+};
+
 /// Everything the renderer is allowed to know about the world.
 ///
 /// Note what is absent: no entt::registry, no World. The renderer draws a list of
@@ -42,6 +49,9 @@ struct WorldView {
     /// Loot lying on the ground (one entry per tile, the top item), for drawing.
     /// Solo fills it; remote leaves it empty until it is sent over the wire.
     std::vector<GroundItemView> ground_items;
+
+    /// Non-empty monster corpses (bag icons). Solo fills; remote TODO with protocol.
+    std::vector<CorpseView> corpses;
 };
 
 /// Where the world comes from. Solo runs the simulation in-process; Remote
@@ -79,6 +89,10 @@ public:
     /// back to it. Server-validated, like every other intent.
     virtual void request_equip(sim::ItemTypeId item) = 0;
     virtual void request_unequip(sim::EquipSlot slot) = 0;
+
+    /// Take one stack from an open loot bag (`index` into CorpseView::items).
+    virtual void request_loot_take(sim::TilePos corpse_tile,
+                                   std::size_t index) = 0;
 
     virtual const WorldView& view() const = 0;
 

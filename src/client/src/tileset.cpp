@@ -309,6 +309,14 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
     // Solid white swatch for tinted UI fills (see AtlasEntry solid()).
     fill_rect(canvas, 232, 40, 8, 8, Rgba{255, 255, 255, 255});
 
+    // Loot bag: small brown pouch with a drawstring (16x16 at 240,240).
+    constexpr int bag_x = 240;
+    constexpr int bag_y = 240;
+    fill_rect(canvas, bag_x + 3, bag_y + 5, 10, 9, Rgba{148, 106, 58, 255});
+    fill_rect(canvas, bag_x + 4, bag_y + 6, 8, 7, Rgba{176, 128, 70, 255});
+    fill_rect(canvas, bag_x + 5, bag_y + 3, 6, 3, Rgba{120, 84, 44, 255});
+    fill_rect(canvas, bag_x + 7, bag_y + 1, 2, 3, Rgba{214, 170, 60, 255});
+
     Tileset tileset;
     tileset.texture_ =
         renderer.create_texture(canvas.data(), canvas.width(), canvas.height());
@@ -336,6 +344,7 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
                    -static_cast<float>(iso::kHalfTileWidth), 0.0F);
 
     tileset.solid_ = make_entry(234, 42, 4, 4, 0.0F, 0.0F);
+    tileset.bag_ = make_entry(240, 240, 16, 16, 0.0F, 0.0F);
 
     return tileset;
 }
@@ -440,6 +449,13 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
                 return false;
             }
             out.highlight_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+            ++bound;
+        } else if (kind == "bag") {
+            // Floor loot-bag for phantom corpses. No origin: drawn like an item icon.
+            if (!(fields >> x >> y >> w >> h)) {
+                return false;
+            }
+            out.bag_ = entry_from_pixels(atlas_w, atlas_h, x, y, w, h, 0.0F, 0.0F);
             ++bound;
         } else if (kind == "solid") {
             if (!(fields >> x >> y >> w >> h)) {

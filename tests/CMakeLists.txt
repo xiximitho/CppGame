@@ -17,6 +17,8 @@ add_executable(game_tests
     test_stairs.cpp
     test_shipped_maps.cpp
     test_monsters.cpp
+    test_loot.cpp
+    test_vocations.cpp
     test_spawners.cpp
     test_chase.cpp
     test_combat.cpp

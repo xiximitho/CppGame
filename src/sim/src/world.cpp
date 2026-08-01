@@ -1,13 +1,18 @@
 #include "sim/world.hpp"
 
+#include <utility>
 #include <vector>
+
+#include "sim/loot.hpp"
 
 namespace sim {
 
-World::World(TileMap map, ItemTypeRegistry item_types, MonsterRegistry monsters)
+World::World(TileMap map, ItemTypeRegistry item_types, MonsterRegistry monsters,
+             std::uint64_t rng_seed)
     : map_(std::move(map)),
       item_types_(std::move(item_types)),
-      monsters_(std::move(monsters)) {}
+      monsters_(std::move(monsters)),
+      rng_(rng_seed) {}
 
 std::uint64_t World::tile_key(TilePos pos) {
     // Bias into unsigned so negative coordinates still pack cleanly.
@@ -262,6 +267,59 @@ void World::drop_item(TilePos tile, ItemStack stack) {
     merge_stack(pile.items, stack);
 }
 
+entt::entity World::spawn_corpse(TilePos tile, std::vector<ItemStack> items) {
+    const entt::entity entity = registry_.create();
+    registry_.emplace<CPosition>(entity, CPosition{tile, Direction::South});
+    registry_.emplace<CCorpse>(entity);
+    registry_.emplace<CInventory>(entity, CInventory{std::move(items)});
+    return entity;
+}
+
+bool World::take_from_corpse(NetId taker, TilePos corpse_tile,
+                             std::size_t index) {
+    const entt::entity actor = lookup(taker);
+    if (actor == entt::null) {
+        return false;
+    }
+    auto* inventory = registry_.try_get<CInventory>(actor);
+    const auto* pos = registry_.try_get<CPosition>(actor);
+    if (inventory == nullptr || pos == nullptr) {
+        return false;
+    }
+    // Standing on the bag or on an adjacent tile — same reach as melee.
+    const int distance = tile_distance(pos->tile, corpse_tile);
+    if (distance < 0 || distance > 1) {
+        return false;
+    }
+
+    entt::entity corpse = entt::null;
+    for (const auto [entity, cpos] :
+         registry_.view<CCorpse, CPosition>().each()) {
+        if (cpos.tile == corpse_tile) {
+            corpse = entity;
+            break;
+        }
+    }
+    if (corpse == entt::null) {
+        return false;
+    }
+    auto& bag = registry_.get<CInventory>(corpse);
+    if (index >= bag.items.size()) {
+        return false;
+    }
+
+    const ItemStack stack = bag.items[index];
+    bag.items.erase(bag.items.begin() +
+                    static_cast<std::ptrdiff_t>(index));
+    for (std::uint16_t n = 0; n < stack.count; ++n) {
+        add_to_inventory(*inventory, stack.id);
+    }
+    if (bag.items.empty()) {
+        registry_.destroy(corpse);
+    }
+    return true;
+}
+
 const std::vector<ItemStack>* World::ground_items_at(TilePos tile) const {
     const auto it = ground_.find(tile_key(tile));
     return it == ground_.end() ? nullptr : &it->second.items;
@@ -365,20 +423,28 @@ bool World::apply_damage(NetId net_id, std::int32_t amount) {
         registry_.remove<CTarget>(entity);
         registry_.emplace_or_replace<CDead>(entity, CDead{tick_ + kRespawnTicks});
     } else {
-        // A monster spills its loot where it fell, then vanishes.
+        // Monster death: roll the class table into a phantom corpse (plus anything
+        // it was carrying). The corpse does not occupy the tile.
         if (const auto* pos = registry_.try_get<CPosition>(entity)) {
             const TilePos where = pos->tile;
+            std::vector<ItemStack> loot;
+            if (const auto* monster = registry_.try_get<CMonster>(entity)) {
+                loot = roll_monster_loot(monsters_.get(monster->type), rng_);
+            }
             if (const auto* inventory = registry_.try_get<CInventory>(entity)) {
                 for (const ItemStack& stack : inventory->items) {
-                    drop_item(where, stack);
+                    loot.push_back(stack);
                 }
             }
             if (const auto* equipment = registry_.try_get<CEquipment>(entity)) {
                 for (const ItemTypeId id : equipment->slots) {
                     if (id != kItemNone) {
-                        drop_item(where, ItemStack{id, 1});
+                        loot.push_back(ItemStack{id, 1});
                     }
                 }
+            }
+            if (!loot.empty()) {
+                spawn_corpse(where, std::move(loot));
             }
         }
         despawn(net_id);
@@ -456,9 +522,8 @@ void World::step() {
         pos.tile = walk.to;
         registry_.erase<CWalk>(entity);
 
-        // Walk over loot to pick it up (actors with a backpack only). Before the
-        // stairs, so loot dropped on a stair tile is still collected by the actor
-        // that walked onto it.
+        // Walk over ground piles only. Phantom corpses are opened by click
+        // (take_from_corpse); auto-scooping them would skip the loot bag UI.
         if (auto* inventory = registry_.try_get<CInventory>(entity)) {
             const auto pile = ground_.find(tile_key(pos.tile));
             if (pile != ground_.end()) {

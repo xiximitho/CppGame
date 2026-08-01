@@ -9,6 +9,7 @@
 
 #include "client/battle_list.hpp"
 #include "client/content.hpp"
+#include "client/corpse_loot_ui.hpp"
 #include "client/damage_feed.hpp"
 #include "client/effect_feed.hpp"
 #include "client/input.hpp"
@@ -23,6 +24,8 @@
 #include "net/protocol.hpp"
 #include "platform/paths.hpp"
 #include "platform/vfs.hpp"
+
+#include <optional>
 
 namespace {
 
@@ -72,7 +75,8 @@ void print_usage() {
         "\n"
         "controls:\n"
         "  WASD / arrows        walk\n"
-        "  left click / touch   step toward the tile\n"
+        "  left click / touch   step toward the tile; bag opens loot panel\n"
+        "  click item in loot   take into backpack\n"
         "  mouse wheel, +/-     zoom\n"
         "  F2                   toggle key scheme (screen-relative / grid)\n"
         "  Esc                  quit\n",
@@ -305,6 +309,8 @@ int main(int argc, char** argv) {
         client::DamageFeed damage_feed;
         client::EffectFeed effect_feed;
         bool show_inventory = false;
+        // Tile of the loot bag currently open in the left panel; nullopt = closed.
+        std::optional<sim::TilePos> open_loot;
         // Class names for the battle list. Presentation only: in network play the
         // server owns the numbers, so a stale local file shows a wrong NAME and
         // never a wrong fight.
@@ -401,15 +407,40 @@ int main(int argc, char** argv) {
             // knowing about the inventory, so neither has to know the other exists.
             const float battle_top = show_inventory ? 300.0F : 24.0F;
 
-            // A click goes to the inventory panel first (when open), then to the
-            // battle list, then to the world: on another actor it attacks, on the
-            // ground it walks. Only the intent is sent; the simulation owns fight,
-            // route and inventory.
+            // A click goes to the open loot panel first, then the inventory, then
+            // the battle list, then the world. Clicking a bag opens its panel;
+            // clicking an item in that panel takes it into the backpack.
             if (click_requested) {
                 bool consumed = false;
-                if (show_inventory) {
+                const client::WorldView& view = session->view();
+
+                const client::CorpseView* open_corpse = nullptr;
+                if (open_loot.has_value()) {
+                    for (const client::CorpseView& corpse : view.corpses) {
+                        if (corpse.tile == *open_loot) {
+                            open_corpse = &corpse;
+                            break;
+                        }
+                    }
+                    if (open_corpse == nullptr) {
+                        open_loot.reset();  // emptied or despawned
+                    }
+                }
+
+                if (open_corpse != nullptr) {
+                    if (const auto index = client::corpse_loot_hit(
+                            *renderer, *open_corpse, mouse_x, mouse_y)) {
+                        session->request_loot_take(open_corpse->tile, *index);
+                        consumed = true;
+                    } else if (client::corpse_loot_panel_contains(
+                                   *renderer, *open_corpse, mouse_x, mouse_y)) {
+                        consumed = true;  // click on chrome, keep panel open
+                    }
+                }
+
+                if (!consumed && show_inventory) {
                     const client::InventoryAction action = client::inventory_hit(
-                        *renderer, session->view(), mouse_x, mouse_y);
+                        *renderer, view, mouse_x, mouse_y);
                     if (action.kind == client::InventoryAction::Kind::Equip) {
                         session->request_equip(action.item);
                         consumed = true;
@@ -422,35 +453,61 @@ int main(int argc, char** argv) {
 
                 if (!consumed) {
                     const sim::NetId picked = client::battle_list_hit(
-                        *renderer, tileset, session->view(), mouse_x, mouse_y,
-                        battle_top);
+                        *renderer, tileset, view, mouse_x, mouse_y, battle_top);
                     if (picked != sim::kInvalidNetId) {
                         session->request_attack(picked);
                         ui_target = picked;
+                        open_loot.reset();
                         consumed = true;
                     }
                 }
 
                 if (!consumed && params.hover_valid) {
-                    const client::WorldView& view = session->view();
-                    sim::NetId target = sim::kInvalidNetId;
+                    // Prefer opening a loot bag over walking onto its tile — but
+                    // only within reach (same floor, Chebyshev ≤ 1), like melee.
+                    bool opened_bag = false;
+                    sim::TilePos local_tile{};
+                    bool have_local = false;
                     for (const sim::ActorState& actor : view.actors) {
-                        if (actor.net_id != view.local_id &&
-                            actor.tile == params.hover) {
-                            target = actor.net_id;
+                        if (actor.net_id == view.local_id) {
+                            local_tile = actor.tile;
+                            have_local = true;
                             break;
                         }
                     }
-                    if (target != sim::kInvalidNetId) {
-                        // Naming the creature is the whole intent: the simulation
-                        // closes the distance and keeps closing it. Sending a
-                        // move_to as well would plan a route to where the target
-                        // stood, which is the stale-route bug this replaced.
-                        session->request_attack(target);
-                        ui_target = target;
-                    } else {
-                        ui_target = sim::kInvalidNetId;
-                        session->request_move_to(params.hover);
+                    for (const client::CorpseView& corpse : view.corpses) {
+                        if (corpse.tile != params.hover) {
+                            continue;
+                        }
+                        const int dist =
+                            have_local ? sim::tile_distance(local_tile, corpse.tile)
+                                       : -1;
+                        if (dist >= 0 && dist <= 1) {
+                            open_loot = corpse.tile;
+                            opened_bag = true;
+                            consumed = true;
+                        }
+                        // Out of reach: fall through to walk toward the bag.
+                        break;
+                    }
+
+                    if (!opened_bag) {
+                        open_loot.reset();
+                        sim::NetId target = sim::kInvalidNetId;
+                        for (const sim::ActorState& actor : view.actors) {
+                            if (actor.net_id != view.local_id &&
+                                actor.tile == params.hover) {
+                                target = actor.net_id;
+                                break;
+                            }
+                        }
+                        if (target != sim::kInvalidNetId) {
+                            session->request_attack(target);
+                            ui_target = target;
+                        } else {
+                            ui_target = sim::kInvalidNetId;
+                            session->request_move_to(params.hover);
+                        }
                     }
                 }
             }
@@ -514,6 +571,14 @@ int main(int argc, char** argv) {
             damage_feed.render(*renderer, tileset, now_seconds);
             if (show_inventory) {
                 client::draw_inventory(*renderer, tileset, session->view());
+            }
+            if (open_loot.has_value()) {
+                for (const client::CorpseView& corpse : session->view().corpses) {
+                    if (corpse.tile == *open_loot) {
+                        client::draw_corpse_loot(*renderer, tileset, corpse);
+                        break;
+                    }
+                }
             }
             client::draw_battle_list(*renderer, tileset, session->view(),
                                      monster_types, ui_target, battle_top);

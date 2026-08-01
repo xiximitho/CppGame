@@ -8,6 +8,7 @@
 #include "sim/item_type.hpp"
 #include "sim/monster_type.hpp"
 #include "sim/types.hpp"
+#include "sim/vocation_type.hpp"
 
 namespace sim {
 
@@ -71,6 +72,21 @@ struct CPlayer {
     /// Last tile the map streamer sent chunks around, so the server knows when
     /// the player has moved far enough to need more of the world.
     TilePos last_streamed_center{-32767, -32767, 0};
+};
+
+/// Permanent vocation (Grimhold). Present on player actors once creation picks
+/// one; absent means "legacy / not yet assigned" during the migration.
+struct CVocation {
+    VocationId id = kVocationNone;
+};
+
+/// Level, experience and mana. HP still lives on CHealth; max_hp/max_mana are
+/// recomputed from vocation + level when XP lands (not wired yet).
+struct CProgress {
+    std::uint16_t level = 1;
+    std::uint32_t xp    = 0;
+    std::int32_t  mana  = 0;
+    std::int32_t  max_mana = 0;
 };
 
 /// Innate combat numbers, independent of anything worn.
@@ -161,6 +177,11 @@ struct CRespawn {
 struct CDead {
     Tick respawn_tick = 0;
 };
+
+/// Phantom corpse: inventory on a tile that does NOT occupy occupancy_. No
+/// CActor — invisible to snapshots until L2 wires a corpse view. Spawned when a
+/// monster dies; the tile stays walkable.
+struct CCorpse {};
 
 /// An actor walking a precomputed route, one step per tile.
 ///
