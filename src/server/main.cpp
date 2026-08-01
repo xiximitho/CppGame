@@ -21,8 +21,10 @@
 #include "sim/map_io.hpp"
 #include "sim/monster_io.hpp"
 #include "sim/rng.hpp"
+#include "sim/spell.hpp"
 #include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
+#include "sim/vocation_type.hpp"
 #include "store/content.hpp"
 #include "store/db.hpp"
 #include "store/players.hpp"
@@ -164,6 +166,8 @@ struct Options {
     /// How often connected players are written out, in seconds. A crash loses at
     /// most this much progress; zero disables periodic saving.
     int           save_every_seconds = 60;
+    /// Vocation for brand-new characters (returning saves keep their gear as-is).
+    sim::VocationId vocation = sim::vocations::kKnight;
 };
 
 /// Per-connection state. Deliberately outside sim/: which chunks a socket has
@@ -266,6 +270,7 @@ void print_usage() {
         "                   created and seeded if absent)\n"
         "  --players PATH   player save database (default players.db)\n"
         "  --save-every N   seconds between periodic saves, 0 to disable\n"
+        "  --vocation NAME  class for new characters (knight/paladin/mage/druid)\n"
         "  --help           this text\n",
         static_cast<unsigned>(net::kDefaultPort));
 }
@@ -297,6 +302,13 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.players_path = argv[++i];
         } else if (arg == "--save-every" && has_value) {
             options.save_every_seconds = std::atoi(argv[++i]);
+        } else if (arg == "--vocation" && has_value) {
+            const sim::VocationId parsed = sim::parse_vocation_token(argv[++i]);
+            if (parsed == sim::kVocationNone) {
+                LOG_WARN("unknown --vocation '%s'; keeping knight", argv[i]);
+            } else {
+                options.vocation = parsed;
+            }
         } else {
             LOG_WARN("ignoring unknown argument '%s'", arg.c_str());
         }
@@ -391,7 +403,8 @@ void stream_chunks(const sim::World& world, net::ITransport& transport,
 void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
                   Connection& connection, core::BitReader& reader,
                   std::uint64_t content_fingerprint, store::Db* players,
-                  const std::optional<sim::TilePos>& authored_spawn) {
+                  const std::optional<sim::TilePos>& authored_spawn,
+                  sim::VocationId vocation) {
     net::HelloMsg hello;
     if (!net::read_hello(reader, hello)) {
         send_reject(transport, connection.peer, "malformed hello");
@@ -492,18 +505,17 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
                  connection.name.c_str(), spawn.x, spawn.y,
                  static_cast<int>(spawn.z), health.hp, health.max_hp);
     } else {
-        // Starting kit, so a new player's attack/defense are data-driven from turn
-        // one. This is the fallback now, not the only path.
+        // Vocation owns kit / HP / mana. Body armour for everyone so casters
+        // are not naked on first login.
+        sim::apply_vocation(world, entity, vocation);
         {
-            auto& equipment = world.registry().emplace<sim::CEquipment>(entity);
-            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
-                sim::tiles::kSword;
-            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
-                sim::tiles::kArmor;
+            auto& equipment = world.registry().get<sim::CEquipment>(entity);
+            if (equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] ==
+                sim::kItemNone) {
+                equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
+                    sim::tiles::kArmor;
+            }
         }
-        world.registry().emplace<sim::CInventory>(
-            entity,
-            sim::CInventory{{{sim::tiles::kBow, 1}, {sim::tiles::kShield, 1}}});
     }
 
     connection.welcomed = true;
@@ -658,7 +670,8 @@ int main(int argc, char** argv) {
                         case net::MsgId::C2S_Hello:
                             handle_hello(world, rng, *transport, connection,
                                          reader, content_fingerprint,
-                                         players_db, authored_spawn);
+                                         players_db, authored_spawn,
+                                         options.vocation);
                             break;
 
                         case net::MsgId::C2S_Input: {
@@ -738,6 +751,17 @@ int main(int argc, char** argv) {
                                     connection.net_id,
                                     static_cast<sim::EquipSlot>(unequip.slot));
                             }
+                            break;
+                        }
+
+                        case net::MsgId::C2S_CastSpell: {
+                            net::CastSpellMsg cast;
+                            if (!net::read_cast_spell(reader, cast) ||
+                                !connection.welcomed) {
+                                break;
+                            }
+                            sim::cast_spell(world, connection.net_id, cast.spell,
+                                            cast.target);
                             break;
                         }
 

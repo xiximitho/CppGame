@@ -137,6 +137,18 @@ TEST_CASE("equip and unequip round trip") {
     CHECK(unequip.slot == 3U);
 }
 
+TEST_CASE("cast-spell round trips") {
+    const auto packet = encode([](core::BitWriter& writer) {
+        net::write_cast_spell(writer, net::CastSpellMsg{1, 42});
+    });
+    core::BitReader reader(packet.data(), packet.size());
+    REQUIRE(net::read_msg_id(reader) == net::MsgId::C2S_CastSpell);
+    net::CastSpellMsg cast;
+    REQUIRE(net::read_cast_spell(reader, cast));
+    CHECK(cast.spell == 1);
+    CHECK(cast.target == 42U);
+}
+
 TEST_CASE("welcome round trips") {
     const auto packet = encode([](core::BitWriter& writer) {
         net::WelcomeMsg welcome;

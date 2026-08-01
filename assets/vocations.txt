@@ -42,6 +42,7 @@ vocation 3 Mago elemental
   mana_per_level 30
   capacity       400
   kind           ranged
+  starter        310
 
 vocation 4 Druida
   code           DRU
@@ -52,6 +53,7 @@ vocation 4 Druida
   mana_per_level 30
   capacity       410
   kind           ranged
+  starter        310
 
 vocation 5 Ladino
   code           LAD

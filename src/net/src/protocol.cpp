@@ -87,6 +87,13 @@ void write_unequip(core::BitWriter& writer, const UnequipMsg& msg) {
     writer.flush();
 }
 
+void write_cast_spell(core::BitWriter& writer, const CastSpellMsg& msg) {
+    write_msg_id(writer, MsgId::C2S_CastSpell);
+    writer.write_bits(msg.spell, 16);
+    writer.write_bits(msg.target, 32);
+    writer.flush();
+}
+
 void write_effect(core::BitWriter& writer, const EffectMsg& msg) {
     write_msg_id(writer, MsgId::S2C_Effect);
     write_tile_pos(writer, msg.from);
@@ -174,6 +181,7 @@ MsgId read_msg_id(core::BitReader& reader) {
         case MsgId::C2S_Attack:   return MsgId::C2S_Attack;
         case MsgId::C2S_Equip:    return MsgId::C2S_Equip;
         case MsgId::C2S_Unequip:  return MsgId::C2S_Unequip;
+        case MsgId::C2S_CastSpell: return MsgId::C2S_CastSpell;
         case MsgId::S2C_Welcome:  return MsgId::S2C_Welcome;
         case MsgId::S2C_Reject:   return MsgId::S2C_Reject;
         case MsgId::S2C_Snapshot: return MsgId::S2C_Snapshot;
@@ -217,6 +225,12 @@ bool read_equip(core::BitReader& reader, EquipMsg& out) {
 
 bool read_unequip(core::BitReader& reader, UnequipMsg& out) {
     out.slot = static_cast<std::uint8_t>(reader.read_bits(8));
+    return !reader.overflowed();
+}
+
+bool read_cast_spell(core::BitReader& reader, CastSpellMsg& out) {
+    out.spell = static_cast<std::uint16_t>(reader.read_bits(16));
+    out.target = reader.read_bits(32);
     return !reader.overflowed();
 }
 

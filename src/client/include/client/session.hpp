@@ -8,8 +8,10 @@
 
 #include "sim/components.hpp"
 #include "sim/snapshot.hpp"
+#include "sim/spell.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
+#include "sim/vocation_type.hpp"
 
 namespace client {
 
@@ -52,6 +54,11 @@ struct WorldView {
 
     /// Non-empty monster corpses (bag icons). Solo fills; remote TODO with protocol.
     std::vector<CorpseView> corpses;
+
+    /// Local player's vocation and mana (solo fills; remote TODO until on wire).
+    sim::VocationId vocation = sim::kVocationNone;
+    std::int32_t    mana = 0;
+    std::int32_t    max_mana = 0;
 };
 
 /// Where the world comes from. Solo runs the simulation in-process; Remote
@@ -94,6 +101,10 @@ public:
     virtual void request_loot_take(sim::TilePos corpse_tile,
                                    std::size_t index) = 0;
 
+    /// Cast a vocation spell; Damage spells need `target`.
+    virtual void request_cast_spell(sim::SpellId spell,
+                                    sim::NetId target = sim::kInvalidNetId) = 0;
+
     virtual const WorldView& view() const = 0;
 
     /// Attack effects that occurred since the last call, for the client to
@@ -114,7 +125,9 @@ public:
 /// inside the APK on Android); the seeded procedural map is used when the file is
 /// missing or malformed, which keeps a clone with no map file runnable.
 std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers,
-                                           const std::string& map_path);
+                                           const std::string& map_path,
+                                           sim::VocationId vocation =
+                                               sim::vocations::kKnight);
 
 /// Connects to a server. Returns nullptr when the address cannot be resolved;
 /// connection failures after that surface through alive().

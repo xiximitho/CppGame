@@ -89,6 +89,12 @@ struct CProgress {
     std::int32_t  max_mana = 0;
 };
 
+/// Next tick the actor may cast any spell. One global GCD for V1 (hotbar has one
+/// spell per vocation anyway).
+struct CSpellCooldown {
+    Tick ready_tick = 0;
+};
+
 /// Innate combat numbers, independent of anything worn.
 ///
 /// This is how a monster class hits harder than another without the simulation

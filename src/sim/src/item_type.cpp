@@ -92,6 +92,11 @@ ItemTypeRegistry build_default_registry() {
                           .slot = EquipSlot::Weapon, .attack = 8,
                           .attack_kind = AttackKind::Ranged, .attack_range = 4,
                           .effect = kEffectRangedShot});
+    registry.add(ItemType{.id = tiles::kStaff, .flags = ItemFlag::Pickable,
+                          .weight = 70U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 10,
+                          .attack_kind = AttackKind::Melee, .attack_range = 1,
+                          .effect = kEffectMeleeGlow});
     registry.add(ItemType{.id = tiles::kShield, .flags = ItemFlag::Pickable,
                           .weight = 90U, .equippable = true,
                           .slot = EquipSlot::Shield, .defense = 6});

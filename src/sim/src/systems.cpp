@@ -6,6 +6,7 @@
 
 #include "sim/components.hpp"
 #include "sim/item_type.hpp"
+#include "sim/weapon.hpp"
 
 namespace sim {
 
@@ -13,6 +14,11 @@ CombatStats combat_stats(const World& world, entt::entity actor) {
     CombatStats stats;
     const entt::registry& registry = world.registry();
     const ItemTypeRegistry& items = world.item_types();
+
+    VocationId vocation = kVocationNone;
+    if (const auto* voc = registry.try_get<CVocation>(actor)) {
+        vocation = voc->id;
+    }
 
     // Innate stats first: a monster class's damage and reach live here, gear adds
     // to them. A player has no CCombat, so this is a no-op for players.
@@ -29,11 +35,14 @@ CombatStats combat_stats(const World& world, entt::entity actor) {
                 continue;
             }
             const ItemType& type = items.get(id);
-            stats.attack =
-                static_cast<std::int32_t>(stats.attack + type.attack);
             stats.defense =
                 static_cast<std::int32_t>(stats.defense + type.defense);
             if (type.is_weapon()) {
+                const int percent =
+                    vocation_weapon_percent(vocation, weapon_family(id));
+                const auto scaled = static_cast<std::int32_t>(
+                    (static_cast<std::int32_t>(type.attack) * percent) / 100);
+                stats.attack = static_cast<std::int32_t>(stats.attack + scaled);
                 stats.range = type.attack_range;
                 stats.effect = type.effect;
             }

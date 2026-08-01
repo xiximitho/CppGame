@@ -18,6 +18,7 @@
 #include "sim/map_gen.hpp"
 #include "sim/map_io.hpp"
 #include "sim/monster_io.hpp"
+#include "sim/spell.hpp"
 #include "sim/systems.hpp"
 #include "sim/tile_ids.hpp"
 #include "sim/world.hpp"
@@ -90,7 +91,8 @@ public:
     /// Takes the built world by value so it can be MOVED in: the map file is read
     /// once, and what it said about the spawn and the mobs is consumed here rather
     /// than kept as state. make_solo_session() does the reading.
-    SoloSession(SoloWorld built, std::uint64_t seed, int wanderers)
+    SoloSession(SoloWorld built, std::uint64_t seed, int wanderers,
+                sim::VocationId vocation)
         : world_(std::move(built.world)),
           rng_(seed ^ 0x9E3779B97F4A7C15ULL) {
         // The map's own spawn point wins, but only if it is actually walkable —
@@ -113,19 +115,17 @@ public:
         world_.registry().emplace<sim::CRespawn>(local_entity,
                                                  sim::CRespawn{spawn});
 
-        // Starting kit: a sword and body armour worn, spares in the pack.
+        // Vocation owns the kit, HP and mana. Body armour is given to everyone
+        // on top so casters are not naked.
+        sim::apply_vocation(world_, local_entity, vocation);
         {
-            auto& equipment =
-                world_.registry().emplace<sim::CEquipment>(local_entity);
-            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Weapon)] =
-                sim::tiles::kSword;
-            equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
-                sim::tiles::kArmor;
+            auto& equipment = world_.registry().get<sim::CEquipment>(local_entity);
+            if (equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] ==
+                sim::kItemNone) {
+                equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
+                    sim::tiles::kArmor;
+            }
         }
-        world_.registry().emplace<sim::CInventory>(
-            local_entity, sim::CInventory{{{sim::tiles::kBow, 1},
-                                           {sim::tiles::kShield, 1},
-                                           {sim::tiles::kHelmet, 1}}});
 
         // Authored mobs first: they are the ones the map author aimed, and they
         // hold their tiles against the random ones that come after.
@@ -203,6 +203,11 @@ public:
                 world_.take_from_corpse(local_id_, pending_loot_tile_,
                                        pending_loot_index_);
             }
+            if (pending_cast_) {
+                pending_cast_ = false;
+                sim::cast_spell(world_, local_id_, pending_spell_,
+                                pending_spell_target_);
+            }
 
             // Same order as the server's loop, for the same reason: monsters
             // decide, then followers step, then swings land.
@@ -249,6 +254,12 @@ public:
         pending_loot_ = true;
         pending_loot_tile_ = corpse_tile;
         pending_loot_index_ = index;
+    }
+
+    void request_cast_spell(sim::SpellId spell, sim::NetId target) override {
+        pending_cast_ = true;
+        pending_spell_ = spell;
+        pending_spell_target_ = target;
     }
 
     const WorldView& view() const override { return view_; }
@@ -341,6 +352,15 @@ private:
                 view_.corpses.push_back(CorpseView{pos.tile, inv.items});
             }
         }
+
+        if (const auto* voc = world_.registry().try_get<sim::CVocation>(local)) {
+            view_.vocation = voc->id;
+        }
+        if (const auto* progress =
+                world_.registry().try_get<sim::CProgress>(local)) {
+            view_.mana = progress->mana;
+            view_.max_mana = progress->max_mana;
+        }
     }
 
     sim::World  world_;
@@ -363,6 +383,9 @@ private:
     bool           pending_loot_ = false;
     sim::TilePos   pending_loot_tile_{};
     std::size_t    pending_loot_index_ = 0;
+    bool           pending_cast_ = false;
+    sim::SpellId   pending_spell_ = sim::kSpellNone;
+    sim::NetId     pending_spell_target_ = sim::kInvalidNetId;
     std::vector<sim::AttackEvent> effects_buffer_;
     int            spawned_wanderers_ = 0;
 };
@@ -370,9 +393,10 @@ private:
 }  // namespace
 
 std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers,
-                                           const std::string& map_path) {
+                                           const std::string& map_path,
+                                           sim::VocationId vocation) {
     return std::make_unique<SoloSession>(build_solo_world(seed, map_path.c_str()),
-                                         seed, wanderers);
+                                         seed, wanderers, vocation);
 }
 
 }  // namespace client

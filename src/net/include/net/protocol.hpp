@@ -18,7 +18,9 @@ namespace net {
 /// 3: added C2S_Attack (auto-attack a target).
 /// 4: added S2C_Effect (attack effect sprite).
 /// 5: added C2S_Equip / C2S_Unequip (interactive inventory).
-constexpr std::uint32_t kProtocolVersion = 6;
+/// 6: content hash on Hello.
+/// 7: added C2S_CastSpell (vocation spells).
+constexpr std::uint32_t kProtocolVersion = 7;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -53,6 +55,7 @@ enum class MsgId : std::uint8_t {
     C2S_Attack   = 4,
     C2S_Equip    = 5,
     C2S_Unequip  = 6,
+    C2S_CastSpell = 7,
 
     // Server to client.
     S2C_Welcome  = 64,
@@ -110,6 +113,13 @@ struct UnequipMsg {
     std::uint8_t slot = 0;  ///< index into EquipSlot; server bounds-checks
 };
 
+/// Cast a vocation spell. `target` is ignored for self-heals; Damage spells need
+/// a living NetId in range.
+struct CastSpellMsg {
+    std::uint16_t spell = 0;
+    sim::NetId    target = sim::kInvalidNetId;
+};
+
 struct WelcomeMsg {
     sim::NetId    your_id = sim::kInvalidNetId;
     sim::Tick     tick = 0;
@@ -149,6 +159,7 @@ void write_move_to(core::BitWriter& writer, const MoveToMsg& msg);
 void write_attack(core::BitWriter& writer, const AttackMsg& msg);
 void write_equip(core::BitWriter& writer, const EquipMsg& msg);
 void write_unequip(core::BitWriter& writer, const UnequipMsg& msg);
+void write_cast_spell(core::BitWriter& writer, const CastSpellMsg& msg);
 void write_welcome(core::BitWriter& writer, const WelcomeMsg& msg);
 void write_reject(core::BitWriter& writer, const RejectMsg& msg);
 void write_snapshot(core::BitWriter& writer, const sim::Snapshot& snapshot);
@@ -167,6 +178,7 @@ bool read_move_to(core::BitReader& reader, MoveToMsg& out);
 bool read_attack(core::BitReader& reader, AttackMsg& out);
 bool read_equip(core::BitReader& reader, EquipMsg& out);
 bool read_unequip(core::BitReader& reader, UnequipMsg& out);
+bool read_cast_spell(core::BitReader& reader, CastSpellMsg& out);
 bool read_welcome(core::BitReader& reader, WelcomeMsg& out);
 bool read_reject(core::BitReader& reader, RejectMsg& out);
 bool read_snapshot(core::BitReader& reader, sim::Snapshot& out);

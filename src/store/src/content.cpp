@@ -61,7 +61,7 @@ struct SeedName {
     std::string_view name;
 };
 
-constexpr std::array<SeedName, 16> kSeedNames{{
+constexpr std::array<SeedName, 17> kSeedNames{{
     {sim::tiles::kGrass, "grass"},
     {sim::tiles::kDirt, "dirt"},
     {sim::tiles::kStone, "stone"},
@@ -78,6 +78,7 @@ constexpr std::array<SeedName, 16> kSeedNames{{
     {sim::tiles::kBoots, "boots"},
     {sim::tiles::kRing, "ring"},
     {sim::tiles::kAmulet, "amulet"},
+    {sim::tiles::kStaff, "staff"},
 }};
 
 std::string_view name_for(sim::ItemTypeId id) {

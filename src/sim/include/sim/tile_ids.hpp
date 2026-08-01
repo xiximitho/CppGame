@@ -43,5 +43,7 @@ constexpr TileId kLegs   = 305;
 constexpr TileId kBoots  = 306;
 constexpr TileId kRing   = 307;
 constexpr TileId kAmulet = 308;
+/// Caster weapon. Mage and Druid fight at full strength with it; others do not.
+constexpr TileId kStaff  = 310;
 
 }  // namespace sim::tiles

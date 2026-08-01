@@ -114,6 +114,8 @@ enum class AttackKind : std::uint8_t { Melee, Ranged };
 /// Attack effect ids the client renders (see client/effect_feed). 0 = none.
 constexpr std::uint8_t kEffectMeleeGlow  = 1;
 constexpr std::uint8_t kEffectRangedShot = 2;
+constexpr std::uint8_t kEffectFirebolt   = 3;
+constexpr std::uint8_t kEffectNature     = 4;
 
 /// One entry in the catalogue. Deliberately POD-like and free of any pointer to
 /// presentation, so it serialises to the content blob as a fixed record.

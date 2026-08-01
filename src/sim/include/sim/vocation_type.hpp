@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sim/item_type.hpp"
@@ -64,5 +65,9 @@ private:
 
 /// Fallback when assets/vocations.txt is missing. Must agree with the file.
 const VocationRegistry& default_vocations();
+
+/// CLI / create-character token → id. Accepts codes and English/Portuguese
+/// names (`mage`, `mago`, `MAG`). Unknown → `kVocationNone`.
+VocationId parse_vocation_token(std::string_view text);
 
 }  // namespace sim

@@ -1,5 +1,8 @@
 #include "sim/vocation_type.hpp"
 
+#include <string>
+#include <string_view>
+
 #include "sim/tile_ids.hpp"
 
 namespace sim {
@@ -81,7 +84,7 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 30,
             .capacity = 400,
             .preferred_kind = AttackKind::Ranged,
-            .starter_items = {},
+            .starter_items = {tiles::kStaff},
         });
         r.add(VocationType{
             .id = vocations::kDruid,
@@ -94,7 +97,7 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 30,
             .capacity = 410,
             .preferred_kind = AttackKind::Ranged,
-            .starter_items = {},
+            .starter_items = {tiles::kStaff},
         });
         // Stubs: present in the catalogue so ids stay reserved; no starter kit
         // and weak numbers until stealth / summons exist.
@@ -128,6 +131,36 @@ const VocationRegistry& default_vocations() {
         return r;
     }();
     return registry;
+}
+
+VocationId parse_vocation_token(std::string_view text) {
+    auto lower = [](char c) {
+        return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    };
+    std::string key;
+    key.reserve(text.size());
+    for (const char ch : text) {
+        key.push_back(lower(ch));
+    }
+    if (key == "1" || key == "knight" || key == "cavaleiro" || key == "cav") {
+        return vocations::kKnight;
+    }
+    if (key == "2" || key == "paladin" || key == "paladino" || key == "pal") {
+        return vocations::kPaladin;
+    }
+    if (key == "3" || key == "mage" || key == "mago" || key == "mag") {
+        return vocations::kMage;
+    }
+    if (key == "4" || key == "druid" || key == "druida" || key == "dru") {
+        return vocations::kDruid;
+    }
+    if (key == "5" || key == "rogue" || key == "ladino" || key == "lad") {
+        return vocations::kRogue;
+    }
+    if (key == "6" || key == "necro" || key == "necromante" || key == "nec") {
+        return vocations::kNecro;
+    }
+    return kVocationNone;
 }
 
 }  // namespace sim

@@ -17,6 +17,7 @@
 #include "client/iso.hpp"
 #include "client/sdl_backend.hpp"
 #include "client/session.hpp"
+#include "client/spell_hotbar_ui.hpp"
 #include "client/tileset.hpp"
 #include "client/world_render.hpp"
 #include "core/log.hpp"
@@ -24,6 +25,8 @@
 #include "net/protocol.hpp"
 #include "platform/paths.hpp"
 #include "platform/vfs.hpp"
+#include "sim/spell.hpp"
+#include "sim/vocation_type.hpp"
 
 #include <optional>
 
@@ -52,6 +55,9 @@ struct Options {
     /// someone to send you what they actually see.
     std::string screenshot_path;
     int         screenshot_frame = 45;
+    /// Class kit for solo (and the client's idea of vocation for the hotbar in
+    /// remote play until mana/vocation ride the snapshot).
+    sim::VocationId vocation = sim::vocations::kKnight;
 };
 
 void print_usage() {
@@ -71,12 +77,14 @@ void print_usage() {
         "  --zoom N             initial zoom (default 2)\n"
         "  --screenshot FILE    render a few frames, write a BMP, exit\n"
         "  --screenshot-frame N  which frame to capture (default 45)\n"
+        "  --vocation NAME      class (knight/paladin/mage/druid; default knight)\n"
         "  --help               this text\n"
         "\n"
         "controls:\n"
         "  WASD / arrows        walk\n"
         "  left click / touch   step toward the tile; bag opens loot panel\n"
         "  click item in loot   take into backpack\n"
+        "  1                    cast vocation spell (mage needs a target)\n"
         "  mouse wheel, +/-     zoom\n"
         "  F2                   toggle key scheme (screen-relative / grid)\n"
         "  Esc                  quit\n",
@@ -125,6 +133,13 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.screenshot_path = argv[++i];
         } else if (arg == "--screenshot-frame" && has_value) {
             options.screenshot_frame = std::atoi(argv[++i]);
+        } else if (arg == "--vocation" && has_value) {
+            const sim::VocationId parsed = sim::parse_vocation_token(argv[++i]);
+            if (parsed == sim::kVocationNone) {
+                LOG_WARN("unknown --vocation '%s'; keeping knight", argv[i]);
+            } else {
+                options.vocation = parsed;
+            }
         } else {
             LOG_WARN("ignoring unknown argument '%s'", arg.c_str());
         }
@@ -285,7 +300,8 @@ int main(int argc, char** argv) {
         std::unique_ptr<client::Session> session;
         if (options.solo) {
             session = client::make_solo_session(options.seed, options.wanderers,
-                                                options.map_path);
+                                                options.map_path,
+                                                options.vocation);
         } else {
             session = client::make_remote_session(options.host, options.port,
                                                   options.name);
@@ -357,6 +373,21 @@ int main(int argc, char** argv) {
                             zoom = SDL_max(zoom / 1.25F, 0.5F);
                         } else if (event.key.scancode == SDL_SCANCODE_I) {
                             show_inventory = !show_inventory;
+                        } else if (event.key.scancode == SDL_SCANCODE_1 ||
+                                   event.key.scancode == SDL_SCANCODE_KP_1) {
+                            const sim::VocationId voc =
+                                session->view().vocation != sim::kVocationNone
+                                    ? session->view().vocation
+                                    : options.vocation;
+                            const auto spells = sim::spells_for_vocation(voc);
+                            if (!spells.empty()) {
+                                const sim::SpellDef& spell = spells[0];
+                                const sim::NetId target =
+                                    spell.kind == sim::SpellKind::Damage
+                                        ? ui_target
+                                        : sim::kInvalidNetId;
+                                session->request_cast_spell(spell.id, target);
+                            }
                         }
                         break;
 
@@ -582,6 +613,8 @@ int main(int argc, char** argv) {
             }
             client::draw_battle_list(*renderer, tileset, session->view(),
                                      monster_types, ui_target, battle_top);
+            client::draw_spell_hotbar(*renderer, tileset, session->view(),
+                                      options.vocation);
             renderer->end_frame();
 
             ++frames;

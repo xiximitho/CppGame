@@ -63,6 +63,20 @@ void EffectFeed::render(Renderer2D& renderer, const Tileset& tileset,
             const float y = effect.from_y + (effect.to_y - effect.from_y) * t;
             blit(renderer, tileset, tileset.effect(sim::kEffectRangedShot), x, y,
                  2.0F, Color{255, 255, 255, 255});
+        } else if (effect.kind == sim::kEffectFirebolt) {
+            const float x = effect.from_x + (effect.to_x - effect.from_x) * t;
+            const float y = effect.from_y + (effect.to_y - effect.from_y) * t;
+            blit(renderer, tileset, tileset.effect(sim::kEffectRangedShot), x, y,
+                 2.4F, Color{255, 140, 40, 255});
+            const auto alpha = static_cast<std::uint8_t>((1.0F - t) * 200.0F);
+            blit(renderer, tileset, tileset.effect(sim::kEffectMeleeGlow),
+                 effect.to_x, effect.to_y, 0.5F + t * 0.5F,
+                 Color{255, 90, 20, alpha});
+        } else if (effect.kind == sim::kEffectNature) {
+            const auto alpha = static_cast<std::uint8_t>((1.0F - t) * 255.0F);
+            const float scale = 0.7F + t * 0.7F;
+            blit(renderer, tileset, tileset.effect(sim::kEffectMeleeGlow),
+                 effect.to_x, effect.to_y, scale, Color{80, 220, 120, alpha});
         } else {
             // Melee (or default): a glow blooming and fading on the target.
             const auto alpha = static_cast<std::uint8_t>((1.0F - t) * 255.0F);

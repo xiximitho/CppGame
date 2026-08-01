@@ -71,8 +71,8 @@ TEST_CASE("re-adding an id overwrites without inflating the count") {
 
 TEST_CASE("default registry has the base tile types plus the crate example") {
     const ItemTypeRegistry registry = build_default_registry();
-    // 6 tiles + crate + 2 stairs + portal + 9 equipment items.
-    CHECK(registry.count() == 19U);
+    // 6 tiles + crate + 2 stairs + portal + 10 equipment items (incl. staff).
+    CHECK(registry.count() == 20U);
 
     // The stairs are walkable objects: arriving on one is what moves the actor.
     CHECK(registry.get(tiles::kStairsUp).stair_delta_z() == 1);

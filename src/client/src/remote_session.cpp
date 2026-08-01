@@ -101,6 +101,13 @@ public:
         // Corpses are not on the wire yet (L2). Solo has the full path.
     }
 
+    void request_cast_spell(sim::SpellId spell, sim::NetId target) override {
+        send_reliable([&](core::BitWriter& writer) {
+            net::write_cast_spell(
+                writer, net::CastSpellMsg{spell, target});
+        });
+    }
+
     template <typename Write>
     void send_reliable(Write&& write) {
         if (transport_ == nullptr || view_.local_id == sim::kInvalidNetId) {
@@ -272,6 +279,7 @@ private:
             case net::MsgId::C2S_Attack:
             case net::MsgId::C2S_Equip:
             case net::MsgId::C2S_Unequip:
+            case net::MsgId::C2S_CastSpell:
             case net::MsgId::Invalid:
                 // Client-to-server ids arriving here mean a confused or hostile
                 // peer; ignoring is the correct response.
