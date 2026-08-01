@@ -32,6 +32,12 @@ AFW, AFH = 32, 48
 STAIR_Y = 256
 STAIR_IDS = (103, 104)  # up, down; sim::tiles::kStairsUp / kStairsDown
 
+# The warp mouth goes in the third slot of the stair band, which was empty: the
+# band is 64 tall and the row fits four 64x64 cells. Same walkable-object shape as
+# a stair, so it belongs beside them rather than in a band of its own.
+PORTAL_X, PORTAL_Y = 128, STAIR_Y
+PORTAL_ID = 105          # sim::tiles::kPortal
+
 # Monster bands: one row of 8 directions per class. Cell size is PER CLASS, not
 # fixed at the player's 32x48 — a rat in a knight-sized cell leaves its health bar
 # floating half a tile above it, because the bar hangs off the sprite's origin. The
@@ -335,9 +341,41 @@ def draw_stairs_down(px, ox, oy):
                      shade(top, 0.45))
 
 
+def draw_portal(px, ox, oy):
+    """A warp mouth: masonry rim around a violet gulf with a cyan spiral.
+
+    Deliberately NOT the stair-down pit, which is this same nest of diamonds in
+    stone greys. A pit reads as "lower" and a portal has to read as "somewhere
+    else", so the ramp goes violet instead of grey and gets the one spiral in the
+    tileset. It is the only floor tile with a colour nothing else uses, which is
+    the point: an author must be able to spot one across the map.
+    """
+    rim = (125, 116, 106)   # the wall block's stone, like the stairs
+    fill_diamond(px, ox, oy + TH, TW, TH, rgba(rim), shade(rim, 0.62))
+
+    # Nested diamonds, centred rather than sinking: a gulf, not a staircase.
+    gulf = ((92, 62, 148), (66, 42, 116), (38, 24, 74), (16, 10, 34))
+    for c, (w, h) in zip(gulf, ((52, 26), (40, 20), (28, 14), (16, 8))):
+        fill_diamond(px, ox + (TW - w) // 2, oy + TH + (TH - h) // 2, w, h,
+                     rgba(c), shade(c, 0.72))
+
+    # The spiral. y radius is halved because everything here is 2:1 — a circular
+    # swirl would read as standing upright instead of lying on the floor.
+    glow = (120, 220, 235)
+    cx, cy = ox + HALF_W, oy + TH + HALF_H
+    for step in range(26):
+        angle = step * 0.48
+        radius = 2.0 + step * 0.55
+        x = cx + int(round(math.cos(angle) * radius))
+        y = cy + int(round(math.sin(angle) * radius * 0.5))
+        px[x, y] = shade(glow, 1.0 - 0.015 * step)
+    fill_circle(px, cx, cy, 1, rgba((238, 248, 255)))
+
+
 def draw_stairs(px):
     draw_stairs_up(px, 0, STAIR_Y)
     draw_stairs_down(px, TW, STAIR_Y)
+    draw_portal(px, PORTAL_X, PORTAL_Y)
 
 
 def facing_marker(facing, reach=3):
@@ -458,7 +496,9 @@ def mob_meta_lines():
 
 def stair_meta_lines():
     return [f"object      {STAIR_IDS[0]}     0    {STAIR_Y}  64  64  -32      -32",
-            f"object      {STAIR_IDS[1]}     64   {STAIR_Y}  64  64  -32      -32"]
+            f"object      {STAIR_IDS[1]}     64   {STAIR_Y}  64  64  -32      -32",
+            f"object      {PORTAL_ID}     {PORTAL_X}  {PORTAL_Y}  64  64  "
+            f"-32      -32"]
 
 
 def already_bound(text, line):
@@ -467,11 +507,21 @@ def already_bound(text, line):
     Compared on the identifying fields only (kind + id, kind + appearance + dir for
     a mob), never on the whole line: a region someone moved by hand must not be
     quietly re-added at the old coordinates.
+
+    A `mobstrip` line counts as binding every `mob <appearance> <dir>` of that
+    appearance. The two kinds must not coexist for one appearance — atlas.txt is
+    read in order and the last binding wins — so re-adding the eight static lines
+    of an animated class silently un-animates it. Not hypothetical: it is what this
+    function did before this check existed, and the symptom is a mob that stops
+    walking while still moving.
     """
     fields = line.split()
+    existing = [row.split() for row in text.splitlines() if row.strip()]
+    if fields[0] == "mob" and any(row[:2] == ["mobstrip", fields[1]]
+                                  for row in existing if len(row) >= 2):
+        return True
     key = fields[:3] if fields[0] == "mob" else fields[:2]
-    return any(existing.split()[:len(key)] == key
-               for existing in text.splitlines() if existing.strip())
+    return any(row[:len(key)] == key for row in existing)
 
 
 def patch(out_dir):

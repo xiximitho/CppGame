@@ -32,6 +32,7 @@ from collections import deque
 GRASS, DIRT, STONE, WATER = 1, 2, 3, 4
 WALL, TREE, CRATE = 100, 101, 102
 STAIRS_UP, STAIRS_DOWN = 103, 104
+PORTAL = 105
 
 # The glyph vocabulary shared by every map below, so one legend reads the same
 # way in all of them. VOID is a space: no ground at all, an unwalkable hole.
@@ -49,6 +50,9 @@ LEGEND = {
     # what moves the actor a floor, so a blocking stair is a stair nobody uses.
     "<": (STONE, STAIRS_UP),
     ">": (STONE, STAIRS_DOWN),
+    # A warp mouth. Walkable for the same reason as a stair, and carrying no
+    # destination of its own: where it leads is the `portal` line, per tile.
+    "P": (STONE, PORTAL),
     "@": (DIRT, 0),  # spawn, always on plain walkable ground
 }
 
@@ -135,27 +139,37 @@ def reachable(g, spawn):
     return seen
 
 
-def reachable3(floors, spawn):
-    """Same flood fill across every floor, taking stairs.
+def reachable3(floors, spawn, portals=None):
+    """Same flood fill across every floor, taking stairs and portals.
 
     Mirrors sim::World::apply_tile_transition: arriving on a stair glyph moves the actor to
-    the same x,y one floor up or down, and only when that tile is walkable. A
-    stair whose destination is rock is a dead end here exactly like it is in game.
+    the same x,y one floor up or down, and a portal source moves it to that
+    portal's destination — anywhere on the map. Only when the far tile is walkable.
+    A stair or portal whose destination is rock is a dead end here exactly like it
+    is in game, and the portal is checked FIRST, the same precedence the rule uses.
+
+    Portals have to be edges here or the connectivity report lies the first time a
+    map's only link between two regions is a warp. They also cut: stepping onto a
+    portal source sends the actor away, so the tiles PAST one in a 1-wide corridor
+    are not reachable through it — which is why portal_anchors only puts a mouth on
+    an open tile.
     """
+    portals = portals or {}
     sx, sy = spawn
     if not inside(floors[0], sx, sy) or floors[0][sy][sx] in BLOCKING:
         return set()
 
-    # The fourth element is "got here by stair". It matters: the simulation moves
-    # an actor only when it arrives WALKING, so the tile you land on -- typically
-    # the matching stair of the pair -- is one you can walk off instead of being
-    # sent straight back. Dropping this flag makes the flood declare every floor
-    # above the first unreachable.
+    # The fourth element is "got here by a transition". It matters: the simulation
+    # moves an actor only when it arrives WALKING, so the tile you land on -- the
+    # matching stair of the pair, or the return portal -- is one you can walk off
+    # instead of being sent straight back. Dropping this flag makes the flood
+    # declare every floor above the first unreachable, and makes a two-way portal
+    # pair look like a loop.
     start = (sx, sy, 0, False)
     seen = {start}
     queue = deque([start])
     while queue:
-        x, y, z, by_stair = queue.popleft()
+        x, y, z, by_transition = queue.popleft()
         g = floors[z]
 
         def visit(node):
@@ -163,11 +177,18 @@ def reachable3(floors, spawn):
                 seen.add(node)
                 queue.append(node)
 
-        delta = 0 if by_stair else STAIR_DELTA.get(g[y][x], 0)
-        nz = z + delta
-        if delta and 0 <= nz < len(floors) and floors[nz][y][x] not in BLOCKING:
-            visit((x, y, nz, True))
-            continue  # moved off this floor; it never takes a step from here
+        target = None
+        if not by_transition:
+            target = portals.get((x, y, z))
+            if target is None:
+                delta = STAIR_DELTA.get(g[y][x], 0)
+                if delta:
+                    target = (x, y, z + delta)
+        if target is not None:
+            tx, ty, tz = target
+            if 0 <= tz < len(floors) and floors[tz][ty][tx] not in BLOCKING:
+                visit((tx, ty, tz, True))
+                continue  # transported; it never takes a step from here
 
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -765,16 +786,18 @@ def used_glyphs(floors):
     return seen
 
 
-def populate(floors, rng, spawn, plan):
+def populate(floors, rng, spawn, plan, reserved=()):
     """Places authored monsters and returns them as (x, y, z, class) tuples.
 
     `plan` is a list of (class, count, floor, region) where region is a predicate
     over (x, y). Placement is rejected on anything not walkable, on the spawn, and
     within three tiles of it — a mob standing on top of a fresh player is not
-    difficulty, it is a bad first second.
+    difficulty, it is a bad first second. `reserved` keeps mobs off the portal
+    mouths: a mob placed on one does not warp (being placed is not a step), but it
+    wanders, and the first step it takes teleports it across the map.
     """
     placed = []
-    taken = set()
+    taken = set(reserved)
     for cls, count, z, region in plan:
         g = floors[z]
         h, w = len(g), len(g[0])
@@ -874,7 +897,55 @@ def populate_spawners(floors, rng, spawn, plan, taken):
     return placed
 
 
-def render(floors, spawn, title, monsters=(), spawners=()):
+def portal_anchors(floors, spawn, reach, taken):
+    """Picks the two mouths of one warp: near the spawn, and the far end of the map.
+
+    One rule for every map instead of a coordinate table per map. The pair is "the
+    long way back", which is what a warp is for, and the far mouth is taken from the
+    TOP floor so a multi-floor map gets a warp that also changes z — the case a
+    stair pair cannot express, and the one most likely to rot unnoticed.
+
+    Both mouths need their four orthogonal neighbours walkable. A portal in a 1-wide
+    corridor would wall it off: stepping onto the mouth sends you away, so whatever
+    was past it is no longer reachable through it. reachable3 models that, and this
+    is how the generator stays out of that trap in the first place.
+    """
+    def dist(tile):
+        return abs(tile[0] - spawn[0]) + abs(tile[1] - spawn[1])
+
+    def open_candidates(z):
+        out = []
+        for tile in sorted(reach):
+            x, y, tz = tile
+            if tz != z or tile in taken:
+                continue
+            g = floors[tz]
+            ch = g[y][x]
+            # Never on the spawn, a stair, or anything blocking: a portal would
+            # take precedence over the stair and silently disable it.
+            if ch in BLOCKING or ch in STAIR_DELTA or ch == "@":
+                continue
+            if any(not inside(g, x + dx, y + dy) or g[y + dy][x + dx] in BLOCKING
+                   for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                continue
+            out.append(tile)
+        return out
+
+    home = open_candidates(0)
+    away = open_candidates(len(floors) - 1)
+    if not home or not away:
+        return None
+
+    # min/max over an already sorted list, so ties break on coordinates and the
+    # same seed keeps producing the same map.
+    near = min((t for t in home if dist(t) >= 5), key=dist, default=None)
+    far = max(away, key=dist, default=None)
+    if near is None or far is None or near == far:
+        return None
+    return near, far
+
+
+def render(floors, spawn, title, monsters=(), spawners=(), portals=()):
     lines = [f"# {title}",
              "# gerado por tools/gen_maps.py -- regere em vez de editar a mao,",
              "# ou edite com o game_editor (--map) e deixe este arquivo de lado.",
@@ -888,13 +959,17 @@ def render(floors, spawn, title, monsters=(), spawners=()):
         lines.append(f"monster {x} {y} {z} {cls}")
     for x, y, z, cls, count, radius, seconds in spawners:
         lines.append(f"spawner {x} {y} {z} {cls} {count} {radius} {seconds}")
+    # One line per direction. A warp with no way back is a trap, not a shortcut, so
+    # the generator always writes the return trip.
+    for (ax, ay, az), (bx, by, bz) in portals:
+        lines.append(f"portal {ax} {ay} {az} {bx} {by} {bz}")
     for z, g in enumerate(floors):
         lines.append(f"floor {z}")
         lines += ["".join(row).rstrip() for row in g]
     return "\n".join(lines) + "\n"
 
 
-def validate(name, floors, spawn, monsters=(), spawners=()):
+def validate(name, floors, spawn, monsters=(), spawners=(), portals=()):
     """Reports what a screenshot cannot: strandings and unknown glyphs."""
     ok = True
     for ch in used_glyphs(floors):
@@ -902,7 +977,7 @@ def validate(name, floors, spawn, monsters=(), spawners=()):
             print(f"  !! {name}: glyph '{ch}' has no legend entry")
             ok = False
 
-    reach = reachable3(floors, spawn)
+    reach = reachable3(floors, spawn, {a: b for a, b in portals})
     if not reach:
         print(f"  !! {name}: spawn {spawn} is not walkable")
         return False
@@ -959,6 +1034,28 @@ def validate(name, floors, spawn, monsters=(), spawners=()):
             ok = False
         _ = seconds
 
+    # A portal is the one piece of content here whose two ends are typed by hand in
+    # the file, so both are checked. The parser refuses a bad line outright, which
+    # means a mistake caught here is a map that would not load at all.
+    for (ax, ay, az), (bx, by, bz) in portals:
+        for label, (x, y, z) in (("mouth", (ax, ay, az)), ("exit", (bx, by, bz))):
+            if not (0 <= z < len(floors)) or not inside(floors[z], x, y):
+                print(f"  !! {name}: portal {label} ({x},{y},{z}) is off the map")
+                ok = False
+            elif floors[z][y][x] in BLOCKING:
+                print(f"  !! {name}: portal {label} ({x},{y},{z}) is not on "
+                      f"walkable ground")
+                ok = False
+            elif (x, y, z) not in reach:
+                print(f"  !! {name}: portal {label} ({x},{y},{z}) is unreachable")
+                ok = False
+        if LEGEND.get(floors[az][ay][ax], (0, 0))[1] != PORTAL:
+            print(f"  !! {name}: portal at ({ax},{ay},{az}) has no 'P' marker, so "
+                  f"it is live but invisible")
+            ok = False
+    if portals:
+        print(f"     portals: {len(portals)} one-way link(s)")
+
     if monsters:
         by_class = {}
         for _, _, _, cls in monsters:
@@ -1006,22 +1103,36 @@ def main(argv):
         if sealed:
             print(f"  .. {name}: sealed {sealed} unreachable tile(s)")
 
+        # The warp goes in before the mobs and after the terrain is final: it paints
+        # a glyph, so it has to follow sealing, and its mouths are tiles a nest must
+        # not sit on — a nest beside a portal leaks its population across the map.
+        portals = []
+        anchors = portal_anchors(floors, spawn, reachable3(floors, spawn), set())
+        if anchors:
+            near, far = anchors
+            for x, y, z in (near, far):
+                put(floors[z], x, y, "P")
+            portals = [(near, far), (far, near)]
+        else:
+            print(f"  .. {name}: found no pair of open tiles for a portal")
+
         # Monsters are placed after the terrain is final (sealing can turn a tile
         # into a tree) and with their own RNG stream, so adding a class to one map
         # does not reshuffle another.
+        mouths = {end for pair in portals for end in pair}
         mob_rng = random.Random(0xB0B5 + sum(ord(c) for c in name))
-        monsters = populate(floors, mob_rng, spawn, monster_plan(name, floors,
-                                                                spawn))
-        taken = {(x, y, z) for x, y, z, _ in monsters}
+        monsters = populate(floors, mob_rng, spawn,
+                            monster_plan(name, floors, spawn), mouths)
+        taken = {(x, y, z) for x, y, z, _ in monsters} | mouths
         spawners = populate_spawners(floors, mob_rng, spawn,
                                      spawner_plan(name, floors, spawn), taken)
 
         path = os.path.join(out_dir, f"{name}.txt")
         with open(path, "w") as f:
-            f.write(render(floors, spawn, title, monsters, spawners))
+            f.write(render(floors, spawn, title, monsters, spawners, portals))
         w, h, z = len(floors[0][0]), len(floors[0]), len(floors)
         print(f"wrote {path} ({w}x{h}x{z})")
-        if not validate(name, floors, spawn, monsters, spawners):
+        if not validate(name, floors, spawn, monsters, spawners, portals):
             failed = True
     return 1 if failed else 0
 

@@ -53,6 +53,16 @@ enum class ItemFlag : std::uint32_t {
     StairsUp    = 1U << 6U,
     /// Walking onto this tile moves the actor one floor down.
     StairsDown  = 1U << 7U,
+    /// Marks the tile as a warp mouth: this is the art and the authoring anchor,
+    /// NOT the rule. Where it leads is per-tile data in the map file's `portal`
+    /// line, because the destination is absolute and an item id is a shared
+    /// contract — two portals with different destinations wear the same sprite.
+    ///
+    /// So no simulation code reads this flag. It exists so that "portal" is
+    /// visible in game and checkable at authoring time: a `portal` line with no
+    /// flagged item on either end is a live but invisible warp, and a flagged
+    /// item with no line is a dead one. tests/test_shipped_maps.cpp fails on both.
+    Teleport    = 1U << 8U,
 };
 
 /// A small, strongly-typed bitset over ItemFlag. Kept trivial and constexpr so
@@ -138,6 +148,9 @@ struct ItemType {
         }
         return flags.has(ItemFlag::StairsDown) ? -1 : 0;
     }
+    /// Whether this type is drawn as a warp mouth. Presentation and authoring
+    /// only: the destination comes from the map, never from here.
+    constexpr bool is_teleport() const { return flags.has(ItemFlag::Teleport); }
     constexpr bool blocks_sight() const { return flags.has(ItemFlag::BlocksSight); }
     constexpr bool is_ground()    const { return flags.has(ItemFlag::Ground); }
     constexpr bool is_weapon() const {

@@ -13,6 +13,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -80,6 +81,77 @@ TEST_CASE("every authored stair leads somewhere walkable") {
                                   name << ": stair at " << x << "," << y << ","
                                        << z << " leads to a tile that cannot be "
                                           "stood on");
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("every shipped map has a portal, and every portal is two-way") {
+    // The pair is the content, not the line: a warp with no way back strands
+    // whoever takes it, and "walk all the way round again" is not a way back on a
+    // map whose point was that the two ends are far apart.
+    const ItemTypeRegistry items = build_default_registry();
+    for (const char* name : kMaps) {
+        const auto parsed = parse_text_map(read_map(name), items, nullptr);
+        REQUIRE(parsed.has_value());
+        CHECK_MESSAGE(!parsed->portals.empty(), name << ": no portal at all");
+
+        for (const PortalSpec& portal : parsed->portals) {
+            const bool has_return =
+                std::any_of(parsed->portals.begin(), parsed->portals.end(),
+                            [&](const PortalSpec& other) {
+                                return other.from == portal.to &&
+                                       other.to == portal.from;
+                            });
+            CHECK_MESSAGE(has_return,
+                          name << ": portal at " << portal.from.x << ","
+                               << portal.from.y << "," << int(portal.from.z)
+                               << " has no return trip");
+        }
+    }
+}
+
+TEST_CASE("a shipped portal is visible, and a visible one leads somewhere") {
+    // The two halves of a portal live in different places on purpose — the rule in
+    // the map's `portal` line, the art in a tile's object id — so they can drift
+    // apart. Both directions of the drift are silent in game and neither is
+    // visible in a screenshot:
+    //
+    //   line without marker: an invisible warp that fires when walked over,
+    //   marker without line: a painted portal that does nothing.
+    const ItemTypeRegistry items = build_default_registry();
+    for (const char* name : kMaps) {
+        const auto parsed = parse_text_map(read_map(name), items, nullptr);
+        REQUIRE(parsed.has_value());
+        const TileMap& map = parsed->map;
+
+        for (const PortalSpec& portal : parsed->portals) {
+            CHECK_MESSAGE(items.get(map.at(portal.from).object).is_teleport(),
+                          name << ": portal mouth at " << portal.from.x << ","
+                               << portal.from.y << "," << int(portal.from.z)
+                               << " has no marker, so it is live but invisible");
+        }
+
+        for (int z = 0; z < map.floors(); ++z) {
+            for (int y = 0; y < map.height(); ++y) {
+                for (int x = 0; x < map.width(); ++x) {
+                    const TilePos at{static_cast<std::int16_t>(x),
+                                     static_cast<std::int16_t>(y),
+                                     static_cast<std::int8_t>(z)};
+                    if (!items.get(map.at(at).object).is_teleport()) {
+                        continue;
+                    }
+                    const bool has_line =
+                        std::any_of(parsed->portals.begin(),
+                                    parsed->portals.end(),
+                                    [&](const PortalSpec& p) {
+                                        return p.from == at;
+                                    });
+                    CHECK_MESSAGE(has_line,
+                                  name << ": portal marker at " << x << "," << y
+                                       << "," << z << " has no portal line, so it "
+                                          "is painted but dead");
                 }
             }
         }

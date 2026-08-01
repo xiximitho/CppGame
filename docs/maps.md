@@ -68,27 +68,37 @@ floor 0
 
 ## Os mapas que existem
 
-| Arquivo | Tamanho | O que é |
-|---|---|---|
-| `dungeon.txt` | 56×40×1 | calabouço de pedra: salas e corredores escavados |
-| `floresta.txt` | 64×48×1 | grama, estrada de terra, riacho com **vau**, acampamento |
-| `vila.txt` | 48×40×1 | recinto murado com portão, casas, poço, feira, horta |
-| `caverna.txt` | 56×40×1 | galerias orgânicas (autômato celular), lago, vazio ao redor |
-| `ilha.txt` | 48×48×1 | ilha cercada de água, praia, ruína de pedra, banco de areia |
-| `torre.txt` | 40×40×**3** | pátio no andar 0 e dois andares de torre acima, ligados por escada |
+| Arquivo | Tamanho | O que é | Portal |
+|---|---|---|---|
+| `dungeon.txt` | 56×40×1 | calabouço de pedra: salas e corredores escavados | (34,16) ↔ (39,34) |
+| `floresta.txt` | 64×48×1 | grama, estrada de terra, riacho com **vau**, acampamento | (44,17) ↔ (4,43) |
+| `vila.txt` | 48×40×**2** | recinto murado com portão, casas, poço, feira, horta, e uma sala no andar 1 | (20,33,0) ↔ (14,19,**1**) |
+| `caverna.txt` | 56×40×1 | galerias orgânicas (autômato celular), lago, vazio ao redor | (26,24) ↔ (3,2) |
+| `ilha.txt` | 48×48×1 | ilha cercada de água, praia, ruína de pedra, banco de areia | (18,40) ↔ (44,18) |
+| `torre.txt` | 40×40×**3** | pátio no andar 0 e dois andares de torre acima, ligados por escada | (18,32,0) ↔ (22,14,**2**) |
+
+Todo mapa tem **um** par de portal, nos dois sentidos (duas linhas `portal`), e os
+dois de vários andares atravessam andar — ver "Portais (warp)" abaixo.
 
 `dungeon.txt` vem de `tools/gen_dungeon.py`; os outros cinco de
 `tools/gen_maps.py`. Os dois são determinísticos por seed.
 
-⚠️ **O `dungeon.txt` da árvore NÃO é mais a saída do gerador** — ele foi editado no
-`game_editor` depois (259 tiles diferem em caminhabilidade) e os ninhos dele foram
-colocados na geometria editada. Rodar `gen_dungeon.py` por cima **descarta essa
-edição**. Os cinco de `gen_maps.py` continuam reproduzíveis:
+⚠️ **Dois mapas da árvore NÃO são mais a saída do gerador**, e rodar o gerador por
+cima deles descarta trabalho de verdade:
+
+- **`dungeon.txt`** foi editado no `game_editor` (259 tiles diferem em
+  caminhabilidade) e os ninhos foram colocados na geometria editada.
+- **`vila.txt`** também: ela ganhou um **segundo andar com escadas** no editor, e o
+  `gen_vila` continua gerando um mapa de um andar. Descoberto do jeito ruim — rodei
+  `gen_maps.py` sem conferir e a versão editada foi por cima; estava commitada, então
+  nada foi perdido, e o `git status` depois de gerar é o anteparo.
+
+Os outros quatro de `gen_maps.py` continuam reproduzíveis byte a byte:
 
 ```bash
-python3 tools/gen_dungeon.py assets/maps/dungeon.txt
-python3 tools/gen_maps.py                 # os cinco
-python3 tools/gen_maps.py vila caverna    # só esses
+python3 tools/gen_dungeon.py assets/maps/dungeon.txt   # descarta a edição!
+python3 tools/gen_maps.py floresta caverna ilha torre   # esses, sim
+python3 tools/gen_maps.py                 # inclui vila: descarta a edição!
 ```
 
 ### Por que gerador e não grade digitada à mão
@@ -196,10 +206,51 @@ coordenadas: destino de warp é número escrito à mão, e o runtime recusa em s
 que seria indistinguível de "o portal não funciona". Walkability é checada no **fim** do
 parse, então a linha `portal` pode vir antes da grade que preenche aqueles tiles.
 
-**Nenhum dos seis mapas commitados tem portal ainda, e o editor não autora um** — as
-linhas são preservadas num save (`ParsedMap::portals` → writer), mas não há UI para
-criar ou mover. Ver [pendencias.md](pendencias.md) para as fases T2–T4 (prioridade de
-chunk no destino, UI, e portal como aresta no `validate` do gerador).
+#### O marcador: glifo `P`, item 105
+
+Um `portal` sozinho é um tile **invisível** que teleporta quem pisa. Então a boca tem
+arte: item **105** (`sim::tiles::kPortal`), com a flag `Teleport`, glifo `P` na
+legenda (`legend P 3 105`), desenhado como um golfo violeta com espiral ciano pelo
+`tools/gen_placeholder_atlas.py --patch` — de propósito diferente do poço da escada,
+que é o mesmo losango em cinza.
+
+A flag **não é lida por nenhuma regra**: destino é dado do tile, não do tipo. Ela
+existe para o portal ser visível e para o cruzamento poder ser checado, e
+`tests/test_shipped_maps.cpp` reprova as duas derivas, que são silenciosas em jogo e
+invisíveis num screenshot:
+
+- linha `portal` sem marcador → warp vivo e invisível;
+- marcador sem linha `portal` → portal pintado que não faz nada.
+
+#### Como os portais dos seis mapas foram escolhidos
+
+Uma regra só, em vez de uma tabela de coordenadas por mapa: **a boca de perto é o
+tile aberto mais próximo do spawn a pelo menos 5 tiles, e a de longe é o tile aberto
+mais distante dele no andar de cima**. É "o caminho longo de volta", que é para o que
+um warp serve — e tirar a ponta distante do último andar dá de graça um warp que muda
+`z` na `torre` e na `vila`, o caso que um par de escadas não expressa.
+
+"Aberto" quer dizer **os quatro ortogonais caminháveis**. Portal em corredor de 1 tile
+de largura **muraria** o corredor: pisar na boca manda você para longe, então o que
+estava depois dela não é mais alcançável por ali. O `reachable3` do gerador modela
+isso (portal é **aresta** no flood fill, checado antes da escada, igual à regra), e a
+escolha de tile aberto evita a armadilha na origem.
+
+- Nos quatro mapas reproduzíveis: `tools/gen_maps.py` faz tudo (glifo, linhas e
+  validação).
+- Em `dungeon.txt` e `vila.txt`, que o gerador não pode mais produzir:
+  `python3 tools/add_portal.py assets/maps/dungeon.txt` aplica a **mesma** regra
+  lendo o `.txt` pronto. É idempotente: arquivo que já tem `portal` fica intocado.
+
+O `add_portal.py` topou com dois dentes do `dungeon.txt`: o `@` dele está em
+água+parede (o wart já conhecido), então não há spawn de onde medir — ele cai para o
+meio da **maior região conectada**, e "maior" não é detalhe: o tile mais próximo do
+centro do mapa é um bolsão de **um** tile, e ancorar ali daria um portal que ninguém
+alcança.
+
+**O editor ainda não autora portal.** As linhas são preservadas num save
+(`ParsedMap::portals` → writer), mas não há UI para criar ou mover — ver
+[pendencias.md](pendencias.md), fase T3.
 
 ## Escolher qual mapa carregar
 

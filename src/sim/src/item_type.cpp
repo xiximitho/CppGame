@@ -71,6 +71,10 @@ ItemTypeRegistry build_default_registry() {
     registry.add(ItemType{tiles::kStairsUp, ItemFlag::StairsUp, 0U, 1U});
     registry.add(ItemType{tiles::kStairsDown, ItemFlag::StairsDown, 0U, 1U});
 
+    // The warp mouth: art and authoring anchor, no rule of its own. Not a blocker,
+    // same as a stair. Where it leads is the map's `portal` line, per tile.
+    registry.add(ItemType{tiles::kPortal, ItemFlag::Teleport, 0U, 1U});
+
     // Worked example (docs/sprites.md): a crate is a pushable-looking, pickable
     // blocker. Weight is set to show the field flowing through; nothing reads it
     // yet.

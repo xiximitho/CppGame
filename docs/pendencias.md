@@ -590,9 +590,52 @@ streaming e não por portal.
 
 1. ~~**T1** — `portal` no parser + `ParsedMap::portals` + writer; a transição no
    `World`; testes~~ — **FEITA**, ver abaixo.
-2. **T2** — prioridade de chunk no destino (o buraco preto).
-3. **T3** — UI no editor, item de sprite, aviso de destino ruim.
-4. **T4** — portal como aresta no `validate` do gerador.
+2. **T2** — prioridade de chunk no destino (o buraco preto). **Aberta.**
+3. **T3** — ~~item de sprite~~ **feito** (item 105 + flag `Teleport` + arte);
+   **UI no editor e aviso de destino ruim seguem abertos**.
+4. ~~**T4** — portal como aresta no `validate` do gerador~~ — **FEITA**.
+
+#### Conteúdo: os seis mapas ganharam portal (2026-08-01)
+
+| Peça | O quê |
+|---|---|
+| `ItemFlag::Teleport` (bit 8) + `is_teleport()` | marcador; **nenhuma regra lê** — destino é do tile |
+| `tiles::kPortal` = 105 + `build_default_registry` + `content.db` + `game_bake` | o item |
+| `gen_placeholder_atlas.py` | `draw_portal` e a linha `object 105`, via `--patch` |
+| `gen_maps.py` | glifo `P`, `portal_anchors`, linhas nos dois sentidos, portal como aresta no `reachable3`, validação das duas pontas |
+| `tools/add_portal.py` (novo) | a mesma regra aplicada a um `.txt` que o gerador não refaz |
+| `tests/test_shipped_maps.cpp` | todo mapa tem portal; todo portal tem volta; marcador ↔ linha nos dois sentidos |
+
+**A regra de colocação é uma só para os seis**: boca de perto = tile aberto mais
+próximo do spawn a ≥5 tiles; boca de longe = tile aberto mais distante no **último**
+andar. "Aberto" = quatro ortogonais caminháveis, porque portal em corredor de 1 tile
+**mura** o corredor (pisar manda embora, e o que estava depois deixa de ser
+alcançável por ali). Isso deu de graça warp com mudança de `z` na `torre` (pátio ↔
+telhado) e na `vila` (andar 0 ↔ a sala do andar 1).
+
+**Dois achados no caminho, os dois consertados:**
+
+1. **O `--patch` do `gen_placeholder_atlas.py` ressuscitava linhas `mob`.** O
+   `already_bound` compara `mob <aparência> <dir>` e nunca casa com uma linha
+   `mobstrip`, então o patch re-adicionava as 8 linhas estáticas de cada aparência
+   animada — **no fim do arquivo, onde ganham** —, desanimando esqueleto e ogro em
+   silêncio. Disparou comigo na primeira execução (17 linhas adicionadas em vez de 1).
+   Agora `mobstrip <n>` conta como binding de todo `mob <n> <dir>`.
+2. **`vila.txt` também não é reproduzível** — ganhou um segundo andar com escadas no
+   editor, e isso não estava documentado (só o `dungeon.txt` estava). Descobri rodando
+   `gen_maps.py` sem conferir: a versão editada foi sobrescrita. Estava commitada,
+   então nada foi perdido; o anteparo é `git status` depois de gerar.
+
+**Verificado:** 216 testes; `-DGAME_WERROR=ON` limpo; `check-layering.sh` ok;
+`gen_maps.py` com exit 0 e "all reachable" em todos os andares dos quatro; screenshot
+do portal em jogo na `ilha` (golfo violeta, 5 tiles a oeste do spawn); e login **em
+rede** depois do item novo + rebake (`welcome: id=7`, servidor com 20 tipos e hash
+`fc96875026795ac0`), que é o caminho que o hash de conteúdo protege.
+
+**Não verificado:** atravessar um portal shippado **jogando**. O driver dummy não
+entrega teclas; quem atravessa nos testes é o `World` dirigido direto
+(`tests/test_portals.cpp`), e a geometria dos seis pares é conferida pelo parser e
+pelo `validate`.
 
 #### T1, como ficou (2026-08-01)
 

@@ -52,6 +52,9 @@ ctest --preset debug
 python3 tools/import_otsp.py --sheet assets/tibia_like/otsp_creatures_03.png \
     --at 0,47 --cell 32x32 --appearance 2
 
+# Portal (warp) num mapa que o gerador não refaz — mesma regra do gen_maps.py
+python3 tools/add_portal.py assets/maps/dungeon.txt
+
 # Servidor com persistência
 ./build/debug/bin/game_server --players players.db --save-every 60
 ```
@@ -85,7 +88,13 @@ maps/torre.txt` e o caminho completo todos resolvem, porque a alternativa era um
 virar "mapa procedural" em silêncio. No editor, `F3` escolhe da lista. Os seis mapas commitados saem de geradores determinísticos
 (`tools/gen_dungeon.py`, `tools/gen_maps.py`); o `gen_maps.py` **valida
 conectividade** antes de gravar, porque um tile bloqueante mal colocado sela um
-corredor sem que parser nem screenshot reclamem. Ver `docs/maps.md`.
+corredor sem que parser nem screenshot reclamem — e portal conta como aresta nesse
+flood fill, senão "all reachable" mente. Ver `docs/maps.md`.
+
+⚠️ **`dungeon.txt` e `vila.txt` não são mais a saída do gerador** (foram editados no
+editor; a `vila` ganhou um segundo andar). Rodar o gerador por cima **descarta a
+edição** — para eles, `tools/add_portal.py` e a mão. `git status` depois de gerar é o
+anteparo. Os outros quatro reproduzem byte a byte.
 
 ## Arquitetura
 
@@ -462,9 +471,9 @@ Os que mais confundem:
 - Rotas não são replanejadas quando outro ator bloqueia: o seguidor espera e
   desiste.
 - Sem client-side prediction; a latência visível é o início de um passo.
-- O editor não coloca mob nem ninho, e não move o spawn (preserva os que carregou,
-  mas não tem UI). Andares, sim: `PgUp`/`PgDn` editam qualquer andar e `Ctrl+PgUp`
-  adiciona um.
+- O editor não coloca mob, ninho **nem portal**, e não move o spawn (preserva os que
+  carregou, mas não tem UI). Andares, sim: `PgUp`/`PgDn` editam qualquer andar e
+  `Ctrl+PgUp` adiciona um. Portal se autora no `.txt` ou por `tools/add_portal.py`.
 - Loot é **um** item por classe, não tabela com chances. Sem mob ranged usando
   `kind ranged` ainda.
 

@@ -26,6 +26,11 @@ constexpr TileId kCrate = 102;
 constexpr TileId kStairsUp   = 103;
 constexpr TileId kStairsDown = 104;
 
+// The warp mouth. Walkable for the same reason as a stair, and — unlike a stair —
+// it carries no destination: that is per-tile map data (`portal` in docs/maps.md).
+// The id is here so the generator and the client agree on which sprite to draw.
+constexpr TileId kPortal = 105;
+
 constexpr TileId kActor = 200;
 
 // Equipment items. Not placed on the map like tiles; they live in inventories.

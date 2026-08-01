@@ -6,6 +6,7 @@ legend , 2
 legend . 1
 legend @ 2
 legend O 2 102
+legend P 3 105
 legend T 1 101
 legend ~ 4
 spawn @
@@ -16,6 +17,8 @@ spawner 57 21 0 1 2 3 25
 spawner 18 6 0 2 2 4 45
 spawner 43 34 0 2 2 4 45
 spawner 51 35 0 3 1 2 120
+portal 44 17 0 4 43 0
+portal 4 43 0 44 17 0
 floor 0
 TTTTTTTTTTTTTTTTTTTT~~~TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 TTTTTTTTT.T.TT.TTTTT~~~TTTTTT..TTT..TTT.TTTTTTTTTT..TTT.TTTTTTTT
@@ -34,7 +37,7 @@ TT.T..................~~.......TTTT.TT...T,,O,,,,,,T..TT.T.T.TTT
 TT..............T......~~....T..T....T...,,,,,@,,,,,.TTT.T.T.T.T
 TT......................~~~..T.TTT.TTTTT.T,,,,,,O,,,,TT.,,,,,.,T
 TT...................T..~,~....T......TT..,O,,,O,O,,,,,,,,,,,TTT
-TTT.......T............,,,....TTTTTTT.T.T,,,,,,,,,,TT,O,.T...T.T
+TTT.......T............,,,....TTTTTTT.T.T,,,P,,,,,,TT,O,.T...T.T
 T...T..................,,O,,....TTTT.,,,,,,,,,,,,,.TTTTTTTTT...T
 T......T.......T..T..,,,,.,,,.,,,,,,,,,,,.TT.,O...TTTTTTTT...TTT
 TTT....TTTTTT......,,,,,,.T.,,,,,,,,,T.T...T.....TT..TTT..T....T
@@ -60,7 +63,7 @@ TTT.TT.TT..TT.............~~T......T......T..T..T...........TTTT
 TT..........T.TT..T.......~~..T.....T....TTT.........T.T..TTTTTT
 TT.......T..TTTTT.TT......~~.....T....T.TTT..TT......T..TT....TT
 TTT.......T.TTTTTT......T..~~........T...TTTT..TT....T.........T
-TT.........T.T..T..T...T...~~..T......TT.TTTT.TT.T.TT........TTT
+TT..P......T.T..T..T...T...~~..T......TT.TTTT.TT.T.TT........TTT
 TT.T.....T......T.T.....T..~~T.T......TT.TTTT.................TT
 TTTT.TTTTTT.TTT...TTTT.T..T~~~.T..T.T..T....TTTT.T...T.T..TTT.TT
 TTTTTTTTTTTTTTTTTTTT...TT.T~~TTTTTT.TTTT..TTTTTTTTTTT..TTTTTTTTT

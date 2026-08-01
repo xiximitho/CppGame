@@ -65,6 +65,7 @@ tools/import_otsp.py               traz uma criatura de uma folha estilo Tibia
 assets/tibia_like/                 as folhas de origem (CC BY 4.0, ver CREDITS.md)
 tools/gen_dungeon.py               gera o calabouço de exemplo
 tools/gen_maps.py                  gera os outros mapas (floresta, vila, ...)
+tools/add_portal.py                põe um portal num mapa que o gerador não refaz
 ```
 
 ---
@@ -205,6 +206,31 @@ No editor, do começo ao fim:
 4. `PgUp`, e **no mesmo x,y** pinte `stairs down` (104) — e chão em volta, senão
    você sobe para dentro de uma sala de um tile.
 5. `S`. Conferir andando: `game_client --solo --map <nome>`.
+
+## Receita B3 — um portal (warp)
+
+Diferente da escada em uma coisa que muda tudo: **o destino não está no item**, está
+no tile. Escada é relativa (`z±1`), então cabe numa flag; warp é absoluto, e id de
+item é contrato compartilhado — dois portais têm destinos diferentes com o mesmo
+sprite. Então são **duas** coisas por boca:
+
+1. **A linha**, no `.txt` do mapa (o editor ainda não autora):
+   ```
+   portal <x> <y> <z> <dx> <dy> <dz>
+   portal <dx> <dy> <dz> <x> <y> <z>    # a volta; sem ela é armadilha, não atalho
+   ```
+2. **O marcador**, para não ser um tile invisível que teleporta: pinte o item **105**
+   (`P` na legenda, `legend P 3 105`) nos dois tiles.
+
+Linha errada **recusa o mapa no parse**, com razão legível — ponta fora do mapa,
+destino igual à origem, ou ponta em tile onde não se pode ficar de pé. Isso é o
+oposto do `monster`, que o spawner pula em silêncio: aqui as coordenadas foram
+digitadas à mão, e o runtime recusa sem dizer nada.
+
+Não escolha os tiles a olho — `tools/add_portal.py assets/maps/<nome>.txt` aplica a
+mesma regra do gerador (boca de perto a ≥5 tiles do spawn, boca de longe no andar de
+cima, as duas com os quatro ortogonais caminháveis) e é idempotente. Portal em
+corredor de 1 tile de largura **mura** o corredor: pisar nele manda você para longe.
 
 O passo 4 é o que se esquece. Subir funciona, descer não, e o mapa parece meio
 quebrado; a checagem em `tests/test_shipped_maps.cpp` pega o caso pior (escada que dá
