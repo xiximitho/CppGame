@@ -59,9 +59,9 @@ entt::entity spawn_monster(World& world, MonsterTypeId type, TilePos at) {
                                               spec.attack_range, spec.effect});
     registry.emplace<CMonster>(entity, CMonster{spec.id, at, spec.aggro_radius,
                                                 spec.leash, 0});
-    if (spec.loot != kItemNone) {
-        registry.emplace<CInventory>(entity, CInventory{{{spec.loot, 1}}});
-    }
+    // Loot lives on the class table and is rolled into a corpse on death — not
+    // pre-loaded into CInventory (that made every kill a guaranteed drop and
+    // looked like the mob was carrying the item).
     // Deliberately no CRespawn: killing a monster removes it. Players come back,
     // monsters do not, and a repopulation rule is a spawner's job, not a corpse's.
     return entity;

@@ -248,6 +248,28 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
                          Color{255, 255, 255, 255});
         }
 
+        // Monster loot bag: present while the phantom corpse still has items.
+        for (const CorpseView& corpse : view.corpses) {
+            if (corpse.tile.z != z) {
+                continue;
+            }
+            const AtlasEntry& bag = tileset.bag();
+            if (!bag.valid) {
+                continue;
+            }
+            const iso::ScreenPos apex = iso::tile_to_screen(corpse.tile);
+            const iso::ScreenPos at{
+                apex.x - bag.width * 0.5F,
+                apex.y + static_cast<float>(iso::kHalfTileHeight) -
+                    bag.height * 0.5F};
+            submit_entry(renderer, texture, bag, at,
+                         iso::depth_key(static_cast<float>(corpse.tile.x),
+                                        static_cast<float>(corpse.tile.y), z,
+                                        iso::Layer::Ground) +
+                             0.65F,
+                         Color{255, 255, 255, 255});
+        }
+
         for (const sim::ActorState& actor : view.actors) {
             if (actor.tile.z != z) {
                 continue;

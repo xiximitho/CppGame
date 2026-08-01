@@ -28,6 +28,17 @@ using MonsterTypeId = std::uint16_t;
 
 constexpr MonsterTypeId kMonsterNone = 0;
 
+/// Denominator for every `loot … chance` field in monsters.txt (Open Tibia style).
+constexpr std::uint32_t kLootChanceScale = 1'000'000U;
+
+/// One row of a class loot table. Several per MonsterType; rolls are independent.
+struct LootEntry {
+    ItemTypeId    item      = kItemNone;
+    std::uint16_t max_count = 1;
+    /// Out of kLootChanceScale. 0 never drops; >= scale always drops.
+    std::uint32_t chance    = 0;
+};
+
 /// One class of monster.
 struct MonsterType {
     MonsterTypeId id         = kMonsterNone;
@@ -52,10 +63,9 @@ struct MonsterType {
     std::uint8_t  aggro_radius = 6;
     /// How far it will drift from where it spawned while it has nothing to chase.
     std::uint8_t  leash = 8;
-    /// One item left on the ground when it dies. kItemNone drops nothing. A real
-    /// loot table (several items, chances) is a later shape; one id keeps the
-    /// kill-and-pick-up loop visible without pretending to be a drop system.
-    ItemTypeId    loot = kItemNone;
+    /// Rolled on death into a phantom corpse — not carried while alive. Legacy
+    /// one-arg `loot <id>` in the file becomes a single 100% row here.
+    std::vector<LootEntry> loot_table;
 };
 
 /// Ids of the classes that exist. Numbers are a contract exactly like item ids:

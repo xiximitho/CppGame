@@ -25,7 +25,8 @@
 //     <key> <value>            # any of the keys below, in any order
 //
 // Keys: appearance, hp, attack, defense, kind (melee|ranged), range, effect,
-// step_ticks, aggro, leash, loot. A key left out keeps MonsterType's default.
+// step_ticks, aggro, leash, loot (id [max_count [chance]]). A key left out
+// keeps MonsterType's default.
 //
 // `step_ticks` is the one to reach for when a mob feels wrong: ticks per cardinal
 // step at sim::kSimHz. The player walks at kDefaultStepTicks (9), so anything

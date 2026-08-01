@@ -63,7 +63,7 @@ const MonsterRegistry& default_monsters() {
                           .step_ticks = 13,
                           .aggro_radius = 4,
                           .leash = 6,
-                          .loot = tiles::kBoots});
+                          .loot_table = {{tiles::kBoots, 1, kLootChanceScale}}});
 
         // A skeleton is the yardstick: a bit over twice the player's step time,
         // enough hp that a fight is a fight, and it sees far, so it comes to you.
@@ -77,7 +77,7 @@ const MonsterRegistry& default_monsters() {
                           .step_ticks = 19,
                           .aggro_radius = 8,
                           .leash = 10,
-                          .loot = tiles::kShield});
+                          .loot_table = {{tiles::kShield, 1, kLootChanceScale}}});
 
         // An ogre is a decision: a full second per tile, so walking away always
         // works, and painful enough that standing to trade blows is a bad idea.
@@ -92,7 +92,7 @@ const MonsterRegistry& default_monsters() {
                           .step_ticks = 30,
                           .aggro_radius = 7,
                           .leash = 12,
-                          .loot = tiles::kAmulet});
+                          .loot_table = {{tiles::kAmulet, 1, kLootChanceScale}}});
 
         return r;
     }();

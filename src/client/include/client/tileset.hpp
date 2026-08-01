@@ -102,6 +102,9 @@ public:
     /// selection frames) through the same batched path as sprites.
     const AtlasEntry& solid() const { return solid_; }
 
+    /// Loot-bag icon for a non-empty phantom corpse on the floor.
+    const AtlasEntry& bag() const { return bag_; }
+
     /// Inventory icon for an item id (invalid when the atlas has none).
     const AtlasEntry& icon(sim::TileId id) const;
 
@@ -141,6 +144,7 @@ private:
     std::unordered_map<std::uint16_t, MobSprites> mob_frames_;
     AtlasEntry highlight_{};
     AtlasEntry solid_{};
+    AtlasEntry bag_{};
     std::unordered_map<sim::TileId, AtlasEntry>      icons_;
     std::unordered_map<std::uint8_t, AtlasEntry>     effects_;
     /// Dense, indexed by `character - glyph_first_`; empty when the atlas has no

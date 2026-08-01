@@ -96,6 +96,11 @@ public:
         });
     }
 
+    void request_loot_take(sim::TilePos /*corpse_tile*/,
+                           std::size_t /*index*/) override {
+        // Corpses are not on the wire yet (L2). Solo has the full path.
+    }
+
     template <typename Write>
     void send_reliable(Write&& write) {
         if (transport_ == nullptr || view_.local_id == sim::kInvalidNetId) {

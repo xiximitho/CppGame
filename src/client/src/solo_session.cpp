@@ -198,6 +198,11 @@ public:
                 has_pending_unequip_ = false;
                 world_.unequip(local_id_, pending_unequip_);
             }
+            if (pending_loot_) {
+                pending_loot_ = false;
+                world_.take_from_corpse(local_id_, pending_loot_tile_,
+                                       pending_loot_index_);
+            }
 
             // Same order as the server's loop, for the same reason: monsters
             // decide, then followers step, then swings land.
@@ -238,6 +243,12 @@ public:
     void request_unequip(sim::EquipSlot slot) override {
         pending_unequip_ = slot;
         has_pending_unequip_ = true;
+    }
+
+    void request_loot_take(sim::TilePos corpse_tile, std::size_t index) override {
+        pending_loot_ = true;
+        pending_loot_tile_ = corpse_tile;
+        pending_loot_index_ = index;
     }
 
     const WorldView& view() const override { return view_; }
@@ -319,6 +330,17 @@ private:
                     GroundItemView{pile.tile, pile.items.front().id});
             }
         }
+
+        view_.corpses.clear();
+        for (const auto [entity, pos, inv] :
+             world_.registry()
+                 .view<sim::CCorpse, sim::CPosition, sim::CInventory>()
+                 .each()) {
+            (void)entity;
+            if (!inv.items.empty()) {
+                view_.corpses.push_back(CorpseView{pos.tile, inv.items});
+            }
+        }
     }
 
     sim::World  world_;
@@ -338,6 +360,9 @@ private:
     sim::ItemTypeId pending_equip_ = sim::kItemNone;
     bool           has_pending_unequip_ = false;
     sim::EquipSlot pending_unequip_ = sim::EquipSlot::Weapon;
+    bool           pending_loot_ = false;
+    sim::TilePos   pending_loot_tile_{};
+    std::size_t    pending_loot_index_ = 0;
     std::vector<sim::AttackEvent> effects_buffer_;
     int            spawned_wanderers_ = 0;
 };

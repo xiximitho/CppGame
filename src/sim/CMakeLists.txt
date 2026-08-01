@@ -9,6 +9,9 @@ add_library(game_sim STATIC
     src/item_type.cpp
     src/monster_type.cpp
     src/monster_io.cpp
+    src/loot.cpp
+    src/vocation_type.cpp
+    src/vocation_io.cpp
     src/content_blob.cpp
     src/map_io.cpp
     src/world.cpp

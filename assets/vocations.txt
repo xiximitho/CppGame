@@ -1,0 +1,74 @@
+# vocations.txt — classes de personagem (Grimhold). Editar e rodar: sem bake.
+# Id é CONTRATO: save de jogador referencia por número — nunca recicle.
+#
+#   vocation <id> <nome com espaços ok>
+#     code <TOKEN>
+#     appearance <n>
+#     base_hp / hp_per_level / base_mana / mana_per_level / capacity
+#     kind melee|ranged
+#     starter <item_id> [item_id…]
+#
+# 1–4 jogáveis; 5–6 reservados (Ladino / Necromante) até existir stealth/summon.
+# Deve concordar com sim::default_vocations().
+
+vocation 1 Cavaleiro
+  code           CAV
+  appearance     0
+  base_hp        185
+  hp_per_level   15
+  base_mana      20
+  mana_per_level 5
+  capacity       470
+  kind           melee
+  starter        300 302
+
+vocation 2 Paladino
+  code           PAL
+  appearance     0
+  base_hp        145
+  hp_per_level   10
+  base_mana      60
+  mana_per_level 15
+  capacity       430
+  kind           ranged
+  starter        301
+
+vocation 3 Mago elemental
+  code           MAG
+  appearance     0
+  base_hp        110
+  hp_per_level   5
+  base_mana      120
+  mana_per_level 30
+  capacity       400
+  kind           ranged
+
+vocation 4 Druida
+  code           DRU
+  appearance     0
+  base_hp        120
+  hp_per_level   5
+  base_mana      120
+  mana_per_level 30
+  capacity       410
+  kind           ranged
+
+vocation 5 Ladino
+  code           LAD
+  appearance     0
+  base_hp        130
+  hp_per_level   8
+  base_mana      40
+  mana_per_level 10
+  capacity       420
+  kind           melee
+
+vocation 6 Necromante
+  code           NEC
+  appearance     0
+  base_hp        125
+  hp_per_level   6
+  base_mana      110
+  mana_per_level 28
+  capacity       400
+  kind           ranged

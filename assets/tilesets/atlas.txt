@@ -20,6 +20,8 @@ item        307     112  176  16  16
 item        308     112  176  16  16
 effect      1       0    200  24  24
 effect      2       24   200  8   8
+# loot bag on the floor (phantom corpse with items)
+bag                 240  240  16  16
 # font: first_ascii count x y cell_w cell_h per_row
 font        32      95   0    224  6   8   42
 actor       0       0    128  32  48  -16      -32

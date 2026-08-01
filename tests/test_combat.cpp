@@ -160,29 +160,51 @@ TEST_CASE("equipping from the backpack swaps gear and changes reach") {
     CHECK_FALSE(world.unequip(who, EquipSlot::Weapon));  // already empty
 }
 
-TEST_CASE("a slain monster drops loot, picked up by walking over it") {
+TEST_CASE("a slain monster leaves carried items on a phantom corpse") {
     World world = make_armed_world();
     const NetId hero = world.allocate_net_id();
     world.spawn_actor(hero, TilePos{5, 5, 0}, 0);
-    world.registry().emplace<CInventory>(world.lookup(hero));  // empty pack
+    world.registry().emplace<CInventory>(world.lookup(hero));
 
     const NetId mob = world.allocate_net_id();
     const entt::entity mob_entity = world.spawn_actor(mob, TilePos{6, 5, 0}, 0);
     world.registry().emplace<CInventory>(
-        mob_entity, CInventory{{{tiles::kShield, 1}}});  // carries loot
+        mob_entity, CInventory{{{tiles::kShield, 1}}});
 
     world.set_attack_target(hero, mob);
-    for (int i = 0; i < 220; ++i) {  // beat it down
+    for (int i = 0; i < 220; ++i) {
         tick(world);
     }
-    REQUIRE((world.lookup(mob) == entt::null));  // no CRespawn -> despawned
+    REQUIRE((world.lookup(mob) == entt::null));
 
-    const std::vector<ItemStack>* pile = world.ground_items_at(TilePos{6, 5, 0});
-    REQUIRE(pile != nullptr);
-    REQUIRE(pile->size() == 1);
-    CHECK(pile->front().id == tiles::kShield);
+    // Class table may also roll; carried shield always lands on the corpse.
+    CHECK(world.ground_items_at(TilePos{6, 5, 0}) == nullptr);
+    entt::entity corpse = entt::null;
+    for (const auto [entity, pos] :
+         world.registry().view<CCorpse, CPosition>().each()) {
+        if (pos.tile == TilePos{6, 5, 0}) {
+            corpse = entity;
+            break;
+        }
+    }
+    REQUIRE((corpse != entt::null));
+    bool found_shield = false;
+    for (const ItemStack& stack :
+         world.registry().get<CInventory>(corpse).items) {
+        if (stack.id == tiles::kShield) {
+            found_shield = true;
+        }
+    }
+    CHECK(found_shield);
+}
 
-    // Walk the hero onto the loot tile; step() picks it up on arrival.
+TEST_CASE("walking onto a ground pile still picks it up") {
+    World world = make_armed_world();
+    const NetId hero = world.allocate_net_id();
+    world.spawn_actor(hero, TilePos{5, 5, 0}, 0);
+    world.registry().emplace<CInventory>(world.lookup(hero));
+    world.drop_item(TilePos{6, 5, 0}, ItemStack{tiles::kShield, 1});
+
     world.request_walk(hero, Direction::East);
     for (int i = 0; i < static_cast<int>(kDefaultStepTicks) + 3; ++i) {
         tick(world);

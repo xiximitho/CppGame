@@ -125,7 +125,8 @@ TEST_CASE("spawned mobs get the class from the world's catalogue, not the built-
                           .appearance = kAppearanceRat,
                           .max_hp = 999,
                           .attack = 1,
-                          .step_ticks = 60});
+                          .step_ticks = 60,
+                          .loot_table = {}});
     World world = open_world(std::move(tuned));
     Rng rng(1);
 
@@ -169,7 +170,10 @@ TEST_CASE("the shipped monster catalogue parses and is slower than the player") 
     CHECK(parsed.count() == 2U);
     CHECK(parsed.get(monsters::kRat).max_hp == 14);
     CHECK(parsed.get(monsters::kRat).step_ticks == 13);
-    CHECK(parsed.get(monsters::kRat).loot == tiles::kBoots);
+    CHECK(parsed.get(monsters::kRat).loot_table.size() == 1U);
+    CHECK(parsed.get(monsters::kRat).loot_table[0].item == tiles::kBoots);
+    CHECK(parsed.get(monsters::kRat).loot_table[0].max_count == 1);
+    CHECK(parsed.get(monsters::kRat).loot_table[0].chance == kLootChanceScale);
     CHECK(parsed.get(monsters::kOgre).attack_range == 2);
     CHECK(parsed.get(monsters::kOgre).step_ticks == 30);
     // Keys left out keep the struct default, not zero.

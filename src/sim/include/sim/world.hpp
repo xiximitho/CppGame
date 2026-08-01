@@ -11,6 +11,7 @@
 #include "sim/item_type.hpp"
 #include "sim/monster_type.hpp"
 #include "sim/pathfind.hpp"
+#include "sim/rng.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
 
@@ -34,11 +35,18 @@ public:
     World() = default;
     /// `monsters` defaults to the built-in classes so every existing call site and
     /// test keeps working; the server and the solo session hand in the catalogue
-    /// they loaded from assets/monsters.txt instead.
+    /// they loaded from assets/monsters.txt instead. `rng_seed` feeds loot rolls
+    /// and anything else that must stay deterministic across platforms.
     explicit World(TileMap map, ItemTypeRegistry item_types = {},
-                   MonsterRegistry monsters = default_monsters());
+                   MonsterRegistry monsters = default_monsters(),
+                   std::uint64_t rng_seed = 1);
 
     Tick tick() const { return tick_; }
+
+    /// Loot rolls and other sim-side randomness. Owned here so death does not
+    /// need an Rng smuggled from the server loop.
+    Rng&       rng() { return rng_; }
+    const Rng& rng() const { return rng_; }
 
     TileMap&       map() { return map_; }
     const TileMap& map() const { return map_; }
@@ -147,6 +155,16 @@ public:
     /// Drops an item stack onto a tile (merging with what is already there).
     void drop_item(TilePos tile, ItemStack stack);
 
+    /// Phantom corpse at `tile` with `items` (may be empty). Does not occupy the
+    /// tile. Returns the new entity.
+    entt::entity spawn_corpse(TilePos tile, std::vector<ItemStack> items);
+
+    /// Moves one stack from a phantom corpse into `taker`'s backpack. `index` is
+    /// into the corpse inventory. Requires the taker to be on the same floor and
+    /// within one tile (Chebyshev). Destroys the corpse when it becomes empty.
+    /// False if out of reach, no backpack, bad index, or no corpse there.
+    bool take_from_corpse(NetId taker, TilePos corpse_tile, std::size_t index);
+
     /// The item stacks lying on a tile, or nullptr if the tile is bare.
     const std::vector<ItemStack>* ground_items_at(TilePos tile) const;
 
@@ -195,6 +213,7 @@ private:
     MonsterRegistry          monsters_;
     entt::registry           registry_;
     std::vector<AttackEvent> attack_events_;
+    Rng                      rng_{1};
 
     std::unordered_map<NetId, entt::entity>       by_net_id_;
     std::unordered_map<std::uint64_t, NetId>      occupancy_;
