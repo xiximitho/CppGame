@@ -19,6 +19,9 @@
 #include "client/session.hpp"
 #include "client/spell_hotbar_ui.hpp"
 #include "client/tileset.hpp"
+#include "client/ui_theme.hpp"
+#include "client/status_panel_ui.hpp"
+#include "client/vocation_select_ui.hpp"
 #include "client/world_render.hpp"
 #include "core/log.hpp"
 #include "core/time.hpp"
@@ -55,9 +58,10 @@ struct Options {
     /// someone to send you what they actually see.
     std::string screenshot_path;
     int         screenshot_frame = 45;
-    /// Class kit for solo (and the client's idea of vocation for the hotbar in
-    /// remote play until mana/vocation ride the snapshot).
+    /// Class kit for solo / Hello. Default knight; the start-screen picker
+    /// overrides this unless --vocation was passed or --screenshot is set.
     sim::VocationId vocation = sim::vocations::kKnight;
+    bool            vocation_from_cli = false;
 };
 
 void print_usage() {
@@ -77,14 +81,15 @@ void print_usage() {
         "  --zoom N             initial zoom (default 2)\n"
         "  --screenshot FILE    render a few frames, write a BMP, exit\n"
         "  --screenshot-frame N  which frame to capture (default 45)\n"
-        "  --vocation NAME      class (knight/paladin/mage/druid; default knight)\n"
+        "  --vocation NAME      skip picker; class (knight/paladin/mage/druid)\n"
         "  --help               this text\n"
         "\n"
         "controls:\n"
+        "  (start) 1-4 / click  choose vocation, Enter to confirm\n"
         "  WASD / arrows        walk\n"
         "  left click / touch   step toward the tile; bag opens loot panel\n"
         "  click item in loot   take into backpack\n"
-        "  1                    cast vocation spell (mage needs a target)\n"
+        "  1                    cast vocation spell (bash/firebolt need a target)\n"
         "  mouse wheel, +/-     zoom\n"
         "  F2                   toggle key scheme (screen-relative / grid)\n"
         "  Esc                  quit\n",
@@ -139,6 +144,7 @@ bool parse_args(int argc, char** argv, Options& options) {
                 LOG_WARN("unknown --vocation '%s'; keeping knight", argv[i]);
             } else {
                 options.vocation = parsed;
+                options.vocation_from_cli = true;
             }
         } else {
             LOG_WARN("ignoring unknown argument '%s'", arg.c_str());
@@ -244,6 +250,68 @@ std::string resolve_map_asset(const std::string& given) {
     return given;  // build_solo_world logs the fallback to the generated map
 }
 
+/// Blocks until the player confirms a vocation or quits. Returns false on quit.
+bool run_vocation_picker(SDL_Window* window, client::Renderer2D& renderer,
+                         const client::Tileset& tileset,
+                         sim::VocationId& vocation, sim::COutfit& outfit) {
+    client::VocationPicker picker;
+    picker.selected = client::vocation_picker_index(vocation);
+    picker.outfit = outfit;
+
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    bool  running = true;
+    while (running && !picker.confirmed) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+                case SDL_EVENT_QUIT:
+                    return false;
+                case SDL_EVENT_KEY_DOWN:
+                    if (event.key.key == SDLK_ESCAPE) {
+                        return false;
+                    }
+                    client::vocation_picker_key(
+                        static_cast<int>(event.key.scancode), picker);
+                    break;
+                case SDL_EVENT_MOUSE_MOTION:
+                    mouse_x = event.motion.x;
+                    mouse_y = event.motion.y;
+                    break;
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        client::vocation_picker_click(renderer, mouse_x, mouse_y,
+                                                      picker);
+                    }
+                    break;
+                case SDL_EVENT_FINGER_DOWN: {
+                    int win_w = 0;
+                    int win_h = 0;
+                    SDL_GetWindowSize(window, &win_w, &win_h);
+                    mouse_x = event.tfinger.x * static_cast<float>(win_w);
+                    mouse_y = event.tfinger.y * static_cast<float>(win_h);
+                    client::vocation_picker_click(renderer, mouse_x, mouse_y,
+                                                  picker);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+
+        renderer.set_camera(0.0F, 0.0F, 1.0F);
+        renderer.begin_frame(client::theme::kWorldClear);
+        client::draw_vocation_picker(renderer, tileset, picker);
+        renderer.end_frame();
+    }
+
+    vocation = client::vocation_picker_id(picker);
+    outfit = picker.outfit;
+    const sim::VocationType& spec = sim::default_vocations().get(vocation);
+    LOG_INFO("vocation selected: %s (%s)", spec.name.c_str(), spec.code.c_str());
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -297,14 +365,30 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // Screenshot / --vocation skip the picker (CI and scripts). Otherwise the
+        // player chooses before the world exists so the kit applies at spawn.
+        sim::COutfit outfit{};
+        const bool skip_picker = options.vocation_from_cli ||
+                                 !options.screenshot_path.empty();
+        if (!skip_picker) {
+            if (!run_vocation_picker(window, *renderer, tileset, options.vocation,
+                                     outfit)) {
+                SDL_DestroyRenderer(sdl_renderer);
+                SDL_DestroyWindow(window);
+                SDL_Quit();
+                return 0;
+            }
+        }
+
         std::unique_ptr<client::Session> session;
         if (options.solo) {
             session = client::make_solo_session(options.seed, options.wanderers,
                                                 options.map_path,
-                                                options.vocation);
+                                                options.vocation, outfit);
         } else {
             session = client::make_remote_session(options.host, options.port,
-                                                  options.name);
+                                                  options.name,
+                                                  options.vocation, outfit);
         }
         if (session == nullptr) {
             LOG_ERROR("could not create session");
@@ -436,7 +520,12 @@ int main(int argc, char** argv) {
             // Where the battle list starts: under the inventory when that is open,
             // at the top of the screen otherwise. Passed in rather than the panel
             // knowing about the inventory, so neither has to know the other exists.
-            const float battle_top = show_inventory ? 300.0F : 24.0F;
+            // Battle list stacks under the inventory when that is open, otherwise
+            // sits at the top of the right column — same width/margin as EQUIP/BAG.
+            const float battle_top =
+                show_inventory
+                    ? client::inventory_panel_bottom(*renderer) + client::theme::kGap
+                    : client::theme::kMargin;
 
             // A click goes to the open loot panel first, then the inventory, then
             // the battle list, then the world. Clicking a bag opens its panel;
@@ -596,10 +685,11 @@ int main(int argc, char** argv) {
                 }
             }
 
-            renderer->begin_frame(client::Color{18, 20, 26, 255});
+            renderer->begin_frame(client::theme::kWorldClear);
             client::render_world(*renderer, tileset, session->view(), params);
             effect_feed.render(*renderer, tileset, now_seconds);
             damage_feed.render(*renderer, tileset, now_seconds);
+            client::draw_status_panel(*renderer, tileset, session->view());
             if (show_inventory) {
                 client::draw_inventory(*renderer, tileset, session->view());
             }

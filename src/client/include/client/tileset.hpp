@@ -7,6 +7,7 @@
 
 #include "client/animation.hpp"
 #include "client/renderer2d.hpp"
+#include "sim/outfit.hpp"
 #include "sim/tile_map.hpp"
 #include "sim/types.hpp"
 
@@ -105,6 +106,15 @@ public:
     /// Loot-bag icon for a non-empty phantom corpse on the floor.
     const AtlasEntry& bag() const { return bag_; }
 
+    /// White silhouette for one player outfit layer (invalid if atlas has none).
+    /// When `outfitstrip` is bound, `facing`/`frame` select the walk cell.
+    const AtlasEntry& outfit_layer(sim::OutfitLayer layer,
+                                   sim::Direction facing = sim::Direction::South,
+                                   std::uint8_t frame = 0) const;
+
+    /// True when all four outfit layers are bound (layered player draw is safe).
+    bool has_outfit_layers() const;
+
     /// Inventory icon for an item id (invalid when the atlas has none).
     const AtlasEntry& icon(sim::TileId id) const;
 
@@ -140,11 +150,17 @@ private:
     std::unordered_map<sim::TileId, AtlasEntry> ground_;
     std::unordered_map<sim::TileId, AtlasEntry> object_;
     std::array<AtlasEntry, 8> actor_frames_{};
+    /// Animated player base (appearance 0), from `playerstrip`. Empty frames=0
+    /// means fall back to actor_frames_.
+    MobSprites player_anim_{};
     /// One set per non-zero appearance, from the atlas `mob`/`mobstrip` lines.
     std::unordered_map<std::uint16_t, MobSprites> mob_frames_;
     AtlasEntry highlight_{};
     AtlasEntry solid_{};
     AtlasEntry bag_{};
+    /// Standing fallback (outfit line) and optional walk sets (outfitstrip).
+    std::array<AtlasEntry, sim::kOutfitLayerCount> outfit_layers_{};
+    std::array<MobSprites, sim::kOutfitLayerCount> outfit_anim_{};
     std::unordered_map<sim::TileId, AtlasEntry>      icons_;
     std::unordered_map<std::uint8_t, AtlasEntry>     effects_;
     /// Dense, indexed by `character - glyph_first_`; empty when the atlas has no

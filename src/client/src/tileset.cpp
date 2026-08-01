@@ -306,6 +306,31 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
                          static_cast<sim::Direction>(i));
     }
 
+    // Outfit layer silhouettes (white, tinted at draw). Row under the actors.
+    constexpr int outfit_row_y = 176;
+    const Rgba white{255, 255, 255, 255};
+    for (int layer = 0; layer < sim::kOutfitLayerCount; ++layer) {
+        const int ox = layer * kActorFrameW;
+        const int oy = outfit_row_y;
+        const int cx = ox + kActorFrameW / 2;
+        const int feet_y = oy + kActorFrameH - 2;
+        if (layer == 0) {  // boots
+            fill_rect(canvas, cx - 9, feet_y - 7, 7, 7, white);
+            fill_rect(canvas, cx + 2, feet_y - 7, 7, 7, white);
+        } else if (layer == 1) {  // pants
+            fill_rect(canvas, cx - 6, feet_y - 22, 4, 15, white);
+            fill_rect(canvas, cx + 2, feet_y - 22, 4, 15, white);
+            fill_rect(canvas, cx - 6, feet_y - 22, 12, 4, white);
+        } else if (layer == 2) {  // armour
+            fill_rect(canvas, cx - 9, feet_y - 36, 18, 15, white);
+            fill_rect(canvas, cx - 11, feet_y - 34, 5, 8, white);
+            fill_rect(canvas, cx + 6, feet_y - 34, 5, 8, white);
+        } else {  // hair (volume on top; face stays empty)
+            fill_circle(canvas, cx, feet_y - 41, 7, white);
+            fill_rect(canvas, cx - 6, feet_y - 38, 12, 4, white);
+        }
+    }
+
     // Solid white swatch for tinted UI fills (see AtlasEntry solid()).
     fill_rect(canvas, 232, 40, 8, 8, Rgba{255, 255, 255, 255});
 
@@ -345,6 +370,13 @@ Tileset Tileset::build_procedural(Renderer2D& renderer) {
 
     tileset.solid_ = make_entry(234, 42, 4, 4, 0.0F, 0.0F);
     tileset.bag_ = make_entry(240, 240, 16, 16, 0.0F, 0.0F);
+
+    for (int layer = 0; layer < sim::kOutfitLayerCount; ++layer) {
+        tileset.outfit_layers_[static_cast<std::size_t>(layer)] = make_entry(
+            layer * kActorFrameW, outfit_row_y, kActorFrameW, kActorFrameH,
+            -static_cast<float>(kActorFrameW) * 0.5F,
+            static_cast<float>(iso::kHalfTileHeight - kActorFrameH));
+    }
 
     return tileset;
 }
@@ -559,6 +591,86 @@ bool Tileset::parse_atlas_meta(const std::string& text, int atlas_w,
                 }
                 ++bound;
             }
+        } else if (kind == "outfit") {
+            // Standing fallback silhouette (white; tinted at draw):
+            //   outfit <layer> <x> <y> <w> <h> <origin_x> <origin_y>
+            int layer = 0;
+            if (!(fields >> layer >> x >> y >> w >> h >> ox >> oy)) {
+                return false;
+            }
+            if (layer >= 0 && layer < sim::kOutfitLayerCount) {
+                out.outfit_layers_[static_cast<std::size_t>(layer)] =
+                    entry_from_pixels(atlas_w, atlas_h, x, y, w, h, ox, oy);
+                ++bound;
+            }
+        } else if (kind == "playerstrip") {
+            // Animated player base (appearance 0), same layout as mobstrip:
+            //   playerstrip <ignored> <x> <y> <cell_w> <cell_h> <dirs> <frames>
+            //               <ox> <oy> [tilt_degrees]
+            int ignored = 0;
+            int dirs = 0;
+            int nframes = 0;
+            if (!(fields >> ignored >> x >> y >> w >> h >> dirs >> nframes >> ox >>
+                  oy)) {
+                return false;
+            }
+            float tilt_degrees = 0.0F;
+            if (!(fields >> tilt_degrees)) {
+                tilt_degrees = 0.0F;
+            }
+            const bool sane = w > 0 && h > 0 && nframes >= 1 &&
+                              nframes <= anim::kMaxFrames &&
+                              (dirs == anim::kArtDirsTibia ||
+                               dirs == anim::kArtDirsFull);
+            if (sane) {
+                auto& set = out.player_anim_;
+                set = MobSprites{};
+                set.dirs = static_cast<std::uint8_t>(dirs);
+                set.frames = static_cast<std::uint8_t>(nframes);
+                set.tilt = tilt_degrees * 3.14159265F / 180.0F;
+                for (int dir = 0; dir < dirs; ++dir) {
+                    for (int frame = 0; frame < nframes; ++frame) {
+                        const int cell = dir * nframes + frame;
+                        set.entry[static_cast<std::size_t>(dir)]
+                                 [static_cast<std::size_t>(frame)] =
+                            entry_from_pixels(atlas_w, atlas_h, x + cell * w, y, w,
+                                              h, ox, oy);
+                    }
+                }
+                ++bound;
+            }
+        } else if (kind == "outfitstrip") {
+            // Animated outfit layer mask (white; tinted at draw):
+            //   outfitstrip <layer> <x> <y> <cell_w> <cell_h> <dirs> <frames>
+            //               <ox> <oy>
+            int layer = 0;
+            int dirs = 0;
+            int nframes = 0;
+            if (!(fields >> layer >> x >> y >> w >> h >> dirs >> nframes >> ox >>
+                  oy)) {
+                return false;
+            }
+            const bool sane = layer >= 0 && layer < sim::kOutfitLayerCount &&
+                              w > 0 && h > 0 && nframes >= 1 &&
+                              nframes <= anim::kMaxFrames &&
+                              (dirs == anim::kArtDirsTibia ||
+                               dirs == anim::kArtDirsFull);
+            if (sane) {
+                auto& set = out.outfit_anim_[static_cast<std::size_t>(layer)];
+                set = MobSprites{};
+                set.dirs = static_cast<std::uint8_t>(dirs);
+                set.frames = static_cast<std::uint8_t>(nframes);
+                for (int dir = 0; dir < dirs; ++dir) {
+                    for (int frame = 0; frame < nframes; ++frame) {
+                        const int cell = dir * nframes + frame;
+                        set.entry[static_cast<std::size_t>(dir)]
+                                 [static_cast<std::size_t>(frame)] =
+                            entry_from_pixels(atlas_w, atlas_h, x + cell * w, y, w,
+                                              h, ox, oy);
+                    }
+                }
+                ++bound;
+            }
         } else if (kind == "font") {
             // One line describes the whole glyph grid: cells run in ASCII order
             // from `first`, `per_row` of them, then wrap to the next band.
@@ -617,6 +729,34 @@ Tileset Tileset::load(Renderer2D& renderer) {
     return build_procedural(renderer);
 }
 
+const AtlasEntry& Tileset::outfit_layer(sim::OutfitLayer layer,
+                                        sim::Direction facing,
+                                        std::uint8_t frame) const {
+    const auto index = static_cast<std::size_t>(layer);
+    if (index >= outfit_layers_.size()) {
+        return invalid_;
+    }
+    const MobSprites& anim = outfit_anim_[index];
+    if (anim.frames > 0) {
+        const auto dir =
+            static_cast<std::size_t>(anim::art_direction(facing, anim.dirs));
+        const std::size_t f = frame < anim.frames ? frame : 0U;
+        if (dir < anim.entry.size() && anim.entry[dir][f].valid) {
+            return anim.entry[dir][f];
+        }
+    }
+    return outfit_layers_[index];
+}
+
+bool Tileset::has_outfit_layers() const {
+    for (const AtlasEntry& entry : outfit_layers_) {
+        if (!entry.valid) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const AtlasEntry& Tileset::ground(sim::TileId id) const {
     const auto it = ground_.find(id);
     return it == ground_.end() ? invalid_ : it->second;
@@ -654,17 +794,32 @@ const MobSprites* Tileset::mob_sprites(std::uint16_t appearance) const {
 }
 
 float Tileset::tilt(std::uint16_t appearance) const {
-    const MobSprites* set = appearance == 0 ? nullptr : mob_sprites(appearance);
+    if (appearance == 0) {
+        return player_anim_.frames > 0 ? player_anim_.tilt : 0.0F;
+    }
+    const MobSprites* set = mob_sprites(appearance);
     return set == nullptr ? 0.0F : set->tilt;
 }
 
 std::uint8_t Tileset::frame_count(std::uint16_t appearance) const {
-    const MobSprites* set = appearance == 0 ? nullptr : mob_sprites(appearance);
+    if (appearance == 0) {
+        return player_anim_.frames > 0 ? player_anim_.frames : 1U;
+    }
+    const MobSprites* set = mob_sprites(appearance);
     return set == nullptr ? 1U : set->frames;
 }
 
 const AtlasEntry& Tileset::actor(sim::Direction facing, std::uint16_t appearance,
                                  std::uint8_t frame) const {
+    if (appearance == 0 && player_anim_.frames > 0) {
+        const auto dir = static_cast<std::size_t>(
+            anim::art_direction(facing, player_anim_.dirs));
+        const std::size_t f = frame < player_anim_.frames ? frame : 0U;
+        if (dir < player_anim_.entry.size() &&
+            player_anim_.entry[dir][f].valid) {
+            return player_anim_.entry[dir][f];
+        }
+    }
     if (appearance != 0) {
         const MobSprites* set = mob_sprites(appearance);
         // Falls through to the player frames when the atlas has no art for this

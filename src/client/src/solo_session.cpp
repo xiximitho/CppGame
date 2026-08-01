@@ -92,7 +92,7 @@ public:
     /// once, and what it said about the spawn and the mobs is consumed here rather
     /// than kept as state. make_solo_session() does the reading.
     SoloSession(SoloWorld built, std::uint64_t seed, int wanderers,
-                sim::VocationId vocation)
+                sim::VocationId vocation, sim::COutfit outfit)
         : world_(std::move(built.world)),
           rng_(seed ^ 0x9E3779B97F4A7C15ULL) {
         // The map's own spawn point wins, but only if it is actually walkable —
@@ -115,17 +115,9 @@ public:
         world_.registry().emplace<sim::CRespawn>(local_entity,
                                                  sim::CRespawn{spawn});
 
-        // Vocation owns the kit, HP and mana. Body armour is given to everyone
-        // on top so casters are not naked.
+        // Vocation owns kit / HP / mana (weapon + armour from starter_items).
         sim::apply_vocation(world_, local_entity, vocation);
-        {
-            auto& equipment = world_.registry().get<sim::CEquipment>(local_entity);
-            if (equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] ==
-                sim::kItemNone) {
-                equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
-                    sim::tiles::kArmor;
-            }
-        }
+        world_.registry().emplace_or_replace<sim::COutfit>(local_entity, outfit);
 
         // Authored mobs first: they are the ones the map author aimed, and they
         // hold their tiles against the random ones that come after.
@@ -394,9 +386,10 @@ private:
 
 std::unique_ptr<Session> make_solo_session(std::uint64_t seed, int wanderers,
                                            const std::string& map_path,
-                                           sim::VocationId vocation) {
+                                           sim::VocationId vocation,
+                                           sim::COutfit outfit) {
     return std::make_unique<SoloSession>(build_solo_world(seed, map_path.c_str()),
-                                         seed, wanderers, vocation);
+                                         seed, wanderers, vocation, outfit);
 }
 
 }  // namespace client

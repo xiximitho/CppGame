@@ -21,7 +21,10 @@ TEST_CASE("default_vocations has the six Grimhold ids") {
     CHECK(reg.contains(vocations::kNecro));
     CHECK(reg.get(vocations::kKnight).preferred_kind == AttackKind::Melee);
     CHECK(reg.get(vocations::kPaladin).preferred_kind == AttackKind::Ranged);
-    CHECK(reg.get(vocations::kKnight).starter_items.size() == 2U);
+    CHECK(reg.get(vocations::kKnight).starter_items.size() == 7U);
+    CHECK(reg.get(vocations::kPaladin).starter_items.size() == 7U);
+    CHECK(reg.get(vocations::kMage).starter_items.size() == 6U);
+    CHECK(reg.get(vocations::kDruid).starter_items.size() == 6U);
 }
 
 TEST_CASE("parse_vocation_catalogue reads a block") {

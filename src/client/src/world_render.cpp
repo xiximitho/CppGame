@@ -4,6 +4,8 @@
 
 #include "client/animation.hpp"
 #include "client/iso.hpp"
+#include "client/ui_theme.hpp"
+#include "sim/outfit.hpp"
 #include "sim/snapshot.hpp"
 
 namespace client {
@@ -277,30 +279,57 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
             const sim::InterpolatedPos pos = sim::interpolate(actor);
             const iso::ScreenPos apex = iso::tile_to_screen(pos.x, pos.y, pos.z);
 
-            // The local player is tinted warm so it is findable in a crowd
-            // without a nameplate system existing yet.
-            const Color tint = (actor.net_id == view.local_id)
-                                   ? Color{255, 244, 205, 255}
-                                   : floor_tint;
-
             const float actor_depth =
                 iso::depth_key(pos.x, pos.y, pos.z, iso::Layer::Actor);
-            // The walk cycle. Derived from the step's own progress, never from a
-            // local clock or a counter kept per actor: a snapshot that never arrives
-            // then costs the animation exactly as much as it costs the position,
-            // which is nothing. A static set answers 1 frame, and walk_frame answers
-            // 0 for it, so there is no branch here for "not animated".
-            const std::uint8_t frame = anim::walk_frame(
-                actor.walking, actor.walk_progress,
-                tileset.frame_count(actor.appearance));
-            const AtlasEntry& sprite =
-                tileset.actor(actor.facing, actor.appearance, frame);
-            // The lean is per sprite set, not per actor: it corrects how the ART was
-            // drawn, so it belongs to the art. The health bar below is submitted
-            // separately and stays upright, which is what you want — a tilted bar
-            // reads as a rendering fault, not as a leaning monster.
-            submit_entry(renderer, texture, sprite, apex, actor_depth, tint,
-                         tileset.tilt(actor.appearance));
+
+            // Player (appearance 0) with outfit layers: four tinted silhouettes.
+            // Mobs and the procedural fallback keep the single actor sprite.
+            float bar_anchor_oy = 0.0F;
+            if (actor.appearance == 0 && tileset.has_outfit_layers()) {
+                const std::uint8_t frame = anim::walk_frame(
+                    actor.walking, actor.walk_progress,
+                    tileset.frame_count(actor.appearance));
+                // Base composite (skin / outlines) under the tinted cloth layers.
+                const AtlasEntry& base =
+                    tileset.actor(actor.facing, actor.appearance, frame);
+                submit_entry(renderer, texture, base, apex, actor_depth,
+                             Color{255, 255, 255, 255},
+                             tileset.tilt(actor.appearance));
+                constexpr sim::OutfitLayer kOrder[] = {
+                    sim::OutfitLayer::Feet,
+                    sim::OutfitLayer::Legs,
+                    sim::OutfitLayer::Body,
+                    sim::OutfitLayer::Head,
+                };
+                float layer_depth = actor_depth + 0.01F;
+                for (const sim::OutfitLayer layer : kOrder) {
+                    const AtlasEntry& layer_sprite = tileset.outfit_layer(
+                        layer, actor.facing, frame);
+                    const sim::OutfitColor oc =
+                        sim::outfit_color(actor.outfit.index(layer));
+                    const Color tint{oc.r, oc.g, oc.b, 255};
+                    submit_entry(renderer, texture, layer_sprite, apex,
+                                 layer_depth, tint,
+                                 tileset.tilt(actor.appearance));
+                    layer_depth += 0.01F;
+                }
+                if (base.valid) {
+                    bar_anchor_oy = base.origin_y;
+                }
+            } else {
+                // Local player without layered art stays warm so it is findable.
+                const Color tint = (actor.net_id == view.local_id)
+                                       ? Color{255, 244, 205, 255}
+                                       : floor_tint;
+                const std::uint8_t frame = anim::walk_frame(
+                    actor.walking, actor.walk_progress,
+                    tileset.frame_count(actor.appearance));
+                const AtlasEntry& sprite =
+                    tileset.actor(actor.facing, actor.appearance, frame);
+                submit_entry(renderer, texture, sprite, apex, actor_depth, tint,
+                             tileset.tilt(actor.appearance));
+                bar_anchor_oy = sprite.origin_y;
+            }
 
             // Health bar above the head. Drawn from the hp already carried in the
             // snapshot, so it needs nothing server-side beyond what exists.
@@ -315,10 +344,12 @@ void render_world(Renderer2D& renderer, const Tileset& tileset,
                 // Hung off the sprite's own top edge, not a constant: mob cells
                 // differ in height, and a fixed -42 leaves a rat's bar floating
                 // half a tile above the rat.
-                const float bar_y = apex.y + sprite.origin_y - 10.0F;
+                const float bar_y = apex.y + bar_anchor_oy - 10.0F;
                 submit_rect(renderer, texture, tileset.solid(), bar_x - 1.0F,
                             bar_y - 1.0F, bar_w + 2.0F, bar_h + 2.0F,
-                            actor_depth + 0.5F, Color{16, 16, 20, 230});
+                            actor_depth + 0.5F, theme::kBorder);
+                submit_rect(renderer, texture, tileset.solid(), bar_x, bar_y,
+                            bar_w, bar_h, actor_depth + 0.55F, theme::kHpTrack);
                 const auto red =
                     static_cast<std::uint8_t>((1.0F - frac) * 210.0F + 30.0F);
                 const auto green =

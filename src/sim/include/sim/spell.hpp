@@ -8,17 +8,19 @@
 #include "sim/vocation_type.hpp"
 #include "sim/world.hpp"
 
-// Player spells. Data is hardcoded for V1 (two spells); a text catalogue can
-// replace this later the same way monsters.txt did. Casting is validated in
-// sim/ so solo and server share one path.
+// Player spells. Data is hardcoded for V1 (one active per playable vocation);
+// a text catalogue can replace this later the same way monsters.txt did.
+// Casting is validated in sim/ so solo and server share one path.
 
 namespace sim {
 
 using SpellId = std::uint16_t;
 
 constexpr SpellId kSpellNone         = 0;
-constexpr SpellId kSpellFirebolt     = 1;  ///< Mage — fire damage at range
-constexpr SpellId kSpellNaturesTouch = 2;  ///< Druid — nature heal (self)
+constexpr SpellId kSpellBash         = 1;  ///< Knight — melee smash
+constexpr SpellId kSpellBlessing     = 2;  ///< Paladin — holy heal (self)
+constexpr SpellId kSpellFirebolt     = 3;  ///< Mage — fire damage at range
+constexpr SpellId kSpellNaturesTouch = 4;  ///< Druid — nature heal (self)
 
 enum class SpellKind : std::uint8_t { Damage, Heal };
 
@@ -39,7 +41,7 @@ std::span<const SpellDef> all_spells();
 
 const SpellDef* find_spell(SpellId id);
 
-/// Spells the vocation may put on the hotbar (empty for knight/paladin today).
+/// Spells the vocation may put on the hotbar (one each for CAV/PAL/MAG/DRU).
 std::span<const SpellDef> spells_for_vocation(VocationId vocation);
 
 /// Applies vocation stats/kit to a player actor. Replaces CVocation, CProgress,

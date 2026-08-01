@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "sim/outfit.hpp"
 #include "sim/types.hpp"
 #include "sim/world.hpp"
 
@@ -22,6 +23,8 @@ struct ActorState {
     Direction     walk_dir   = Direction::South;
     std::uint8_t  walk_progress = 0;               ///< 0..255 through the step
     std::uint16_t appearance = 0;
+    /// Palette indices for appearance 0 (player). Ignored for mobs.
+    COutfit       outfit{};
     std::int16_t  hp         = 0;
     std::int16_t  max_hp     = 0;
 };

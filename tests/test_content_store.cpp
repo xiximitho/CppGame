@@ -160,7 +160,7 @@ TEST_CASE("ids are allocated per band and never recycled") {
     CHECK(store::next_free_item_id(db, store::ItemCategory::Object) ==
           sim::tiles::kActor + 1U);
     CHECK(store::next_free_item_id(db, store::ItemCategory::Equipment) ==
-          sim::tiles::kStaff + 1U);
+          sim::tiles::kWoodenStaff + 1U);
 }
 
 TEST_CASE("retiring an item reserves its id forever") {

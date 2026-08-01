@@ -77,6 +77,11 @@ void EffectFeed::render(Renderer2D& renderer, const Tileset& tileset,
             const float scale = 0.7F + t * 0.7F;
             blit(renderer, tileset, tileset.effect(sim::kEffectMeleeGlow),
                  effect.to_x, effect.to_y, scale, Color{80, 220, 120, alpha});
+        } else if (effect.kind == sim::kEffectHoly) {
+            const auto alpha = static_cast<std::uint8_t>((1.0F - t) * 255.0F);
+            const float scale = 0.7F + t * 0.6F;
+            blit(renderer, tileset, tileset.effect(sim::kEffectMeleeGlow),
+                 effect.to_x, effect.to_y, scale, Color{240, 220, 120, alpha});
         } else {
             // Melee (or default): a glow blooming and fading on the target.
             const auto alpha = static_cast<std::uint8_t>((1.0F - t) * 255.0F);

@@ -52,6 +52,11 @@ void write_hello(core::BitWriter& writer, const HelloMsg& msg) {
     writer.write_bits(static_cast<std::uint32_t>(msg.content_hash >> 32U), 32);
     writer.write_bits(static_cast<std::uint32_t>(msg.content_hash & 0xFFFFFFFFU),
                       32);
+    writer.write_bits(msg.vocation, 16);
+    writer.write_bits(msg.outfit_head, 8);
+    writer.write_bits(msg.outfit_body, 8);
+    writer.write_bits(msg.outfit_legs, 8);
+    writer.write_bits(msg.outfit_feet, 8);
     writer.flush();
 }
 
@@ -140,6 +145,10 @@ void write_snapshot(core::BitWriter& writer, const sim::Snapshot& snapshot) {
             writer.write_bits(actor.walk_progress, 8);
         }
         writer.write_bits(actor.appearance, 16);
+        writer.write_bits(sim::clamp_outfit_index(actor.outfit.head), 8);
+        writer.write_bits(sim::clamp_outfit_index(actor.outfit.body), 8);
+        writer.write_bits(sim::clamp_outfit_index(actor.outfit.legs), 8);
+        writer.write_bits(sim::clamp_outfit_index(actor.outfit.feet), 8);
         writer.write_ranged(actor.hp, 0, 32767);
         writer.write_ranged(actor.max_hp, 0, 32767);
     }
@@ -198,6 +207,11 @@ bool read_hello(core::BitReader& reader, HelloMsg& out) {
     const std::uint64_t high = reader.read_bits(32);
     const std::uint64_t low = reader.read_bits(32);
     out.content_hash = (high << 32U) | low;
+    out.vocation = static_cast<std::uint16_t>(reader.read_bits(16));
+    out.outfit_head = static_cast<std::uint8_t>(reader.read_bits(8));
+    out.outfit_body = static_cast<std::uint8_t>(reader.read_bits(8));
+    out.outfit_legs = static_cast<std::uint8_t>(reader.read_bits(8));
+    out.outfit_feet = static_cast<std::uint8_t>(reader.read_bits(8));
     return !reader.overflowed();
 }
 
@@ -277,6 +291,14 @@ bool read_snapshot(core::BitReader& reader, sim::Snapshot& out) {
             actor.walk_progress = static_cast<std::uint8_t>(reader.read_bits(8));
         }
         actor.appearance = static_cast<std::uint16_t>(reader.read_bits(16));
+        actor.outfit.head = sim::clamp_outfit_index(
+            static_cast<std::uint8_t>(reader.read_bits(8)));
+        actor.outfit.body = sim::clamp_outfit_index(
+            static_cast<std::uint8_t>(reader.read_bits(8)));
+        actor.outfit.legs = sim::clamp_outfit_index(
+            static_cast<std::uint8_t>(reader.read_bits(8)));
+        actor.outfit.feet = sim::clamp_outfit_index(
+            static_cast<std::uint8_t>(reader.read_bits(8)));
         actor.hp = static_cast<std::int16_t>(reader.read_ranged(0, 32767));
         actor.max_hp = static_cast<std::int16_t>(reader.read_ranged(0, 32767));
 

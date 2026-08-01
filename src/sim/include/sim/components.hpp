@@ -7,6 +7,7 @@
 
 #include "sim/item_type.hpp"
 #include "sim/monster_type.hpp"
+#include "sim/outfit.hpp"
 #include "sim/types.hpp"
 #include "sim/vocation_type.hpp"
 
@@ -79,6 +80,8 @@ struct CPlayer {
 struct CVocation {
     VocationId id = kVocationNone;
 };
+
+// COutfit (outfit.hpp): player look colours. Absent on mobs; not in players.db yet.
 
 /// Level, experience and mana. HP still lives on CHealth; max_hp/max_mana are
 /// recomputed from vocation + level when XP lands (not wired yet).

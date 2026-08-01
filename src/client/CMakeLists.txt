@@ -16,6 +16,8 @@ set(GAME_CLIENT_SOURCES
     src/effect_feed.cpp
     src/inventory_ui.cpp
     src/spell_hotbar_ui.cpp
+    src/vocation_select_ui.cpp
+    src/status_panel_ui.cpp
     src/corpse_loot_ui.cpp
     src/battle_list.cpp
     src/solo_session.cpp

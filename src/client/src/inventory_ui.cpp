@@ -1,8 +1,10 @@
 #include "client/inventory_ui.hpp"
 
 #include <cstddef>
+#include <cstdio>
 
 #include "client/ui.hpp"
+#include "client/ui_theme.hpp"
 
 namespace client {
 namespace {
@@ -13,20 +15,28 @@ constexpr float kPad = 8.0F;
 constexpr float kStep = kCell + kPad;
 constexpr float kPanelW = 2.0F * kCell + 3.0F * kPad;  // two columns
 constexpr int   kEquipRows = 4;                        // 8 slots / 2 columns
+constexpr int   kBagRows = 3;
+constexpr float kTitleH = 16.0F;
 
-// Shared geometry so draw and hit-test never drift. Everything in window pixels.
 struct Layout {
-    float x0 = 0.0F;      ///< panel left (inside padding)
-    float y0 = 0.0F;      ///< first equipment row top
-    float bag_y = 0.0F;   ///< first backpack row top
+    float x0 = 0.0F;       ///< first cell left
+    float y0 = 0.0F;       ///< first equipment cell top
+    float bag_y = 0.0F;    ///< first backpack cell top
+    float panel_x = 0.0F;  ///< outer panel left
+    float panel_y = 0.0F;  ///< outer panel top
+    float panel_h = 0.0F;
 };
 
-Layout layout(const Renderer2D& renderer) {
+Layout make_layout(const Renderer2D& renderer) {
     Layout out;
-    out.x0 = static_cast<float>(renderer.viewport_width()) - kPanelW - 16.0F +
-             kPad;
-    out.y0 = 24.0F + kPad;
-    out.bag_y = out.y0 + static_cast<float>(kEquipRows) * kStep + kPad;
+    out.panel_x = static_cast<float>(renderer.viewport_width()) - kPanelW -
+                  theme::kMargin;
+    out.panel_y = theme::kMargin;
+    out.x0 = out.panel_x + kPad;
+    out.y0 = out.panel_y + kPad + kTitleH;
+    out.bag_y = out.y0 + static_cast<float>(kEquipRows) * kStep + kPad + kTitleH;
+    out.panel_h = (out.bag_y - out.panel_y) +
+                  static_cast<float>(kBagRows) * kStep + kPad;
     return out;
 }
 
@@ -53,40 +63,68 @@ void icon_in_cell(Renderer2D& renderer, const Tileset& tileset, sim::TileId id,
 
 }  // namespace
 
+float inventory_panel_bottom(const Renderer2D& renderer) {
+    const Layout l = make_layout(renderer);
+    return l.panel_y + l.panel_h;
+}
+
+float inventory_panel_width() { return kPanelW; }
+
 void draw_inventory(Renderer2D& renderer, const Tileset& tileset,
                     const WorldView& view) {
-    const Layout l = layout(renderer);
-    const float panel_h =
-        kPad + static_cast<float>(kEquipRows + 3) * kStep;
+    const Layout l = make_layout(renderer);
 
-    ui::fill(renderer, tileset, l.x0 - kPad, l.y0 - kPad, kPanelW, panel_h,
-             Color{18, 20, 26, 235}, kUi);
+    theme::panel(renderer, tileset, l.panel_x, l.panel_y, kPanelW, l.panel_h, kUi);
+    ui::text(renderer, tileset, "EQUIP", l.x0, l.panel_y + kPad - 2.0F,
+             theme::kGold, 1.0F, kUi + 5.0F);
+    theme::title_rule(renderer, tileset, l.x0, l.y0 - 4.0F, kPanelW - 2.0F * kPad);
 
     for (std::size_t i = 0; i < view.equipment.size(); ++i) {
         float cx = 0.0F;
         float cy = 0.0F;
         cell_rect(l.x0, l.y0, i, cx, cy);
-        ui::fill(renderer, tileset, cx, cy, kCell, kCell,
-                 Color{44, 47, 55, 255}, kUi + 1.0F);
+        ui::fill(renderer, tileset, cx, cy, kCell, kCell, theme::kPanelBgSoft,
+                 kUi + 1.0F);
+        // Subtle gold rim on filled slots.
+        if (view.equipment[i] != sim::kItemNone) {
+            ui::fill(renderer, tileset, cx, cy, kCell, 1.0F, theme::kBorder,
+                     kUi + 2.0F);
+            ui::fill(renderer, tileset, cx, cy + kCell - 1.0F, kCell, 1.0F,
+                     theme::kBorder, kUi + 2.0F);
+            ui::fill(renderer, tileset, cx, cy, 1.0F, kCell, theme::kBorder,
+                     kUi + 2.0F);
+            ui::fill(renderer, tileset, cx + kCell - 1.0F, cy, 1.0F, kCell,
+                     theme::kBorder, kUi + 2.0F);
+        }
         icon_in_cell(renderer, tileset, view.equipment[i], cx, cy);
     }
 
-    ui::fill(renderer, tileset, l.x0, l.bag_y - kPad, kCell + kStep, 2.0F,
-             Color{90, 94, 104, 255}, kUi + 1.0F);  // divider
+    const float bag_title_y = l.bag_y - kTitleH;
+    ui::text(renderer, tileset, "BAG", l.x0, bag_title_y,
+             theme::kGold, 1.0F, kUi + 5.0F);
+    theme::title_rule(renderer, tileset, l.x0, l.bag_y - 4.0F,
+                      kPanelW - 2.0F * kPad);
 
     for (std::size_t i = 0; i < view.inventory.size(); ++i) {
         float cx = 0.0F;
         float cy = 0.0F;
         cell_rect(l.x0, l.bag_y, i, cx, cy);
-        ui::fill(renderer, tileset, cx, cy, kCell, kCell,
-                 Color{36, 38, 45, 255}, kUi + 1.0F);
+        ui::fill(renderer, tileset, cx, cy, kCell, kCell, theme::kPanelBgSoft,
+                 kUi + 1.0F);
         icon_in_cell(renderer, tileset, view.inventory[i].id, cx, cy);
+        if (view.inventory[i].count > 1) {
+            char n[8];
+            std::snprintf(n, sizeof(n), "%d",
+                          static_cast<int>(view.inventory[i].count));
+            ui::text(renderer, tileset, n, cx + 2.0F, cy + kCell - 12.0F,
+                     theme::kText, 1.0F, kUi + 5.0F);
+        }
     }
 }
 
 InventoryAction inventory_hit(const Renderer2D& renderer, const WorldView& view,
                               float mouse_x, float mouse_y) {
-    const Layout l = layout(renderer);
+    const Layout l = make_layout(renderer);
 
     for (std::size_t i = 0; i < view.equipment.size(); ++i) {
         float cx = 0.0F;

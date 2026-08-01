@@ -19,8 +19,12 @@ namespace {
 /// prediction. See docs/architecture.md for what prediction would need to touch.
 class RemoteSession final : public Session {
 public:
-    RemoteSession(std::unique_ptr<net::ITransport> transport, std::string name)
-        : transport_(std::move(transport)), player_name_(std::move(name)) {}
+    RemoteSession(std::unique_ptr<net::ITransport> transport, std::string name,
+                  sim::VocationId vocation, sim::COutfit outfit)
+        : transport_(std::move(transport)),
+          player_name_(std::move(name)),
+          vocation_(vocation),
+          outfit_(outfit) {}
 
     void update() override {
         if (transport_ == nullptr) {
@@ -158,6 +162,11 @@ private:
         // them — but it must prove its content matches, or an item edited on one
         // side silently changes what blocks and how hard things hit.
         hello.content_hash = sim::content_hash(load_item_catalogue());
+        hello.vocation = vocation_;
+        hello.outfit_head = outfit_.head;
+        hello.outfit_body = outfit_.body;
+        hello.outfit_legs = outfit_.legs;
+        hello.outfit_feet = outfit_.feet;
         net::write_hello(writer, hello);
 
         if (writer.overflowed()) {
@@ -320,6 +329,8 @@ private:
 
     std::unique_ptr<net::ITransport> transport_;
     std::string  player_name_;
+    sim::VocationId vocation_ = sim::vocations::kKnight;
+    sim::COutfit    outfit_{};
     net::PeerId  server_peer_ = net::kInvalidPeer;
 
     WorldView   view_;
@@ -341,12 +352,15 @@ private:
 
 std::unique_ptr<Session> make_remote_session(const std::string& host,
                                              std::uint16_t port,
-                                             const std::string& player_name) {
+                                             const std::string& player_name,
+                                             sim::VocationId vocation,
+                                             sim::COutfit outfit) {
     auto transport = net::create_client(host, port);
     if (transport == nullptr) {
         return nullptr;
     }
-    return std::make_unique<RemoteSession>(std::move(transport), player_name);
+    return std::make_unique<RemoteSession>(std::move(transport), player_name,
+                                           vocation, outfit);
 }
 
 }  // namespace client

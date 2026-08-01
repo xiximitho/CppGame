@@ -95,8 +95,8 @@ ItemTypeRegistry build_default_registry() {
     registry.add(ItemType{.id = tiles::kStaff, .flags = ItemFlag::Pickable,
                           .weight = 70U, .equippable = true,
                           .slot = EquipSlot::Weapon, .attack = 10,
-                          .attack_kind = AttackKind::Melee, .attack_range = 1,
-                          .effect = kEffectMeleeGlow});
+                          .attack_kind = AttackKind::Ranged, .attack_range = 3,
+                          .effect = kEffectFirebolt});
     registry.add(ItemType{.id = tiles::kShield, .flags = ItemFlag::Pickable,
                           .weight = 90U, .equippable = true,
                           .slot = EquipSlot::Shield, .defense = 6});
@@ -118,6 +118,106 @@ ItemTypeRegistry build_default_registry() {
     registry.add(ItemType{.id = tiles::kAmulet, .flags = ItemFlag::Pickable,
                           .weight = 5U, .equippable = true,
                           .slot = EquipSlot::Amulet, .defense = 1});
+
+    // Class kits (OTSP icons). Tuned as starter gear — stronger than the
+    // original 300–308 placeholders, still below endgame numbers.
+    registry.add(ItemType{.id = tiles::kKnightSword, .flags = ItemFlag::Pickable,
+                          .weight = 200U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 14,
+                          .attack_kind = AttackKind::Melee, .attack_range = 1,
+                          .effect = kEffectMeleeGlow});
+    registry.add(ItemType{.id = tiles::kSteelShield, .flags = ItemFlag::Pickable,
+                          .weight = 110U, .equippable = true,
+                          .slot = EquipSlot::Shield, .defense = 8});
+    registry.add(ItemType{.id = tiles::kSteelHelmet, .flags = ItemFlag::Pickable,
+                          .weight = 55U, .equippable = true,
+                          .slot = EquipSlot::Helmet, .defense = 5});
+    registry.add(ItemType{.id = tiles::kPlateArmor, .flags = ItemFlag::Pickable,
+                          .weight = 160U, .equippable = true,
+                          .slot = EquipSlot::Body, .defense = 10});
+    registry.add(ItemType{.id = tiles::kPlateLegs, .flags = ItemFlag::Pickable,
+                          .weight = 90U, .equippable = true,
+                          .slot = EquipSlot::Legs, .defense = 5});
+    registry.add(ItemType{.id = tiles::kSteelBoots, .flags = ItemFlag::Pickable,
+                          .weight = 40U, .equippable = true,
+                          .slot = EquipSlot::Boots, .defense = 3});
+    registry.add(ItemType{.id = tiles::kWoodenBow, .flags = ItemFlag::Pickable,
+                          .weight = 80U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 9,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 4,
+                          .effect = kEffectRangedShot});
+    registry.add(ItemType{.id = tiles::kRangerTunic, .flags = ItemFlag::Pickable,
+                          .weight = 70U, .equippable = true,
+                          .slot = EquipSlot::Body, .defense = 6});
+    registry.add(ItemType{.id = tiles::kLeatherLegs, .flags = ItemFlag::Pickable,
+                          .weight = 45U, .equippable = true,
+                          .slot = EquipSlot::Legs, .defense = 3});
+    registry.add(ItemType{.id = tiles::kLeatherBoots, .flags = ItemFlag::Pickable,
+                          .weight = 25U, .equippable = true,
+                          .slot = EquipSlot::Boots, .defense = 2});
+    registry.add(ItemType{.id = tiles::kCrossAmulet, .flags = ItemFlag::Pickable,
+                          .weight = 5U, .equippable = true,
+                          .slot = EquipSlot::Amulet, .defense = 2});
+    registry.add(ItemType{.id = tiles::kQuiver, .flags = ItemFlag::Pickable,
+                          .weight = 30U, .max_stack = 1U});
+    registry.add(ItemType{.id = tiles::kBlueWand, .flags = ItemFlag::Pickable,
+                          .weight = 50U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 12,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 4,
+                          .effect = kEffectFirebolt});
+    registry.add(ItemType{.id = tiles::kMageRobe, .flags = ItemFlag::Pickable,
+                          .weight = 40U, .equippable = true,
+                          .slot = EquipSlot::Body, .defense = 4});
+    registry.add(ItemType{.id = tiles::kWizardHat, .flags = ItemFlag::Pickable,
+                          .weight = 15U, .equippable = true,
+                          .slot = EquipSlot::Helmet, .defense = 2});
+    registry.add(ItemType{.id = tiles::kBlueBoots, .flags = ItemFlag::Pickable,
+                          .weight = 20U, .equippable = true,
+                          .slot = EquipSlot::Boots, .defense = 1});
+    registry.add(ItemType{.id = tiles::kSapphireRing, .flags = ItemFlag::Pickable,
+                          .weight = 5U, .equippable = true,
+                          .slot = EquipSlot::Ring, .defense = 1});
+    registry.add(ItemType{.id = tiles::kNatureStaff, .flags = ItemFlag::Pickable,
+                          .weight = 55U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 11,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 4,
+                          .effect = kEffectNature});
+    registry.add(ItemType{.id = tiles::kLeatherArmor, .flags = ItemFlag::Pickable,
+                          .weight = 65U, .equippable = true,
+                          .slot = EquipSlot::Body, .defense = 5});
+    registry.add(ItemType{.id = tiles::kWolfHood, .flags = ItemFlag::Pickable,
+                          .weight = 18U, .equippable = true,
+                          .slot = EquipSlot::Helmet, .defense = 2});
+    registry.add(ItemType{.id = tiles::kGreenBoots, .flags = ItemFlag::Pickable,
+                          .weight = 22U, .equippable = true,
+                          .slot = EquipSlot::Boots, .defense = 2});
+    registry.add(ItemType{.id = tiles::kMoonAmulet, .flags = ItemFlag::Pickable,
+                          .weight = 5U, .equippable = true,
+                          .slot = EquipSlot::Amulet, .defense = 2});
+    registry.add(ItemType{.id = tiles::kHealthPotion,
+                          .flags = ItemFlag::Pickable | ItemFlag::Stackable,
+                          .weight = 20U, .max_stack = 20U});
+    registry.add(ItemType{.id = tiles::kManaPotion,
+                          .flags = ItemFlag::Pickable | ItemFlag::Stackable,
+                          .weight = 20U, .max_stack = 20U});
+    registry.add(ItemType{.id = tiles::kLongsword, .flags = ItemFlag::Pickable,
+                          .weight = 190U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 13,
+                          .attack_kind = AttackKind::Melee, .attack_range = 1,
+                          .effect = kEffectMeleeGlow});
+    registry.add(ItemType{.id = tiles::kRoundShield, .flags = ItemFlag::Pickable,
+                          .weight = 80U, .equippable = true,
+                          .slot = EquipSlot::Shield, .defense = 5});
+    registry.add(ItemType{.id = tiles::kSturdyBow, .flags = ItemFlag::Pickable,
+                          .weight = 95U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 10,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 5,
+                          .effect = kEffectRangedShot});
+    registry.add(ItemType{.id = tiles::kWoodenStaff, .flags = ItemFlag::Pickable,
+                          .weight = 60U, .equippable = true,
+                          .slot = EquipSlot::Weapon, .attack = 8,
+                          .attack_kind = AttackKind::Ranged, .attack_range = 3,
+                          .effect = kEffectNature});
 
     return registry;
 }

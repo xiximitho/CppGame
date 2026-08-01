@@ -1,9 +1,9 @@
 # atlas.txt - binds a sprite region to a sim TileId (see docs/content.md)
 # kind      id/dir  x    y    w   h   origin_x origin_y
 ground      1       0    0    64  32  -32      0
-ground      2       64   0    64  32  -32      0
-ground      3       128  0    64  32  -32      0
-ground      4       192  0    64  32  -32      0
+ground      2       64    0    64  32  -32      0
+ground      3       128    0    64  32  -32      0
+ground      4       192    0    64  32  -32      0
 object      100     0    64   64  64  -32      -32
 object      101     64   64   64  64  -32      -32
 object      102     128  64   64  64  -32      -32
@@ -26,13 +26,13 @@ bag                 240  240  16  16
 # font: first_ascii count x y cell_w cell_h per_row
 font        32      95   0    224  6   8   42
 actor       0       0    128  32  48  -16      -32
-actor       1       32   128  32  48  -16      -32
-actor       2       64   128  32  48  -16      -32
-actor       3       96   128  32  48  -16      -32
-actor       4       128  128  32  48  -16      -32
-actor       5       160  128  32  48  -16      -32
-actor       6       192  128  32  48  -16      -32
-actor       7       224  128  32  48  -16      -32
+actor       1       32    128  32  48  -16      -32
+actor       2       64    128  32  48  -16      -32
+actor       3       96    128  32  48  -16      -32
+actor       4       128    128  32  48  -16      -32
+actor       5       160    128  32  48  -16      -32
+actor       6       192    128  32  48  -16      -32
+actor       7       224    128  32  48  -16      -32
 item        309     240  240  16  16
 object      103     0    256  64  64  -32      -32
 object      104     64   256  64  64  -32      -32
@@ -48,3 +48,42 @@ mobstrip    2   0    448  32  32  4  3  -16  -16  30
 mobstrip    3   0    480  32  32  4  3  -16  -16  30
 ground      301     192  0    64  32  -32      0
 object      105     128  256  64  64  -32      -32
+item        311     0   512  32  32
+item        312     32   512  32  32
+item        313     64   512  32  32
+item        314     96   512  32  32
+item        315     128   512  32  32
+item        316     160   512  32  32
+item        317     192   512  32  32
+item        318     224   512  32  32
+item        319     0   544  32  32
+item        320     32   544  32  32
+item        321     64   544  32  32
+item        322     96   544  32  32
+item        323     128   544  32  32
+item        324     160   544  32  32
+item        325     192   544  32  32
+item        326     224   544  32  32
+item        327     0   576  32  32
+item        328     32   576  32  32
+item        329     64   576  32  32
+item        330     96   576  32  32
+item        331     128   576  32  32
+item        332     160   576  32  32
+item        333     192   576  32  32
+item        334     224   576  32  32
+item        335     0   608  32  32
+item        336     32   608  32  32
+item        337     64   608  32  32
+item        338     96   608  32  32
+# Player outfit layers (white silhouettes, tinted at draw).
+# layer: 0=boots 1=legs/pants 2=armor 3=hair  (Tibia looktype colours)
+outfit      0       0    640  32  48  -16     -32
+outfit      1       32    640  32  48  -16     -32
+outfit      2       64    640  32  48  -16     -32
+outfit      3       96    640  32  48  -16     -32
+playerstrip  0  0    688  32  48  4  3  -16  -32  30
+outfitstrip 0       0    736  32  48  4  3  -16  -32
+outfitstrip 1       0    784  32  48  4  3  -16  -32
+outfitstrip 2       0    832  32  48  4  3  -16  -32
+outfitstrip 3       0    880  32  48  4  3  -16  -32

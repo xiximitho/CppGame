@@ -14,6 +14,12 @@ namespace client {
 void draw_inventory(Renderer2D& renderer, const Tileset& tileset,
                     const WorldView& view);
 
+/// Bottom edge of the inventory panel in window pixels (for stacking other HUD).
+float inventory_panel_bottom(const Renderer2D& renderer);
+
+/// Outer width of the inventory panel (shared with battle list alignment).
+float inventory_panel_width();
+
 /// What a click on the panel means. Equip = a backpack item clicked; Unequip = a
 /// filled equipment slot clicked; None = the click missed the panel (so it should
 /// fall through to the world).

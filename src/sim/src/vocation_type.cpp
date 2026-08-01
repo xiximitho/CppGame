@@ -58,7 +58,10 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 5,
             .capacity = 470,
             .preferred_kind = AttackKind::Melee,
-            .starter_items = {tiles::kSword, tiles::kShield},
+            .starter_items = {tiles::kKnightSword, tiles::kSteelShield,
+                              tiles::kSteelHelmet, tiles::kPlateArmor,
+                              tiles::kPlateLegs, tiles::kSteelBoots,
+                              tiles::kHealthPotion},
         });
         r.add(VocationType{
             .id = vocations::kPaladin,
@@ -71,7 +74,10 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 15,
             .capacity = 430,
             .preferred_kind = AttackKind::Ranged,
-            .starter_items = {tiles::kBow},
+            .starter_items = {tiles::kWoodenBow, tiles::kRangerTunic,
+                              tiles::kLeatherLegs, tiles::kLeatherBoots,
+                              tiles::kCrossAmulet, tiles::kQuiver,
+                              tiles::kHealthPotion},
         });
         r.add(VocationType{
             .id = vocations::kMage,
@@ -84,7 +90,9 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 30,
             .capacity = 400,
             .preferred_kind = AttackKind::Ranged,
-            .starter_items = {tiles::kStaff},
+            .starter_items = {tiles::kBlueWand, tiles::kMageRobe,
+                              tiles::kWizardHat, tiles::kBlueBoots,
+                              tiles::kSapphireRing, tiles::kManaPotion},
         });
         r.add(VocationType{
             .id = vocations::kDruid,
@@ -97,7 +105,9 @@ const VocationRegistry& default_vocations() {
             .mana_per_level = 30,
             .capacity = 410,
             .preferred_kind = AttackKind::Ranged,
-            .starter_items = {tiles::kStaff},
+            .starter_items = {tiles::kNatureStaff, tiles::kLeatherArmor,
+                              tiles::kWolfHood, tiles::kGreenBoots,
+                              tiles::kMoonAmulet, tiles::kManaPotion},
         });
         // Stubs: present in the catalogue so ids stay reserved; no starter kit
         // and weak numbers until stealth / summons exist.

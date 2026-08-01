@@ -34,6 +34,11 @@ TEST_CASE("hello round trips and carries the protocol version") {
         hello.protocol = net::kProtocolVersion;
         hello.name = "felipe";
         hello.content_hash = kHash;
+        hello.vocation = 3;  // mage
+        hello.outfit_head = 2;
+        hello.outfit_body = 8;
+        hello.outfit_legs = 11;
+        hello.outfit_feet = 5;
         net::write_hello(writer, hello);
     });
 
@@ -45,6 +50,11 @@ TEST_CASE("hello round trips and carries the protocol version") {
     CHECK(decoded.protocol == net::kProtocolVersion);
     CHECK(decoded.name == "felipe");
     CHECK(decoded.content_hash == kHash);
+    CHECK(decoded.vocation == 3);
+    CHECK(decoded.outfit_head == 2);
+    CHECK(decoded.outfit_body == 8);
+    CHECK(decoded.outfit_legs == 11);
+    CHECK(decoded.outfit_feet == 5);
 }
 
 TEST_CASE("input round trips") {
@@ -184,6 +194,7 @@ TEST_CASE("a snapshot round trips walking and standing actors") {
     standing.facing = sim::Direction::West;
     standing.walking = false;
     standing.appearance = 5;
+    standing.outfit = sim::COutfit{1, 2, 3, 4};
     standing.hp = 80;
     standing.max_hp = 100;
     original.actors.push_back(standing);
@@ -196,6 +207,7 @@ TEST_CASE("a snapshot round trips walking and standing actors") {
     walking.walk_dir = sim::Direction::SouthEast;
     walking.walk_progress = 200;
     walking.appearance = 7;
+    walking.outfit = sim::COutfit{0, 15, 7, 9};
     walking.hp = 12;
     walking.max_hp = 12;
     original.actors.push_back(walking);
@@ -217,6 +229,10 @@ TEST_CASE("a snapshot round trips walking and standing actors") {
     CHECK(decoded.actors[0].facing == sim::Direction::West);
     CHECK_FALSE(decoded.actors[0].walking);
     CHECK(decoded.actors[0].hp == 80);
+    CHECK(decoded.actors[0].outfit.head == 1);
+    CHECK(decoded.actors[0].outfit.body == 2);
+    CHECK(decoded.actors[0].outfit.legs == 3);
+    CHECK(decoded.actors[0].outfit.feet == 4);
 
     CHECK(decoded.actors[1].net_id == 999999);
     CHECK(decoded.actors[1].tile == sim::TilePos{11, 21, 2});
@@ -224,6 +240,10 @@ TEST_CASE("a snapshot round trips walking and standing actors") {
     CHECK(decoded.actors[1].walk_dir == sim::Direction::SouthEast);
     CHECK(decoded.actors[1].walk_progress == 200);
     CHECK(decoded.actors[1].appearance == 7);
+    CHECK(decoded.actors[1].outfit.head == 0);
+    CHECK(decoded.actors[1].outfit.body == 15);
+    CHECK(decoded.actors[1].outfit.legs == 7);
+    CHECK(decoded.actors[1].outfit.feet == 9);
 }
 
 TEST_CASE("a standing actor costs fewer bits than a walking one") {

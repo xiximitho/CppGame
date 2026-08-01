@@ -46,4 +46,35 @@ constexpr TileId kAmulet = 308;
 /// Caster weapon. Mage and Druid fight at full strength with it; others do not.
 constexpr TileId kStaff  = 310;
 
+// Class kits imported from assets/tibia_like/otsp_equipment_01.png
+// (tools/import_otsp_items.py). Ids are contract — never recycle.
+constexpr TileId kKnightSword   = 311;
+constexpr TileId kSteelShield   = 312;
+constexpr TileId kSteelHelmet   = 313;
+constexpr TileId kPlateArmor    = 314;
+constexpr TileId kPlateLegs     = 315;
+constexpr TileId kSteelBoots    = 316;
+constexpr TileId kWoodenBow     = 317;
+constexpr TileId kRangerTunic   = 318;
+constexpr TileId kLeatherLegs   = 319;
+constexpr TileId kLeatherBoots  = 320;
+constexpr TileId kCrossAmulet   = 321;
+constexpr TileId kQuiver        = 322;
+constexpr TileId kBlueWand      = 323;
+constexpr TileId kMageRobe      = 324;
+constexpr TileId kWizardHat     = 325;
+constexpr TileId kBlueBoots     = 326;
+constexpr TileId kSapphireRing  = 327;
+constexpr TileId kNatureStaff   = 328;
+constexpr TileId kLeatherArmor  = 329;
+constexpr TileId kWolfHood      = 330;
+constexpr TileId kGreenBoots    = 331;
+constexpr TileId kMoonAmulet    = 332;
+constexpr TileId kHealthPotion  = 333;
+constexpr TileId kManaPotion    = 334;
+constexpr TileId kLongsword     = 335;
+constexpr TileId kRoundShield   = 336;
+constexpr TileId kSturdyBow     = 337;
+constexpr TileId kWoodenStaff   = 338;
+
 }  // namespace sim::tiles

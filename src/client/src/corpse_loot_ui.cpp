@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "client/ui.hpp"
+#include "client/ui_theme.hpp"
 
 namespace client {
 namespace {
@@ -16,8 +17,8 @@ constexpr float kPanelW = 2.0F * kCell + 3.0F * kPad;
 constexpr float kTitleH = 18.0F;
 
 struct Layout {
-    float x0 = 16.0F + kPad;
-    float y0 = 24.0F + kPad + kTitleH;
+    float x0 = theme::kMargin + kPad;
+    float y0 = theme::kMargin + kPad + kTitleH;
     float panel_h = 0.0F;
 };
 
@@ -56,17 +57,18 @@ void icon_in_cell(Renderer2D& renderer, const Tileset& tileset, sim::TileId id,
 void draw_corpse_loot(Renderer2D& renderer, const Tileset& tileset,
                       const CorpseView& corpse) {
     const Layout l = layout(corpse);
-    ui::fill(renderer, tileset, l.x0 - kPad, l.y0 - kPad - kTitleH, kPanelW,
-             l.panel_h, Color{22, 18, 14, 240}, kUi);
-    ui::text(renderer, tileset, "loot", l.x0, l.y0 - kTitleH,
-             Color{214, 170, 60, 255});
+    theme::panel(renderer, tileset, l.x0 - kPad, l.y0 - kPad - kTitleH, kPanelW,
+                 l.panel_h, kUi);
+    ui::text(renderer, tileset, "LOOT", l.x0, l.y0 - kTitleH, theme::kGold, 1.0F,
+             kUi + 5.0F);
+    theme::title_rule(renderer, tileset, l.x0, l.y0 - 4.0F, kPanelW - 2.0F * kPad);
 
     for (std::size_t i = 0; i < corpse.items.size(); ++i) {
         float cx = 0.0F;
         float cy = 0.0F;
         cell_rect(l.x0, l.y0, i, cx, cy);
-        ui::fill(renderer, tileset, cx, cy, kCell, kCell,
-                 Color{48, 40, 28, 255}, kUi + 1.0F);
+        ui::fill(renderer, tileset, cx, cy, kCell, kCell, theme::kPanelBgSoft,
+                 kUi + 1.0F);
         icon_in_cell(renderer, tileset, corpse.items[i].id, cx, cy);
     }
 }

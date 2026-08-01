@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "client/ui.hpp"
+#include "client/ui_theme.hpp"
 #include "sim/vocation_type.hpp"
 
 namespace client {
@@ -30,8 +31,7 @@ void draw_spell_hotbar(Renderer2D& renderer, const Tileset& tileset,
     const float x0 = (vw - panel_w) * 0.5F;
     const float y0 = vh - panel_h - 16.0F;
 
-    ui::fill(renderer, tileset, x0, y0, panel_w, panel_h,
-             Color{18, 20, 26, 220}, kUi);
+    theme::panel(renderer, tileset, x0, y0, panel_w, panel_h, kUi);
 
     const std::int32_t mana = view.max_mana > 0 ? view.mana : 0;
     const std::int32_t max_mana = view.max_mana > 0 ? view.max_mana
@@ -44,41 +44,53 @@ void draw_spell_hotbar(Renderer2D& renderer, const Tileset& tileset,
             : 0.0F;
     const float bar_x = x0 + kPad;
     const float bar_y = y0 + kPad;
-    ui::fill(renderer, tileset, bar_x, bar_y, kBarW, kBarH,
-             Color{30, 34, 48, 255}, kUi + 1.0F);
-    ui::fill(renderer, tileset, bar_x, bar_y, kBarW * fill, kBarH,
-             Color{60, 110, 220, 255}, kUi + 2.0F);
+    ui::fill(renderer, tileset, bar_x, bar_y, kBarW, kBarH, theme::kMpTrack,
+             kUi + 1.0F);
+    ui::fill(renderer, tileset, bar_x, bar_y, kBarW * fill, kBarH, theme::kMpFill,
+             kUi + 2.0F);
 
     char mana_label[32];
     std::snprintf(mana_label, sizeof(mana_label), "MP %d/%d",
                   static_cast<int>(mana), static_cast<int>(max_mana));
     ui::text(renderer, tileset, mana_label, bar_x, bar_y + kBarH + 2.0F,
-             Color{180, 190, 210, 255}, 1.0F, kUi + 4.0F);
+             theme::kTextDim, 1.0F, kUi + 5.0F);
 
     const float slot_x = x0 + (panel_w - kSlot) * 0.5F;
     const float slot_y = bar_y + kBarH + 16.0F;
-    ui::fill(renderer, tileset, slot_x, slot_y, kSlot, kSlot,
-             Color{44, 47, 55, 255}, kUi + 1.0F);
+    ui::fill(renderer, tileset, slot_x, slot_y, kSlot, kSlot, theme::kPanelBgSoft,
+             kUi + 1.0F);
+    ui::fill(renderer, tileset, slot_x, slot_y, kSlot, 1.0F, theme::kBorder,
+             kUi + 2.0F);
+    ui::fill(renderer, tileset, slot_x, slot_y + kSlot - 1.0F, kSlot, 1.0F,
+             theme::kBorder, kUi + 2.0F);
+    ui::fill(renderer, tileset, slot_x, slot_y, 1.0F, kSlot, theme::kBorder,
+             kUi + 2.0F);
+    ui::fill(renderer, tileset, slot_x + kSlot - 1.0F, slot_y, 1.0F, kSlot,
+             theme::kBorder, kUi + 2.0F);
 
     if (!spells.empty()) {
         const sim::SpellDef& spell = spells[0];
         const Color tint = spell.kind == sim::SpellKind::Heal
-                               ? Color{90, 200, 110, 255}
-                               : Color{230, 120, 50, 255};
+                               ? (spell.effect == sim::kEffectHoly
+                                      ? theme::kGoldBright
+                                      : Color{90, 200, 110, 255})
+                               : (spell.effect == sim::kEffectFirebolt
+                                      ? Color{230, 120, 50, 255}
+                                      : theme::kTextDim);
         ui::fill(renderer, tileset, slot_x + 4.0F, slot_y + 4.0F, kSlot - 8.0F,
                  kSlot - 8.0F, tint, kUi + 2.0F);
         ui::text(renderer, tileset, "1", slot_x + 4.0F, slot_y + 4.0F,
-                 Color{255, 255, 255, 255}, 1.0F, kUi + 5.0F);
+                 theme::kText, 1.0F, kUi + 5.0F);
         ui::text(renderer, tileset, spell.name, slot_x + kSlot + 6.0F,
-                 slot_y + 14.0F, Color{220, 220, 230, 255}, 1.0F, kUi + 5.0F);
+                 slot_y + 14.0F, theme::kText, 1.0F, kUi + 5.0F);
     } else {
         ui::text(renderer, tileset, "1 -", slot_x + 8.0F, slot_y + 14.0F,
-                 Color{120, 124, 134, 255}, 1.0F, kUi + 5.0F);
+                 theme::kTextMute, 1.0F, kUi + 5.0F);
     }
 
     if (spec.id != sim::kVocationNone) {
         ui::text(renderer, tileset, spec.code, x0 + kPad, y0 + panel_h - 14.0F,
-                 Color{160, 168, 180, 255}, 1.0F, kUi + 5.0F);
+                 theme::kGold, 1.0F, kUi + 5.0F);
     }
 }
 

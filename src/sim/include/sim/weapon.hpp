@@ -23,13 +23,16 @@ enum class WeaponFamily : std::uint8_t {
 
 /// Which family a weapon id belongs to. Non-weapons and unknown ids → None.
 constexpr WeaponFamily weapon_family(ItemTypeId id) {
-    if (id == tiles::kSword) {
+    if (id == tiles::kSword || id == tiles::kKnightSword ||
+        id == tiles::kLongsword) {
         return WeaponFamily::Sword;
     }
-    if (id == tiles::kBow) {
+    if (id == tiles::kBow || id == tiles::kWoodenBow ||
+        id == tiles::kSturdyBow) {
         return WeaponFamily::Bow;
     }
-    if (id == tiles::kStaff) {
+    if (id == tiles::kStaff || id == tiles::kBlueWand ||
+        id == tiles::kNatureStaff || id == tiles::kWoodenStaff) {
         return WeaponFamily::Staff;
     }
     return WeaponFamily::None;

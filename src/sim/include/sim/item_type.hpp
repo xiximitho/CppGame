@@ -116,6 +116,7 @@ constexpr std::uint8_t kEffectMeleeGlow  = 1;
 constexpr std::uint8_t kEffectRangedShot = 2;
 constexpr std::uint8_t kEffectFirebolt   = 3;
 constexpr std::uint8_t kEffectNature     = 4;
+constexpr std::uint8_t kEffectHoly       = 5;  ///< paladin blessing / holy light
 
 /// One entry in the catalogue. Deliberately POD-like and free of any pointer to
 /// presentation, so it serialises to the content blob as a fixed record.

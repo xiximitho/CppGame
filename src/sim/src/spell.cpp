@@ -10,7 +10,25 @@
 namespace sim {
 namespace {
 
-constexpr std::array<SpellDef, 2> kSpells{{
+constexpr std::array<SpellDef, 4> kSpells{{
+    SpellDef{.id = kSpellBash,
+             .name = "Bash",
+             .vocation = vocations::kKnight,
+             .kind = SpellKind::Damage,
+             .mana_cost = 8,
+             .cooldown_ticks = 20,
+             .range = 1,
+             .power = 22,
+             .effect = kEffectMeleeGlow},
+    SpellDef{.id = kSpellBlessing,
+             .name = "Blessing",
+             .vocation = vocations::kPaladin,
+             .kind = SpellKind::Heal,
+             .mana_cost = 20,
+             .cooldown_ticks = 28,
+             .range = 0,
+             .power = 30,
+             .effect = kEffectHoly},
     SpellDef{.id = kSpellFirebolt,
              .name = "Firebolt",
              .vocation = vocations::kMage,
@@ -45,7 +63,7 @@ const SpellDef* find_spell(SpellId id) {
 }
 
 std::span<const SpellDef> spells_for_vocation(VocationId vocation) {
-    // At most one spell per vocation in V1; return a subspan of size 0 or 1.
+    // One spell per playable vocation in V1; return a subspan of size 0 or 1.
     for (std::size_t i = 0; i < kSpells.size(); ++i) {
         if (kSpells[i].vocation == vocation) {
             return std::span<const SpellDef>(kSpells.data() + i, 1);

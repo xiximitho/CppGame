@@ -505,17 +505,24 @@ void handle_hello(sim::World& world, sim::Rng& rng, net::ITransport& transport,
                  connection.name.c_str(), spawn.x, spawn.y,
                  static_cast<int>(spawn.z), health.hp, health.max_hp);
     } else {
-        // Vocation owns kit / HP / mana. Body armour for everyone so casters
-        // are not naked on first login.
-        sim::apply_vocation(world, entity, vocation);
-        {
-            auto& equipment = world.registry().get<sim::CEquipment>(entity);
-            if (equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] ==
-                sim::kItemNone) {
-                equipment.slots[static_cast<std::size_t>(sim::EquipSlot::Body)] =
-                    sim::tiles::kArmor;
-            }
+        // Client Hello picks the class for a *new* character; stubs / unknown
+        // fall back to the server --vocation default.
+        sim::VocationId chosen = vocation;
+        const auto hello_voc = static_cast<sim::VocationId>(hello.vocation);
+        if (hello_voc == sim::vocations::kKnight ||
+            hello_voc == sim::vocations::kPaladin ||
+            hello_voc == sim::vocations::kMage ||
+            hello_voc == sim::vocations::kDruid) {
+            chosen = hello_voc;
         }
+        // Vocation owns kit / HP / mana (weapon + armour from starter_items).
+        sim::apply_vocation(world, entity, chosen);
+        world.registry().emplace_or_replace<sim::COutfit>(
+            entity,
+            sim::COutfit{sim::clamp_outfit_index(hello.outfit_head),
+                         sim::clamp_outfit_index(hello.outfit_body),
+                         sim::clamp_outfit_index(hello.outfit_legs),
+                         sim::clamp_outfit_index(hello.outfit_feet)});
     }
 
     connection.welcomed = true;

@@ -20,7 +20,9 @@ namespace net {
 /// 5: added C2S_Equip / C2S_Unequip (interactive inventory).
 /// 6: content hash on Hello.
 /// 7: added C2S_CastSpell (vocation spells).
-constexpr std::uint32_t kProtocolVersion = 7;
+/// 8: vocation id on Hello (new-character class pick).
+/// 9: outfit colours (4×u8) on Hello + Snapshot ActorState.
+constexpr std::uint32_t kProtocolVersion = 9;
 
 constexpr std::uint16_t kDefaultPort = 7777;
 
@@ -77,6 +79,15 @@ struct HelloMsg {
     /// the protocol version, and for the same reason: a mismatch caught at the
     /// handshake is a message, a mismatch missed is a bug hunt.
     std::uint64_t content_hash = 0;
+    /// Chosen vocation for a *new* character. Returning saves ignore this until
+    /// vocation is persisted; unknown / stub ids fall back to the server default.
+    std::uint16_t vocation = 0;
+    /// Outfit palette indices for a *new* character (head/body/legs/feet).
+    /// Not persisted yet — same backlog as vocation on returning saves.
+    std::uint8_t outfit_head = 0;
+    std::uint8_t outfit_body = 0;
+    std::uint8_t outfit_legs = 0;
+    std::uint8_t outfit_feet = 0;
 };
 
 /// One player intent for one tick. There is exactly one unit per player, so this

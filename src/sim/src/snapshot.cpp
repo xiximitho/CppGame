@@ -13,6 +13,14 @@ ActorState read_actor_state(const World& world, entt::entity entity) {
     state.net_id     = actor.net_id;
     state.appearance = actor.appearance;
 
+    if (const auto* outfit = registry.try_get<COutfit>(entity)) {
+        state.outfit = *outfit;
+        state.outfit.head = clamp_outfit_index(state.outfit.head);
+        state.outfit.body = clamp_outfit_index(state.outfit.body);
+        state.outfit.legs = clamp_outfit_index(state.outfit.legs);
+        state.outfit.feet = clamp_outfit_index(state.outfit.feet);
+    }
+
     const auto& pos = registry.get<CPosition>(entity);
     state.tile   = pos.tile;
     state.facing = pos.facing;

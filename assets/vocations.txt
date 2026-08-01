@@ -20,7 +20,7 @@ vocation 1 Cavaleiro
   mana_per_level 5
   capacity       470
   kind           melee
-  starter        300 302
+  starter        311 312 313 314 315 316 333
 
 vocation 2 Paladino
   code           PAL
@@ -31,7 +31,7 @@ vocation 2 Paladino
   mana_per_level 15
   capacity       430
   kind           ranged
-  starter        301
+  starter        317 318 319 320 321 322 333
 
 vocation 3 Mago elemental
   code           MAG
@@ -42,7 +42,7 @@ vocation 3 Mago elemental
   mana_per_level 30
   capacity       400
   kind           ranged
-  starter        310
+  starter        323 324 325 326 327 334
 
 vocation 4 Druida
   code           DRU
@@ -53,7 +53,7 @@ vocation 4 Druida
   mana_per_level 30
   capacity       410
   kind           ranged
-  starter        310
+  starter        328 329 330 331 332 334
 
 vocation 5 Ladino
   code           LAD
