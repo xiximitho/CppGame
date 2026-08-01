@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #0a0908; }
+  a { color: #c9a227; text-decoration: none; }
+  a:hover { color: #e7c455; }
+  @keyframes gh-pulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+</style>
+</helmet>
+
+<div style="width: 1920px; background: #0a0908; color: #e6dfd0; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+  <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+  <div style="display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: linear-gradient(#191612, #100e0b); border-bottom: 1px solid #2e2720">
+    <div style="font-family: Cinzel, serif; font-weight: 700; font-size: 20px; letter-spacing: .14em; color: #c9a227">GRIMHOLD</div>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7d7466; letter-spacing: .08em">MOCKUP DE INTERFACE / MMO ISOMÉTRICO 3D · 1920×1080</div>
+    <div style="flex: 1"></div>
+    <div style="display: flex; gap: 6px">
+      <div onClick="{{ goGame }}" style="{{ tabGame }}">1 · Tela de jogo</div>
+      <div onClick="{{ goChar }}" style="{{ tabChar }}">2 · Criar personagem</div>
+      <div onClick="{{ goMap }}" style="{{ tabMap }}">3 · Mapa e andares</div>
+      <div onClick="{{ goMarket }}" style="{{ tabMarket }}">4 · Mercado e depot</div>
+      <div onClick="{{ goCast }}" style="{{ tabCast }}">5 · Fichas de personagem</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isGame }}" hint-placeholder-val="{{ true }}">
+  <div style="height: 1080px; display: flex; background: #0d0c0a">
+
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+
+      <div style="height: 34px; display: flex; align-items: center; gap: 18px; padding: 0 14px; background: #14120f; border-bottom: 1px solid #262019; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072">
+        <span style="color: #c9a227">Antiga Praça de Valdris</span>
+        <span>andar Z-7 (superfície)</span>
+        <span>32 ms</span>
+        <span>1 483 online</span>
+        <div style="flex: 1"></div>
+        <span style="color: #b3423a">zona PvP aberta · morte custa 10% de exp e 1 item equipado</span>
+      </div>
+
+      <div style="flex: 1; position: relative; overflow: hidden; background: radial-gradient(120% 90% at 50% 30%, #1b1813, #070706 70%)">
+
+        <div style="position: absolute; left: 50%; top: 52%; width: 1024px; height: 1024px; margin-left: -512px; margin-top: -512px; transform: rotateX(60deg) rotateZ(45deg); transform-style: preserve-3d">
+
+          <sc-if value="{{ tileGrid }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; inset: 0; background-color: #4a4640; background-image: repeating-linear-gradient(0deg, rgba(0,0,0,.42) 0 1px, transparent 1px 64px), repeating-linear-gradient(90deg, rgba(0,0,0,.42) 0 1px, transparent 1px 64px), repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 6px, transparent 6px 12px)"></div>
+          </sc-if>
+          <sc-if value="{{ noGrid }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; inset: 0; background-color: #4a4640; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 6px, transparent 6px 12px)"></div>
+          </sc-if>
+
+          <sc-for list="{{ patches }}" as="p" hint-placeholder-count="6">
+            <div style="{{ p.s }}"></div>
+          </sc-for>
+
+          <sc-for list="{{ walls }}" as="w" hint-placeholder-count="14">
+            <div style="{{ w.box }}">
+              <div style="{{ w.top }}"></div>
+              <div style="{{ w.south }}"></div>
+              <div style="{{ w.east }}"></div>
+            </div>
+          </sc-for>
+
+          <sc-for list="{{ chars }}" as="c" hint-placeholder-count="12">
+            <div style="{{ c.wrap }}">
+              <div style="{{ c.shadow }}"></div>
+              <div style="{{ c.bill }}">
+                <sc-if value="{{ showNameplates }}" hint-placeholder-val="{{ true }}">
+                  <div style="{{ c.plate }}">{{ c.name }}</div>
+                  <div style="position: absolute; left: 50%; margin-left: -22px; top: 14px; width: 44px; height: 4px; background: #2a0f0d; border: 1px solid #000">
+                    <div style="{{ c.hpBar }}"></div>
+                  </div>
+                </sc-if>
+                <div style="{{ c.sprite }}">
+                  <div style="position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: rgba(255,255,255,.72); letter-spacing: .04em">{{ c.code }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+
+        </div>
+
+        <div style="position: absolute; left: 16px; top: 16px; width: 236px; padding: 10px 12px; background: rgba(12,11,9,.86); border: 1px solid #33291d; font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.7; color: #9a907c">
+          <div style="color: #c9a227; letter-spacing: .1em; margin-bottom: 6px">LEGENDA DO MOCKUP</div>
+          <div>■ blocos = geometria isométrica real (CSS 3D)</div>
+          <div>▨ retângulos listrados = placeholder de sprite pixel-art (você substitui)</div>
+          <div>tile = 64 px · projeção 2:1 · paredes 130 px</div>
+        </div>
+
+        <sc-if value="{{ showQuestLog }}" hint-placeholder-val="{{ true }}">
+        <div style="position: absolute; right: 16px; top: 16px; width: 300px; background: rgba(14,12,10,.94); border: 1px solid #3a3020; box-shadow: 0 18px 40px rgba(0,0,0,.6)">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: linear-gradient(#241e15, #171310); border-bottom: 1px solid #3a3020">
+            <span style="font-family: Cinzel, serif; font-size: 13px; letter-spacing: .08em; color: #c9a227">Diário de missões</span>
+            <div style="flex: 1"></div>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6f6659">— ✕</span>
+          </div>
+          <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 10px">
+            <sc-for list="{{ quests }}" as="q" hint-placeholder-count="3">
+              <div style="border-left: 2px solid #4a3d24; padding-left: 10px">
+                <div style="font-size: 12px; font-weight: 600; color: #e6dfd0">{{ q.t }}</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072; margin-top: 3px">{{ q.step }}</div>
+                <div style="margin-top: 6px; height: 3px; background: #241f18">
+                  <div style="{{ q.bar }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px">
+          <sc-for list="{{ hotkeys }}" as="k" hint-placeholder-count="10">
+            <div style="{{ k.s }}">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #8a8072">{{ k.key }}</div>
+              <div style="width: 26px; height: 26px; margin: 3px auto 0; background: repeating-linear-gradient(45deg, #2f2a22 0 4px, #26221b 4px 8px); border: 1px solid #453a2a"></div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #6f6659; margin-top: 3px">{{ k.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+      </div>
+
+      <div style="height: 284px; display: flex; flex-direction: column; background: #100e0c; border-top: 1px solid #262019">
+        <div style="display: flex; gap: 2px; padding: 6px 8px 0">
+          <sc-for list="{{ chatTabs }}" as="t" hint-placeholder-count="5">
+            <div style="{{ t.s }}">{{ t.name }}</div>
+          </sc-for>
+        </div>
+        <div style="flex: 1; overflow: hidden; padding: 8px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.75; display: flex; flex-direction: column; justify-content: flex-end">
+          <sc-for list="{{ chat }}" as="l" hint-placeholder-count="9">
+            <div style="{{ l.s }}">{{ l.txt }}</div>
+          </sc-for>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid #221d17">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #c9a227">Local ▸</span>
+          <div style="flex: 1; height: 26px; background: #0a0908; border: 1px solid #2e2720"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="width: 404px; background: #131110; border-left: 1px solid #2e2720; display: flex; flex-direction: column; gap: 10px; padding: 10px; overflow: hidden">
+
+      <div style="display: flex; gap: 10px; padding: 10px; background: #1a1713; border: 1px solid #2e2720">
+        <div style="width: 52px; height: 62px; background: repeating-linear-gradient(45deg, #35302a 0 5px, #2b2721 5px 10px); border: 1px solid #4a4238; position: relative">
+          <div style="position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #9a907c">retrato</div>
+        </div>
+        <div style="flex: 1; min-width: 0">
+          <div style="display: flex; align-items: center; gap: 6px">
+            <span style="font-family: Cinzel, serif; font-size: 16px; color: #e6dfd0">Aldric Vayne</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; padding: 2px 4px; background: #3a1512; color: #e08c84; border: 1px solid #6b241e">SKULL BRANCO 12:44</span>
+          </div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072; margin-top: 3px">Cavaleiro · nível 187 · Valdris</div>
+          <div style="display: flex; gap: 10px; margin-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6f6659">
+            <span>frags 3</span><span>party 4/5</span><span>PZ livre</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px; background: #1a1713; border: 1px solid #2e2720">
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072"><span>VIDA</span><span>{{ hpTxt }}</span></div>
+        <div style="height: 12px; background: #2a0f0d; border: 1px solid #000"><div style="{{ hpBar }}"></div></div>
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072; margin-top: 4px"><span>MANA</span><span>{{ mpTxt }}</span></div>
+        <div style="height: 12px; background: #0e1a2a; border: 1px solid #000"><div style="{{ mpBar }}"></div></div>
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072; margin-top: 4px"><span>EXPERIÊNCIA</span><span>{{ expTxt }}</span></div>
+        <div style="height: 8px; background: #14200e; border: 1px solid #000"><div style="{{ expBar }}"></div></div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 14px; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #9a907c">
+          <sc-for list="{{ stats }}" as="s" hint-placeholder-count="8">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #2b251e; padding-bottom: 2px"><span style="color: #6f6659">{{ s.k }}</span><span>{{ s.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px">
+        <div style="padding: 10px; background: #1a1713; border: 1px solid #2e2720">
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227; margin-bottom: 8px">EQUIPAMENTO</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 42px); grid-auto-rows: 42px; gap: 4px">
+            <sc-for list="{{ equip }}" as="e" hint-placeholder-count="12">
+              <div style="{{ e.s }}">
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #7d7466; text-align: center; line-height: 42px">{{ e.code }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex: 1; padding: 10px; background: #1a1713; border: 1px solid #2e2720; min-width: 0">
+          <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227; margin-bottom: 8px"><span>MOCHILA</span><span style="color: #6f6659">cap 1 240 oz</span></div>
+          <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px">
+            <sc-for list="{{ bag }}" as="b" hint-placeholder-count="20">
+              <div style="{{ b.s }}">
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #7d7466">{{ b.code }}</div>
+                <div style="position: absolute; right: 1px; bottom: 0; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #e6dfd0; text-shadow: 0 0 3px #000">{{ b.n }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px; background: #1a1713; border: 1px solid #2e2720">
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227; margin-bottom: 8px"><span>GRUPO</span><span style="color: #6f6659">exp compartilhada +30%</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <sc-for list="{{ party }}" as="m" hint-placeholder-count="4">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <div style="width: 18px; height: 18px; background: repeating-linear-gradient(45deg, #322c24 0 4px, #29241d 4px 8px); border: 1px solid #453a2a"></div>
+              <div style="flex: 1; min-width: 0">
+                <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #b8ae9c"><span>{{ m.name }}</span><span style="color: #6f6659">{{ m.role }}</span></div>
+                <div style="height: 5px; background: #2a0f0d; margin-top: 3px"><div style="{{ m.bar }}"></div></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="padding: 10px; background: #1a1713; border: 1px solid #2e2720">
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227; margin-bottom: 8px"><span>MINIMAPA</span><span style="color: #6f6659">32.412 · 31.988 · z 7</span></div>
+        <div style="display: flex; gap: 8px">
+          <div style="flex: 1; height: 150px; background: #0e0d0b; border: 1px solid #2e2720; position: relative; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.025) 0 8px, transparent 8px 16px)">
+            <div style="position: absolute; left: 24%; top: 30%; width: 34%; height: 26%; background: #3a352c"></div>
+            <div style="position: absolute; left: 62%; top: 56%; width: 22%; height: 20%; background: #22333f"></div>
+            <div style="position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -3px 0 0 -3px; background: #e7c455; box-shadow: 0 0 6px #c9a227; animation: gh-pulse 1.8s infinite"></div>
+            <div style="position: absolute; left: 8px; bottom: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659">placeholder de mapa</div>
+          </div>
+          <div style="width: 74px; display: flex; flex-direction: column; gap: 2px">
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659; margin-bottom: 2px">ANDAR</div>
+            <sc-for list="{{ floors }}" as="f" hint-placeholder-count="7">
+              <div style="{{ f.s }}">{{ f.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isCast }}" hint-placeholder-val="{{ false }}">
+  <div style="box-sizing: border-box; height: 1080px; display: flex; flex-direction: column; background: #0c0b09; padding: 28px 32px; gap: 20px">
+    <div style="display: flex; align-items: baseline; gap: 16px">
+      <div style="font-family: Cinzel, serif; font-size: 26px; color: #e6dfd0">Fichas de personagem</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7d7466">blockout 3D em escala de tile · briefing para o pixel artist</div>
+    </div>
+
+    <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; min-height: 0">
+
+      <sc-for list="{{ sheets }}" as="s" hint-placeholder-count="2">
+        <div style="display: flex; flex-direction: column; background: #131110; border: 1px solid #2e2720; min-height: 0">
+
+          <div style="display: flex; align-items: baseline; gap: 12px; padding: 14px 18px; background: linear-gradient(#1e1912, #16130f); border-bottom: 1px solid #2e2720">
+            <div style="font-family: Cinzel, serif; font-size: 20px; color: #e6dfd0">{{ s.name }}</div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; color: #c9a227">{{ s.tag }}</div>
+            <div style="flex: 1"></div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7d7466">{{ s.size }}</div>
+          </div>
+
+          <div style="display: flex; gap: 16px; padding: 16px 18px">
+            <div style="width: 300px; height: 300px; flex: none; position: relative; overflow: hidden; background: radial-gradient(110% 90% at 50% 35%, #1a1712, #080807 72%); border: 1px solid #241f18">
+              <div style="{{ s.stage }}">
+                <div style="position: absolute; left: 0; top: 0; width: 192px; height: 192px; background-color: #3f3b35; background-image: repeating-linear-gradient(0deg, rgba(0,0,0,.45) 0 1px, transparent 1px 64px), repeating-linear-gradient(90deg, rgba(0,0,0,.45) 0 1px, transparent 1px 64px)"></div>
+                <div style="{{ s.ruler }}"></div>
+                <sc-for list="{{ s.parts }}" as="b" hint-placeholder-count="9">
+                  <div style="{{ b.box }}">
+                    <div style="{{ b.top }}"></div>
+                    <div style="{{ b.south }}"></div>
+                    <div style="{{ b.east }}"></div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="position: absolute; left: 10px; bottom: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659">blockout volumétrico · grade = tiles de 64 px</div>
+            </div>
+
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+              <div style="font-size: 12px; color: #9a907c; line-height: 1.65; text-wrap: pretty">{{ s.desc }}</div>
+
+              <div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .1em; color: #6f6659; margin-bottom: 6px">PALETA — RAMPA FECHADA</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 3px">
+                  <sc-for list="{{ s.palette }}" as="c" hint-placeholder-count="10">
+                    <div style="{{ c.s }}"></div>
+                  </sc-for>
+                </div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659; margin-top: 5px">{{ s.paletteNote }}</div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #9a907c">
+                <sc-for list="{{ s.specs }}" as="r" hint-placeholder-count="8">
+                  <div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #2b251e; padding-bottom: 2px"><span style="color: #6f6659">{{ r.k }}</span><span>{{ r.v }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 18px 16px; display: flex; gap: 16px; min-height: 0">
+            <div style="flex: 1; min-width: 0">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .1em; color: #6f6659; margin-bottom: 6px">FOLHA DE SPRITE — 4 DIREÇÕES (placeholders)</div>
+              <div style="display: grid; grid-template-columns: 46px repeat(8, 64px); gap: 4px; align-items: center; justify-content: start">
+                <div></div>
+                <sc-for list="{{ frameCols }}" as="f" hint-placeholder-count="8">
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #6f6659; text-align: center">{{ f }}</div>
+                </sc-for>
+                <sc-for list="{{ s.rows }}" as="row" hint-placeholder-count="4">
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #8a8072">{{ row.dir }}</div>
+                  <sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="8">
+                    <div style="{{ c.s }}"></div>
+                  </sc-for>
+                </sc-for>
+              </div>
+            </div>
+            <div style="width: 250px; flex: none">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .1em; color: #6f6659; margin-bottom: 6px">{{ s.behaviorTitle }}</div>
+              <div style="display: flex; flex-direction: column; gap: 5px">
+                <sc-for list="{{ s.behavior }}" as="b" hint-placeholder-count="5">
+                  <div style="display: flex; gap: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.5"><span style="color: #c9a227">{{ b.n }}</span><span style="color: #9a907c">{{ b.t }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isChar }}" hint-placeholder-val="{{ false }}">
+  <div style="box-sizing: border-box; height: 1080px; display: flex; background: radial-gradient(90% 70% at 50% 0%, #1a1712, #0a0908 70%); padding: 40px 48px; gap: 32px">
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+      <div style="font-family: Cinzel, serif; font-size: 34px; letter-spacing: .06em; color: #e6dfd0">Escolha seu caminho</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8a8072; margin-top: 8px; max-width: 720px; line-height: 1.7">Em Grimhold a vocação é permanente. Morrer devolve experiência ao mundo e o inimigo pode levar o que você carregava.</div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px">
+        <sc-for list="{{ classes }}" as="k" hint-placeholder-count="6">
+          <div style="{{ k.card }}" onClick="{{ k.pick }}">
+            <div style="display: flex; gap: 14px">
+              <div style="width: 84px; height: 118px; background: repeating-linear-gradient(45deg, #342e26 0 6px, #29241d 6px 12px); border: 1px solid #4a4238; position: relative; flex: none">
+                <div style="position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #9a907c; text-align: center">sprite<br>{{ k.code }}</div>
+              </div>
+              <div style="min-width: 0">
+                <div style="font-family: Cinzel, serif; font-size: 19px; color: #e6dfd0">{{ k.name }}</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #c9a227; letter-spacing: .08em; margin-top: 4px">{{ k.role }}</div>
+                <div style="font-size: 12px; color: #9a907c; line-height: 1.6; margin-top: 8px; text-wrap: pretty">{{ k.desc }}</div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 14px">
+              <sc-for list="{{ k.bars }}" as="b" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <div style="width: 62px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659">{{ b.k }}</div>
+                  <div style="flex: 1; height: 6px; background: #241f18"><div style="{{ b.bar }}"></div></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7d7466; border-top: 1px dotted #2f281f; padding-top: 8px">{{ k.hint }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="width: 380px; background: #15120f; border: 1px solid #2e2720; padding: 20px; display: flex; flex-direction: column; gap: 18px; align-self: flex-start">
+      <div style="font-family: Cinzel, serif; font-size: 18px; color: #c9a227">Novo personagem</div>
+      <div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6f6659; letter-spacing: .1em">NOME</div>
+        <div style="margin-top: 6px; height: 34px; background: #0c0b09; border: 1px solid #3a3020; display: flex; align-items: center; padding: 0 10px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #e6dfd0">Aldric Vayne<span style="color: #c9a227; animation: gh-pulse 1s infinite">|</span></div>
+      </div>
+      <div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6f6659; letter-spacing: .1em">VOCAÇÃO SELECIONADA</div>
+        <div style="margin-top: 6px; font-family: Cinzel, serif; font-size: 20px; color: #e6dfd0">{{ pickedName }}</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072; margin-top: 4px">{{ pickedRole }}</div>
+      </div>
+      <div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6f6659; letter-spacing: .1em">MUNDO</div>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px">
+          <sc-for list="{{ worlds }}" as="w" hint-placeholder-count="3">
+            <div style="{{ w.s }}"><span>{{ w.name }}</span><span style="color: #7d7466">{{ w.meta }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 12px; background: #1e0f0d; border: 1px solid #5a231d; font-size: 12px; color: #d9a49c; line-height: 1.6">
+        Mundo hardcore: a morte remove 10% da experiência, um item equipado e deixa seu loot no chão por 5 minutos.
+      </div>
+      <div style="height: 44px; background: linear-gradient(#c9a227, #8e6f16); color: #17130a; display: flex; align-items: center; justify-content: center; font-family: Cinzel, serif; font-size: 15px; letter-spacing: .1em">ENTRAR EM VALDRIS</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isMap }}" hint-placeholder-val="{{ false }}">
+  <div style="box-sizing: border-box; height: 1080px; display: flex; background: #0c0b09; padding: 32px; gap: 24px">
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+      <div style="display: flex; align-items: baseline; gap: 16px">
+        <div style="font-family: Cinzel, serif; font-size: 28px; color: #e6dfd0">Reino de Valdris</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7d7466">caça em andares · 15 níveis de profundidade</div>
+      </div>
+      <div style="flex: 1; margin-top: 18px; position: relative; background: #0e0d0b; border: 1px solid #2e2720; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.02) 0 10px, transparent 10px 20px)">
+        <sc-for list="{{ regions }}" as="r" hint-placeholder-count="6">
+          <div style="{{ r.s }}">
+            <div style="font-family: Cinzel, serif; font-size: 15px; color: #e6dfd0">{{ r.name }}</div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072; margin-top: 2px">{{ r.meta }}</div>
+          </div>
+        </sc-for>
+        <div style="position: absolute; left: 16px; bottom: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6f6659">placeholder do mapa-múndi — arte final entra aqui</div>
+      </div>
+    </div>
+    <div style="width: 460px; display: flex; flex-direction: column; gap: 16px">
+      <div style="padding: 16px; background: #15120f; border: 1px solid #2e2720">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227">PILHA DE ANDARES — CATACUMBAS DE VALDRIS</div>
+        <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 12px">
+          <sc-for list="{{ zstack }}" as="z" hint-placeholder-count="9">
+            <div style="{{ z.row }}">
+              <div style="width: 46px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072">{{ z.z }}</div>
+              <div style="{{ z.slice }}"></div>
+              <div style="flex: 1; min-width: 0">
+                <div style="font-size: 12px; color: #e6dfd0">{{ z.name }}</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7d7466">{{ z.meta }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 16px; background: #15120f; border: 1px solid #2e2720">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227">RESPAWN SELECIONADO</div>
+        <div style="font-family: Cinzel, serif; font-size: 20px; color: #e6dfd0; margin-top: 8px">Fossa dos Necrófagos · z-11</div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 18px; margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9a907c">
+          <sc-for list="{{ respawn }}" as="s" hint-placeholder-count="6">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #2b251e; padding-bottom: 3px"><span style="color: #6f6659">{{ s.k }}</span><span>{{ s.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 16px; background: #1e0f0d; border: 1px solid #5a231d; font-size: 12px; color: #d9a49c; line-height: 1.6">Sem depot abaixo de z-9. Volte de teleporte ou perca o loot ao morrer.</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isMarket }}" hint-placeholder-val="{{ false }}">
+  <div style="box-sizing: border-box; height: 1080px; display: flex; background: #0c0b09; padding: 32px; gap: 24px">
+    <div style="width: 420px; display: flex; flex-direction: column; gap: 16px">
+      <div style="font-family: Cinzel, serif; font-size: 26px; color: #e6dfd0">Depot de Valdris</div>
+      <div style="padding: 14px; background: #15120f; border: 1px solid #2e2720">
+        <div style="display: flex; gap: 4px">
+          <sc-for list="{{ stashTabs }}" as="t" hint-placeholder-count="4">
+            <div style="{{ t.s }}">{{ t.name }}</div>
+          </sc-for>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 12px">
+          <sc-for list="{{ stash }}" as="s" hint-placeholder-count="40">
+            <div style="{{ s.s }}">
+              <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #7d7466">{{ s.code }}</div>
+              <div style="position: absolute; right: 1px; bottom: 0; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #e6dfd0; text-shadow: 0 0 3px #000">{{ s.n }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072"><span>saldo</span><span style="color: #c9a227">4 812 340 gp</span></div>
+      </div>
+      <div style="padding: 14px; background: #15120f; border: 1px solid #2e2720">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; color: #c9a227">MINHAS OFERTAS</div>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px">
+          <sc-for list="{{ myOffers }}" as="o" hint-placeholder-count="3">
+            <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #b8ae9c; border-bottom: 1px dotted #2b251e; padding-bottom: 6px"><span>{{ o.item }}</span><span>{{ o.price }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0">
+      <div style="display: flex; align-items: baseline; gap: 16px">
+        <div style="font-family: Cinzel, serif; font-size: 26px; color: #e6dfd0">Mercado</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7d7466">2 118 anúncios ativos · taxa 2%</div>
+      </div>
+      <div style="flex: 1; display: flex; gap: 16px; min-height: 0">
+        <div style="flex: 1; background: #15120f; border: 1px solid #2e2720; display: flex; flex-direction: column; min-width: 0">
+          <div style="display: grid; grid-template-columns: 1fr 90px 110px 110px; gap: 10px; padding: 10px 14px; background: #1c1814; border-bottom: 1px solid #2e2720; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; color: #7d7466">
+            <span>ITEM</span><span>QTD</span><span>MELHOR VENDA</span><span>MELHOR COMPRA</span>
+          </div>
+          <sc-for list="{{ market }}" as="m" hint-placeholder-count="12">
+            <div style="{{ m.row }}">
+              <div style="display: flex; align-items: center; gap: 10px; min-width: 0">
+                <div style="width: 26px; height: 26px; background: repeating-linear-gradient(45deg, #332d25 0 4px, #29241d 4px 8px); border: 1px solid #453a2a; flex: none"></div>
+                <span style="font-size: 12px; color: #e6dfd0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ m.item }}</span>
+              </div>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8072">{{ m.qty }}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7fa35c">{{ m.sell }}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #c98a3f">{{ m.buy }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="width: 330px; background: #15120f; border: 1px solid #2e2720; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; gap: 12px">
+            <div style="width: 56px; height: 56px; background: repeating-linear-gradient(45deg, #35302a 0 5px, #2b2721 5px 10px); border: 1px solid #4a4238"></div>
+            <div>
+              <div style="font-family: Cinzel, serif; font-size: 17px; color: #e6dfd0">Lâmina do Carrasco</div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8a8072; margin-top: 3px">arma · duas mãos · nível 130</div>
+            </div>
+          </div>
+          <div style="height: 130px; background: #0e0d0b; border: 1px solid #2e2720; position: relative; background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 28px)">
+            <div style="position: absolute; left: 10px; bottom: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #6f6659">placeholder do gráfico de preço · 30 dias</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9a907c">
+            <sc-for list="{{ itemStats }}" as="s" hint-placeholder-count="5">
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #2b251e; padding-bottom: 3px"><span style="color: #6f6659">{{ s.k }}</span><span>{{ s.v }}</span></div>
+            </sc-for>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: auto">
+            <div style="flex: 1; height: 38px; background: linear-gradient(#2f4a24, #1d2f16); border: 1px solid #4a6b38; color: #cfe0bb; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px">COMPRAR</div>
+            <div style="flex: 1; height: 38px; background: linear-gradient(#4a3a24, #2f2416); border: 1px solid #6b5638; color: #e0cfbb; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px">ANUNCIAR</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1920,&quot;height&quot;:1080},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;jogo&quot;,&quot;personagem&quot;,&quot;mapa&quot;,&quot;mercado&quot;,&quot;fichas&quot;],&quot;default&quot;:&quot;jogo&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Tela&quot;},&quot;showNameplates&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mundo&quot;},&quot;tileGrid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mundo&quot;},&quot;showQuestLog&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;HUD&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, picked: 0 };
+
+  get screen() { return this.state.screen || this.props.screen || 'jogo'; }
+
+  tab(name, label) {
+    const on = this.screen === name;
+    return `padding: 7px 14px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .06em; border: 1px solid ${on ? '#5c4a24' : '#2e2720'}; background: ${on ? 'linear-gradient(#2a2317, #1c1811)' : '#141210'}; color: ${on ? '#e7c455' : '#8a8072'}`;
+  }
+
+  wall(x, y, w, d, h, top, s1, s2) {
+    return {
+      box: `position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${d}px; transform-style: preserve-3d`,
+      top: `position: absolute; inset: 0; transform: translateZ(${h}px); background: ${top}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.5)`,
+      south: `position: absolute; left: 0; top: 0; width: ${w}px; height: ${h}px; transform-origin: top left; transform: translateY(${d}px) rotateX(90deg); background: ${s1}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.5)`,
+      east: `position: absolute; left: 0; top: 0; width: ${d}px; height: ${h}px; transform-origin: top left; transform: translateX(${w}px) translateZ(${h}px) rotateY(-90deg) rotateZ(90deg); background: ${s2 || s1}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.5)`
+    };
+  }
+
+  box(x, y, z, w, d, h, top, s1, s2) {
+    return {
+      box: `position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${d}px; transform: translateZ(${z}px); transform-style: preserve-3d`,
+      top: `position: absolute; inset: 0; transform: translateZ(${h}px); background: ${top}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.45)`,
+      south: `position: absolute; left: 0; top: 0; width: ${w}px; height: ${h}px; transform-origin: top left; transform: translateY(${d}px) rotateX(90deg); background: ${s1}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.45)`,
+      east: `position: absolute; left: 0; top: 0; width: ${d}px; height: ${h}px; transform-origin: top left; transform: translateX(${w}px) translateZ(${h}px) rotateY(-90deg) rotateZ(90deg); background: ${s2 || s1}; box-shadow: inset 0 0 0 1px rgba(0,0,0,.45)`
+    };
+  }
+
+  patch(x, y, w, h, z, bg) {
+    return { s: `position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; transform: translateZ(${z}px); background: ${bg}` };
+  }
+
+  char(x, y, code, name, hp, kind) {
+    const col = kind === 'mob' ? '#e08c84' : kind === 'npc' ? '#8fd0e0' : '#e6dfd0';
+    const stripe = kind === 'mob' ? ['#4a2622', '#3a1d1a'] : kind === 'npc' ? ['#2b3a44', '#233038'] : ['#3a3a46', '#2f2f3a'];
+    const hh = kind === 'mob' ? 72 : 58;
+    return {
+      code, name,
+      wrap: `position: absolute; left: ${x}px; top: ${y}px; width: 0; height: 0; transform-style: preserve-3d`,
+      shadow: `position: absolute; left: -22px; top: -11px; width: 44px; height: 22px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0,0,0,.55), transparent)`,
+      bill: `position: absolute; left: -20px; bottom: 0; width: 40px; height: ${hh}px; transform-origin: bottom center; transform: rotateZ(-45deg) rotateX(-60deg)`,
+      sprite: `position: absolute; left: 0; bottom: 0; width: 40px; height: ${hh - 26}px; background: repeating-linear-gradient(45deg, ${stripe[0]} 0 5px, ${stripe[1]} 5px 10px); border: 1px solid rgba(0,0,0,.7); box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset`,
+      plate: `position: absolute; left: 50%; transform: translateX(-50%); top: 0; white-space: nowrap; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: ${col}; text-shadow: 0 0 4px #000, 0 1px 0 #000`,
+      hpBar: `width: ${hp}%; height: 100%; background: ${hp > 50 ? '#6fae4f' : hp > 25 ? '#c9a227' : '#b3423a'}`
+    };
+  }
+
+  renderVals() {
+    const p = this.props;
+    const screen = this.screen;
+    const grid = p.tileGrid ?? true;
+
+    const stoneTop = 'linear-gradient(160deg, #6b6558, #565046)';
+    const stoneS = '#3b3630';
+    const stoneE = '#2f2b26';
+    const woodTop = 'linear-gradient(160deg, #5a4630, #46351f)';
+
+    const walls = [
+      this.wall(64, 64, 372, 20, 130, stoneTop, stoneS, stoneE),
+      this.wall(64, 84, 20, 236, 130, stoneTop, stoneS, stoneE),
+      this.wall(416, 84, 20, 236, 130, stoneTop, stoneS, stoneE),
+      this.wall(64, 300, 130, 20, 130, stoneTop, stoneS, stoneE),
+      this.wall(300, 300, 136, 20, 130, stoneTop, stoneS, stoneE),
+      this.wall(660, 108, 240, 18, 112, stoneTop, stoneS, stoneE),
+      this.wall(660, 126, 18, 176, 112, stoneTop, stoneS, stoneE),
+      this.wall(882, 126, 18, 176, 112, stoneTop, stoneS, stoneE),
+      this.wall(660, 284, 90, 18, 112, stoneTop, stoneS, stoneE),
+      this.wall(700, 176, 160, 20, 46, woodTop, '#3a2c1c'),
+      this.wall(452, 452, 120, 120, 58, 'linear-gradient(160deg, #5d6f74, #46565b)', '#33403f'),
+      this.wall(240, 620, 52, 52, 44, woodTop, '#3a2c1c'),
+      this.wall(300, 656, 44, 44, 36, woodTop, '#3a2c1c'),
+      this.wall(760, 560, 64, 64, 26, 'linear-gradient(160deg, #4b4038, #3a322c)', '#2b2520')
+    ];
+
+    const patches = [
+      this.patch(84, 84, 332, 216, 2, 'repeating-linear-gradient(90deg, #5a4630 0 22px, #4e3d29 22px 44px)'),
+      this.patch(678, 126, 204, 158, 2, 'repeating-linear-gradient(0deg, #524a3c 0 20px, #47402f 20px 40px)'),
+      this.patch(60, 700, 380, 264, 1, 'repeating-linear-gradient(45deg, #3d4a2c 0 8px, #35422a 8px 16px)'),
+      this.patch(600, 720, 260, 200, 1, 'repeating-linear-gradient(45deg, #22404f 0 10px, #1d3745 10px 20px)'),
+      this.patch(500, 240, 128, 128, 1, 'repeating-linear-gradient(45deg, #16130f 0 6px, #0e0c09 6px 12px)'),
+      this.patch(880, 400, 100, 100, 1, 'repeating-linear-gradient(45deg, #2b2b30 0 6px, #202024 6px 12px)')
+    ];
+
+    const chars = [
+      this.char(470, 400, 'CAV', 'Aldric Vayne', 88, 'pc'),
+      this.char(520, 430, 'MAG', 'Iselle', 64, 'pc'),
+      this.char(440, 468, 'DRU', 'Bram', 96, 'pc'),
+      this.char(556, 384, 'PAL', 'Kestra', 72, 'pc'),
+      this.char(620, 470, 'LAD', 'Vero †', 41, 'pc'),
+      this.char(300, 400, 'NEC', 'Mordrin', 100, 'pc'),
+      this.char(660, 620, 'MOB', 'Necrófago', 55, 'mob'),
+      this.char(710, 660, 'MOB', 'Necrófago', 100, 'mob'),
+      this.char(600, 660, 'MOB', 'Carniçal', 78, 'mob'),
+      this.char(200, 240, 'NPC', 'Taverneira', 100, 'npc'),
+      this.char(780, 210, 'NPC', 'Ferreiro', 100, 'npc'),
+      this.char(360, 560, 'NPC', 'Guarda', 100, 'npc')
+    ];
+
+    const slot = (extra) => `position: relative; aspect-ratio: 1; background: #0d0c0a; border: 1px solid ${extra ? '#4a3a1e' : '#2b251e'}`;
+    const bagItems = [['GP', '842'], ['MP', '31'], ['HP', '12'], ['RNA', '4'], ['ESP', ''], ['ANL', '2'], ['CRD', '18'], ['DNT', '7'], ['OSS', '23'], ['PRG', '5'], ['TCH', '1'], ['MAP', ''], ['CHV', '3'], ['PÓ', '9'], ['GEM', '2'], ['', ''], ['', ''], ['', ''], ['', ''], ['', '']];
+
+    const st = '#8f949c', sd = '#5b6068', sh = 'linear-gradient(160deg, #b6bcc4, #8b9098)';
+    const knight = [
+      this.box(78, 92, 0, 12, 14, 12, 'linear-gradient(160deg, #5b4530, #46341f)', '#3a2b1b'),
+      this.box(100, 92, 0, 12, 14, 12, 'linear-gradient(160deg, #5b4530, #46341f)', '#3a2b1b'),
+      this.box(78, 90, 12, 34, 16, 20, 'linear-gradient(160deg, #6f757d, #565b62)', sd, '#4a4f55'),
+      this.box(76, 88, 32, 38, 20, 26, 'linear-gradient(160deg, #9c352c, #7a2621)', '#6a1f1a', '#551713'),
+      this.box(70, 84, 50, 50, 26, 10, sh, sd, '#4a4f55'),
+      this.box(86, 92, 60, 18, 16, 14, sh, st, sd),
+      this.box(92, 96, 74, 6, 6, 8, 'linear-gradient(160deg, #e0c153, #b8931f)', '#8e6f16'),
+      this.box(58, 86, 26, 8, 26, 28, 'linear-gradient(160deg, #7d838b, #5f646b)', '#4a4f55', '#3d4147'),
+      this.box(134, 96, 30, 6, 6, 46, 'linear-gradient(160deg, #cfd4da, #a3a8af)', '#7d838b')
+    ];
+    const dTop = 'linear-gradient(160deg, #7a4638, #5c322a)', dS = '#48241f', dS2 = '#361a17';
+    const bTop = 'linear-gradient(160deg, #d3c7ab, #ab9f85)', bS = '#8a7f68';
+    const demon = [
+      this.box(34, 120, 86, 8, 54, 58, 'linear-gradient(160deg, #3c2320, #2a1715)', '#241211'),
+      this.box(150, 120, 86, 8, 54, 58, 'linear-gradient(160deg, #3c2320, #2a1715)', '#241211'),
+      this.box(72, 96, 0, 16, 18, 14, bTop, bS),
+      this.box(104, 96, 0, 16, 18, 14, bTop, bS),
+      this.box(72, 92, 14, 48, 24, 38, dTop, dS, dS2),
+      this.box(66, 88, 52, 60, 30, 18, dTop, dS, dS2),
+      this.box(60, 84, 70, 72, 36, 40, dTop, dS, dS2),
+      this.box(52, 80, 104, 88, 44, 16, 'linear-gradient(160deg, #6a3b2f, #4d2822)', dS, dS2),
+      this.box(36, 96, 74, 16, 16, 46, dTop, dS, dS2),
+      this.box(144, 96, 74, 16, 16, 46, dTop, dS, dS2),
+      this.box(84, 92, 120, 26, 22, 20, 'linear-gradient(160deg, #8a5040, #63342c)', dS, dS2),
+      this.box(80, 96, 138, 8, 8, 24, bTop, bS),
+      this.box(106, 96, 138, 8, 8, 24, bTop, bS)
+    ];
+    const sw = (c) => ({ s: `width: 20px; height: 20px; background: ${c}; border: 1px solid rgba(0,0,0,.55)` });
+    const cell = () => ({ s: 'width: 64px; height: 64px; background: repeating-linear-gradient(45deg, #2f2a22 0 4px, #26221b 4px 8px); border: 1px solid #3a3226' });
+    const rows = (dirs) => dirs.map(dir => ({ dir, cells: Array.from({ length: 8 }, cell) }));
+
+    return {
+      isGame: screen === 'jogo', isChar: screen === 'personagem', isMap: screen === 'mapa', isMarket: screen === 'mercado', isCast: screen === 'fichas',
+      goCast: () => this.setState({ screen: 'fichas' }),
+      tabCast: this.tab('fichas'),
+      frameCols: ['idle 1', 'idle 2', 'and 1', 'and 2', 'and 3', 'and 4', 'atq 1', 'morte'],
+      sheets: [
+        {
+          name: 'Aldric Vayne', tag: 'CAVALEIRO · JOGADOR', size: '40 × 62 px · 1,15 tile de altura',
+          stage: 'position: absolute; left: 50%; top: 62%; margin-left: -96px; margin-top: -96px; width: 192px; height: 192px; transform: scale(1.55) rotateX(60deg) rotateZ(45deg); transform-style: preserve-3d',
+          ruler: 'position: absolute; left: 64px; top: 64px; width: 64px; height: 64px; border: 1px solid rgba(201,162,39,.45)',
+          parts: knight,
+          desc: 'Silhueta larga em cima e estreita embaixo: ombreiras dominam a leitura vista de cima. Escudo sempre no lado oeste do sprite, arma no leste — assim o jogador identifica a vocação em 1 tile de distância.',
+          palette: ['#cfd4da', '#a3a8af', '#8f949c', '#5b6068', '#3d4147', '#9c352c', '#7a2621', '#551713', '#5b4530', '#c9a227', '#0d0b0a'].map(sw),
+          paletteNote: '11 cores · 5 tons de aço, 3 de tabardo, 1 dourado de acento, 1 couro, 1 contorno',
+          specs: [
+            { k: 'altura no tile', v: '1,15 (62 px)' }, { k: 'largura', v: '40 px' },
+            { k: 'contorno', v: '1 px #0d0b0a' }, { k: 'ponto de luz', v: 'noroeste alto' },
+            { k: 'frames idle', v: '2 · 600 ms' }, { k: 'frames andar', v: '4 · 130 ms' },
+            { k: 'acento visível', v: 'crista dourada' }, { k: 'cor de equipe', v: 'tabardo' }
+          ],
+          behaviorTitle: 'LEITURA E ANIMAÇÃO',
+          behavior: [
+            { n: '1', t: 'Idle respira só no torso; ombreiras ficam fixas para não tremer na multidão.' },
+            { n: '2', t: 'Ataque é um giro de 3 frames com rastro de 2 px, sem sair do tile.' },
+            { n: '3', t: 'Ao tomar dano, flash branco de 1 frame — nunca deslocar o sprite.' },
+            { n: '4', t: 'Skull de PvP entra como badge acima do nome, nunca no sprite.' },
+            { n: '5', t: 'Equipamento visível: elmo, arma, escudo e capa. O resto só na ficha.' }
+          ],
+          rows: rows(['sul', 'oeste', 'norte', 'leste'])
+        },
+        {
+          name: 'Necrófago Ancião', tag: 'ELITE · Z-11 · NÍVEL 130+', size: '96 × 150 px · 2,3 tiles de altura',
+          stage: 'position: absolute; left: 50%; top: 74%; margin-left: -96px; margin-top: -96px; width: 192px; height: 192px; transform: scale(1.25) rotateX(60deg) rotateZ(45deg); transform-style: preserve-3d',
+          ruler: 'position: absolute; left: 64px; top: 64px; width: 64px; height: 64px; border: 1px solid rgba(201,162,39,.45)',
+          parts: demon,
+          desc: 'Ocupa 1 tile de chão mas 2,3 tiles de altura: intimida por oclusão — ele cobre a parede atrás dele. Corcunda para frente, chifres e cascos de osso claro para dar o único ponto de alto contraste na criatura.',
+          palette: ['#8a5040', '#7a4638', '#5c322a', '#48241f', '#361a17', '#d3c7ab', '#ab9f85', '#8a7f68', '#3c2320', '#c9a227', '#0d0b0a'].map(sw),
+          paletteNote: '11 cores · rampa de carne queimada, 3 tons de osso, dourado só nos olhos',
+          specs: [
+            { k: 'altura no tile', v: '2,3 (150 px)' }, { k: 'pegada', v: '1 × 1 tile' },
+            { k: 'vida', v: '38 000' }, { k: 'exp', v: '24 800' },
+            { k: 'velocidade', v: '260 (lenta)' }, { k: 'imune a', v: 'morte, terra' },
+            { k: 'olhos', v: 'dourado #c9a227' }, { k: 'sombra', v: 'elipse 56 × 26 px' }
+          ],
+          behaviorTitle: 'COMPORTAMENTO DE COMBATE',
+          behavior: [
+            { n: '1', t: 'Garra em cone de 3 tiles à frente — telegrafada por 1 frame de braço erguido.' },
+            { n: '2', t: 'Grito a cada 20 s: empurra o grupo 2 tiles e cancela cura.' },
+            { n: '3', t: 'Abaixo de 30% de vida invoca 4 necrófagos comuns e some do minimapa.' },
+            { n: '4', t: 'Não segue por escadas: quebra o pull, cria a regra tática do andar.' },
+            { n: '5', t: 'Ao morrer deixa poça de sangue por 30 s (área de dano) antes do loot.' }
+          ],
+          rows: rows(['sul', 'oeste', 'norte', 'leste'])
+        }
+      ],
+      goGame: () => this.setState({ screen: 'jogo' }),
+      goChar: () => this.setState({ screen: 'personagem' }),
+      goMap: () => this.setState({ screen: 'mapa' }),
+      goMarket: () => this.setState({ screen: 'mercado' }),
+      tabGame: this.tab('jogo'), tabChar: this.tab('personagem'), tabMap: this.tab('mapa'), tabMarket: this.tab('mercado'),
+
+      showChrome: p.hideChrome ? false : (p.showChrome ?? true),
+      tileGrid: grid, noGrid: !grid,
+      showNameplates: p.showNameplates ?? true,
+      showQuestLog: p.showQuestLog ?? true,
+      walls, patches, chars,
+
+      hpTxt: '1 640 / 1 860', mpTxt: '820 / 1 240', expTxt: '187 · 68% para 188',
+      hpBar: 'width: 88%; height: 100%; background: linear-gradient(#c05046, #8e2d26)',
+      mpBar: 'width: 66%; height: 100%; background: linear-gradient(#4a7ec0, #2a4c82)',
+      expBar: 'width: 68%; height: 100%; background: linear-gradient(#7fae4f, #4c7a2c)',
+      stats: [
+        { k: 'capacidade', v: '1 240 oz' }, { k: 'velocidade', v: '312' },
+        { k: 'espada', v: '108' }, { k: 'escudo', v: '112' },
+        { k: 'alma', v: '84 / 200' }, { k: 'stamina', v: '38:12' },
+        { k: 'magia', v: '11' }, { k: 'sangue', v: '−10% ao morrer' }
+      ],
+      equip: ['ELM', 'AMU', 'MOC', 'ARM', 'ESC', 'ANL', 'PRN', 'BOT', 'MUN', 'LUV', 'CAP', 'TRF'].map((code, i) => ({ code, s: slot(i < 8) })),
+      bag: bagItems.map(([code, n]) => ({ code, n, s: slot(!!code) })),
+      party: [
+        { name: 'Aldric Vayne', role: 'tank', bar: 'width: 88%; height: 100%; background: #6fae4f' },
+        { name: 'Iselle', role: 'dano', bar: 'width: 64%; height: 100%; background: #c9a227' },
+        { name: 'Bram', role: 'cura', bar: 'width: 96%; height: 100%; background: #6fae4f' },
+        { name: 'Kestra', role: 'à distância', bar: 'width: 72%; height: 100%; background: #6fae4f' }
+      ],
+      floors: [7, 8, 9, 10, 11, 12, 13].map(z => ({
+        label: `z ${z}`,
+        s: `padding: 3px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-align: center; border: 1px solid ${z === 7 ? '#5c4a24' : '#241f18'}; background: ${z === 7 ? '#2a2317' : '#0f0e0c'}; color: ${z === 7 ? '#e7c455' : '#6f6659'}`
+      })),
+      hotkeys: [['F1', 'cura'], ['F2', 'runa'], ['F3', 'area'], ['F4', 'grito'], ['F5', 'buff'], ['F6', 'mana'], ['F7', 'flecha'], ['F8', 'fuga'], ['F9', 'invoc'], ['F10', 'depot']].map(([key, label]) => ({
+        key, label,
+        s: 'width: 52px; padding: 5px 0; text-align: center; background: rgba(14,12,10,.9); border: 1px solid #33291d'
+      })),
+      chatTabs: ['Local', 'Grupo', 'Comércio', 'Loot', 'Registro'].map((name, i) => ({
+        name,
+        s: `padding: 6px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; border: 1px solid ${i === 0 ? '#5c4a24' : '#241f18'}; border-bottom: none; background: ${i === 0 ? '#1c1811' : '#131110'}; color: ${i === 0 ? '#e7c455' : '#7d7466'}`
+      })),
+      chat: [
+        ['Bram: cura pronta, puxa mais dois', '#b8ae9c'],
+        ['Iselle: cuidado, o Vero está com skull branco', '#b8ae9c'],
+        ['Necrófago acerta você por 184 de dano.', '#c07068'],
+        ['Você perdeu 184 de vida.', '#c07068'],
+        ['Você saqueou: 2 dentes de necrófago, 34 gp.', '#9db86f'],
+        ['Vero foi morto por Necrófago. Loot no chão por 5:00.', '#c9a227'],
+        ['Kestra convidou você para o grupo.', '#8fd0e0'],
+        ['Guarda: mantenha a espada baixa na praça, forasteiro.', '#8fd0e0'],
+        ['Servidor: reinício em 03:22:10.', '#6f6659']
+      ].map(([txt, c]) => ({ txt, s: `color: ${c}` })),
+      quests: [
+        { t: 'O Selo Partido', step: 'Encontre a terceira lasca em z-11', bar: 'width: 66%; height: 100%; background: #c9a227' },
+        { t: 'Dívida de sangue', step: 'Derrote 40 necrófagos · 27/40', bar: 'width: 67%; height: 100%; background: #b3423a' },
+        { t: 'Contrato do ferreiro', step: 'Entregue 20 dentes · 7/20', bar: 'width: 35%; height: 100%; background: #7fae4f' }
+      ],
+
+      classes: [
+        { name: 'Cavaleiro', role: 'TANQUE · CORPO A CORPO', code: 'CAV', desc: 'Segura o grupo de pé. Provoca, bloqueia e sangra devagar.', hint: 'Alta vida e capacidade, dano baixo.', bars: [['vida', 92], ['dano', 46], ['utilidade', 38]] },
+        { name: 'Paladino', role: 'HÍBRIDO · À DISTÂNCIA', code: 'PAL', desc: 'Flecha e fé. Sustenta a si mesmo e mantém distância segura.', hint: 'Consome munição; melhor solo.', bars: [['vida', 64], ['dano', 62], ['utilidade', 58]] },
+        { name: 'Mago elemental', role: 'DANO EM ÁREA', code: 'MAG', desc: 'Limpa salas inteiras e morre em três golpes.', hint: 'Depende de mana e do tanque.', bars: [['vida', 28], ['dano', 96], ['utilidade', 44]] },
+        { name: 'Druida', role: 'CURA · CONTROLE', code: 'DRU', desc: 'Cura em grupo, raízes e paredes de gelo para travar a rota.', hint: 'Insubstituível em caça profunda.', bars: [['vida', 40], ['dano', 44], ['utilidade', 94]] },
+        { name: 'Ladino', role: 'FURTIVO · PVP', code: 'LAD', desc: 'Abre fechaduras, some da visão e escolhe suas brigas.', hint: 'Skull rápido; alvo dos guardas.', bars: [['vida', 48], ['dano', 78], ['utilidade', 70]] },
+        { name: 'Necromante', role: 'INVOCADOR · DRENO', code: 'NEC', desc: 'Troca vida por servos. O que morre pelo seu lado volta a lutar.', hint: 'Curva lenta, escala muito tarde.', bars: [['vida', 52], ['dano', 70], ['utilidade', 80]] }
+      ].map((k, i) => ({
+        ...k,
+        pick: () => this.setState({ picked: i }),
+        card: `padding: 16px; background: ${i === this.state.picked ? '#211b12' : '#15120f'}; border: 1px solid ${i === this.state.picked ? '#5c4a24' : '#2e2720'}; cursor: pointer`,
+        bars: k.bars.map(([bk, v]) => ({ k: bk, bar: `width: ${v}%; height: 100%; background: ${v > 75 ? '#c9a227' : '#6b6150'}` }))
+      })),
+      pickedName: ['Cavaleiro', 'Paladino', 'Mago elemental', 'Druida', 'Ladino', 'Necromante'][this.state.picked],
+      pickedRole: ['tanque · corpo a corpo', 'híbrido · à distância', 'dano em área', 'cura · controle', 'furtivo · pvp', 'invocador · dreno'][this.state.picked],
+      worlds: [['Valdris', 'hardcore · 1 483 online'], ['Morrow', 'pvp opcional · 902 online'], ['Ashen', 'novo · 214 online']].map(([name, meta], i) => ({
+        name, meta,
+        s: `display: flex; justify-content: space-between; padding: 8px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; border: 1px solid ${i === 0 ? '#5c4a24' : '#241f18'}; background: ${i === 0 ? '#221c12' : '#0f0e0c'}; color: ${i === 0 ? '#e7c455' : '#8a8072'}`
+      })),
+
+      regions: [
+        { name: 'Valdris', meta: 'capital · depot · mercado', x: 30, y: 34, w: 20, h: 16 },
+        { name: 'Charco Cinza', meta: 'níveis 20–60', x: 12, y: 60, w: 18, h: 14 },
+        { name: 'Catacumbas', meta: 'z-8 a z-15 · 130+', x: 54, y: 46, w: 16, h: 14 },
+        { name: 'Costa Quebrada', meta: 'níveis 60–110', x: 68, y: 18, w: 20, h: 14 },
+        { name: 'Ermo de Sal', meta: 'pvp aberto · 150+', x: 44, y: 72, w: 20, h: 14 },
+        { name: 'Fenda de Ashen', meta: 'endgame · 250+', x: 76, y: 62, w: 18, h: 16 }
+      ].map(r => ({
+        name: r.name, meta: r.meta,
+        s: `position: absolute; left: ${r.x}%; top: ${r.y}%; width: ${r.w}%; height: ${r.h}%; padding: 10px; background: rgba(20,18,15,.82); border: 1px solid #3a3020`
+      })),
+      zstack: [
+        ['z-7', 'Praça de Valdris', 'superfície · zona protegida'],
+        ['z-8', 'Adega da taverna', 'ratos · nível 8+'],
+        ['z-9', 'Cisternas', 'último depot · nível 40+'],
+        ['z-10', 'Ossário', 'esqueletos · nível 80+'],
+        ['z-11', 'Fossa dos Necrófagos', 'necrófagos · nível 130+'],
+        ['z-12', 'Galerias inundadas', 'afogados · nível 170+'],
+        ['z-13', 'Forja negra', 'gólens · nível 210+'],
+        ['z-14', 'Câmara do Selo', 'chefe semanal'],
+        ['z-15', 'Fenda', 'endgame · sem retorno']
+      ].map(([z, name, meta], i) => ({
+        z, name, meta,
+        row: `display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: ${i === 4 ? '#221c12' : 'transparent'}; border: 1px solid ${i === 4 ? '#5c4a24' : 'transparent'}`,
+        slice: `width: 80px; height: 22px; flex: none; background: repeating-linear-gradient(45deg, rgba(255,255,255,${0.05 - i * 0.004}) 0 6px, transparent 6px 12px), #${['3b352c', '35302a', '2f2b26', '2a2723', '332420', '242f33', '332a20', '2b2233', '3a201d'][i]}`
+      })),
+      respawn: [
+        { k: 'exp/hora', v: '~3,1 mi' }, { k: 'loot/hora', v: '~180 k gp' },
+        { k: 'grupo ideal', v: '4 (tank+cura)' }, { k: 'nível mínimo', v: '130' },
+        { k: 'depot mais próximo', v: 'z-9 · 2 min' }, { k: 'risco de morte', v: 'alto' }
+      ],
+
+      stashTabs: ['Caixa 1', 'Runas', 'Loot', 'Vender'].map((name, i) => ({
+        name,
+        s: `padding: 6px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; border: 1px solid ${i === 0 ? '#5c4a24' : '#241f18'}; background: ${i === 0 ? '#221c12' : '#0f0e0c'}; color: ${i === 0 ? '#e7c455' : '#7d7466'}`
+      })),
+      stash: Array.from({ length: 40 }, (_, i) => {
+        const codes = ['GP', 'ESP', 'ELM', 'ARM', 'RNA', 'GEM', 'OSS', 'DNT', 'CRD', 'PÓ', 'MAP', 'CHV'];
+        const filled = i < 26;
+        return { code: filled ? codes[i % codes.length] : '', n: filled && i % 3 === 0 ? String(20 + i) : '', s: slot(filled) };
+      }),
+      myOffers: [
+        { item: 'Lâmina do Carrasco', price: '1 250 000 gp' },
+        { item: 'Runa de gelo ×500', price: '84 000 gp' },
+        { item: 'Elmo do Ossário', price: '312 000 gp' }
+      ],
+      market: [
+        ['Lâmina do Carrasco', '3', '1 250 000', '1 190 000'],
+        ['Elmo do Ossário', '12', '312 000', '298 000'],
+        ['Amuleto de sangue', '48', '96 500', '90 000'],
+        ['Runa de gelo ×100', '210', '17 200', '16 400'],
+        ['Poção de vida forte', '4 820', '380', '355'],
+        ['Dente de necrófago', '9 140', '190', '176'],
+        ['Escudo do Guarda', '27', '145 000', '138 000'],
+        ['Manto de Ashen', '5', '2 400 000', '2 210 000'],
+        ['Botas do Ermo', '31', '88 000', '81 500'],
+        ['Anel de mana', '64', '42 000', '39 800'],
+        ['Corda de aço', '512', '1 200', '1 050'],
+        ['Pó de osso', '1 380', '640', '590']
+      ].map(([item, qty, sell, buy], i) => ({
+        item, qty, sell, buy,
+        row: `display: grid; grid-template-columns: 1fr 90px 110px 110px; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid #1e1a15; background: ${i === 0 ? '#211b12' : 'transparent'}`
+      })),
+      itemStats: [
+        { k: 'ataque', v: '68 físico' }, { k: 'requisito', v: 'Cavaleiro 130' },
+        { k: 'vendas 30d', v: '11' }, { k: 'variação', v: '+8,4%' }, { k: 'taxa do mercado', v: '25 000 gp' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

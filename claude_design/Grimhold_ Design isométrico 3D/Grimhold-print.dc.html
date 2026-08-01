@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { animation-delay: -99s !important; animation-duration: .001s !important;
+      animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+      animation-play-state: running !important; transition-duration: 0s !important; }
+  doc-page:not(:defined) { visibility: hidden; }
+  body { margin: 0; background: #0a0908; }
+  a { color: #c9a227; text-decoration: none; }
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+
+<doc-page width="1920px" height="1080px">
+  <section class="page" style="background: #0a0908; overflow: hidden">
+    <dc-import name="Grimhold" screen="jogo" hide-chrome="1" hint-size="1920px,1080px"></dc-import>
+  </section>
+  <section class="page" style="background: #0a0908; overflow: hidden">
+    <dc-import name="Grimhold" screen="personagem" hide-chrome="1" hint-size="1920px,1080px"></dc-import>
+  </section>
+  <section class="page" style="background: #0a0908; overflow: hidden">
+    <dc-import name="Grimhold" screen="mapa" hide-chrome="1" hint-size="1920px,1080px"></dc-import>
+  </section>
+  <section class="page" style="background: #0a0908; overflow: hidden">
+    <dc-import name="Grimhold" screen="mercado" hide-chrome="1" hint-size="1920px,1080px"></dc-import>
+  </section>
+  <section class="page" style="background: #0a0908; overflow: hidden">
+    <dc-import name="Grimhold" screen="fichas" hide-chrome="1" hint-size="1920px,1080px"></dc-import>
+  </section>
+</doc-page>
+</x-dc>
+</body>
+</html>
