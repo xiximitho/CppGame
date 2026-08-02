@@ -17,13 +17,15 @@ void draw_corpse_loot(Renderer2D& renderer, const Tileset& tileset,
 
 /// Hit-test against draw_corpse_loot. Returns the backpack index clicked, or
 /// nullopt when the click missed every cell.
-std::optional<std::size_t> corpse_loot_hit(const Renderer2D& renderer,
+/// Takes the tileset, not the renderer: the panel's position depends on where the
+/// STATUS panel above it ends, and that depends on the font.
+std::optional<std::size_t> corpse_loot_hit(const Tileset& tileset,
                                            const CorpseView& corpse,
                                            float mouse_x, float mouse_y);
 
 /// True when the point lies on the loot panel rectangle (so a miss on a cell
 /// still does not fall through to the world).
-bool corpse_loot_panel_contains(const Renderer2D& renderer,
+bool corpse_loot_panel_contains(const Tileset& tileset,
                                 const CorpseView& corpse, float mouse_x,
                                 float mouse_y);
 

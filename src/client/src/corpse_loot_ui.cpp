@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 
+#include "client/status_panel_ui.hpp"
 #include "client/ui.hpp"
 #include "client/ui_theme.hpp"
 
@@ -18,12 +19,17 @@ constexpr float kTitleH = 18.0F;
 
 struct Layout {
     float x0 = theme::kMargin + kPad;
-    float y0 = theme::kMargin + kPad + kTitleH;
+    float y0 = 0.0F;
     float panel_h = 0.0F;
 };
 
-Layout layout(const CorpseView& corpse) {
+/// Stacks under the STATUS panel instead of starting at the top margin: both are
+/// left-anchored, so anchoring this one at the margin drew the loot bag straight
+/// over the HP and MP bars. Asking the status panel where it ends — rather than
+/// hardcoding a gap — is the same contract the battle list has with the inventory.
+Layout layout(const Tileset& tileset, const CorpseView& corpse) {
     Layout out;
+    out.y0 = status_panel_bottom(tileset) + theme::kGap + kPad + kTitleH;
     const auto rows =
         static_cast<int>((std::max<std::size_t>(corpse.items.size(), 1U) + 1U) /
                          2U);
@@ -56,7 +62,7 @@ void icon_in_cell(Renderer2D& renderer, const Tileset& tileset, sim::TileId id,
 
 void draw_corpse_loot(Renderer2D& renderer, const Tileset& tileset,
                       const CorpseView& corpse) {
-    const Layout l = layout(corpse);
+    const Layout l = layout(tileset, corpse);
     theme::panel(renderer, tileset, l.x0 - kPad, l.y0 - kPad - kTitleH, kPanelW,
                  l.panel_h, kUi);
     ui::text(renderer, tileset, "LOOT", l.x0, l.y0 - kTitleH, theme::kGold, 1.0F,
@@ -73,11 +79,10 @@ void draw_corpse_loot(Renderer2D& renderer, const Tileset& tileset,
     }
 }
 
-std::optional<std::size_t> corpse_loot_hit(const Renderer2D& renderer,
+std::optional<std::size_t> corpse_loot_hit(const Tileset& tileset,
                                            const CorpseView& corpse,
                                            float mouse_x, float mouse_y) {
-    (void)renderer;
-    const Layout l = layout(corpse);
+    const Layout l = layout(tileset, corpse);
     for (std::size_t i = 0; i < corpse.items.size(); ++i) {
         float cx = 0.0F;
         float cy = 0.0F;
@@ -89,11 +94,10 @@ std::optional<std::size_t> corpse_loot_hit(const Renderer2D& renderer,
     return std::nullopt;
 }
 
-bool corpse_loot_panel_contains(const Renderer2D& renderer,
+bool corpse_loot_panel_contains(const Tileset& tileset,
                                 const CorpseView& corpse, float mouse_x,
                                 float mouse_y) {
-    (void)renderer;
-    const Layout l = layout(corpse);
+    const Layout l = layout(tileset, corpse);
     const float left = l.x0 - kPad;
     const float top = l.y0 - kPad - kTitleH;
     return mouse_x >= left && mouse_x < left + kPanelW && mouse_y >= top &&

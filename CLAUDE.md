@@ -224,15 +224,25 @@ aparência que ganha `mobstrip`.
 Conjunto estático responde `frames == 1`, e `walk_frame` responde 0 para ele — por isso
 nenhum caller tem `if` de "não animado".
 
-A linha tem um campo `tilt` **opcional** no fim, em graus, e o valor certo para as
-folhas OTSP é **0**. Ele já foi 30 com a justificativa de que a arte estilo Tibia é
-desenhada para uma grade alinhada aos eixos da tela e "cairia" numa isométrica; isso
-estava **errado** e foi medido: as células da folha estão de pé, o importador copia
-pixel a pixel (conferido bbox por bbox contra `otsp_creatures_03.png`), e como
-`SpriteCmd::rotation` gira em torno do **pé** do sprite, 30° empurra um corpo de 32px
-uns 16px para o lado — o ator fica plantado e o corpo sai do losango. Era exatamente o
-sintoma de "sprite deslocado". O knob continua existindo para arte que realmente venha
-tombada; o default do `--tilt` do importador agora é 0.
+A linha tem um campo `tilt` **opcional** no fim, em graus, e **o valor certo depende da
+faixa da folha** — o pacote OTSP mistura duas convenções, o que foi medido célula por
+célula:
+
+| Faixa de `otsp_creatures_03.png` | Como está desenhada | `tilt` |
+|---|---|---|
+| linhas 47–48 (fantasma, criatura alada) → aparências 2 e 3 | **de pé** | **0** |
+| linhas 1–25, coluna 1 (template humano) → jogador | **deitada a 45°** | **45** |
+
+O default do `--tilt` do importador é **0**, porque "de pé" é o caso que não precisa de
+nada. Ele já foi 30, que era errado nas duas pontas: punha inclinação em arte que não
+precisava (mob) e não endireitava a que precisava (jogador ficava a 75° em vez de 90°).
+
+**Tilt ≠ 0 exige compensar o `origin`.** `SpriteCmd::rotation` gira em torno do **pé**
+do sprite (base do centro da célula), então a figura balança para o lado: a 45°, o pé
+de um sprite 32×48 sai +11px em x e +9px em y. É por isso que as linhas do jogador
+usam `origin -27 -41` em vez do canônico `-16 -32` — sem isso ele fica plantado ao lado
+do tile, que era o sintoma de "sprite deslocado". Medir é rápido: rotacione a máscara
+alpha da célula pela mesma fórmula do backend e olhe onde caem as 6 linhas mais baixas.
 
 `rotation == 0` desvia do `sin`/`cos`: todo tile de chão passa por ali, e girar não
 custa draw call porque o backend já emite quatro vértices por sprite. Arte, medidas

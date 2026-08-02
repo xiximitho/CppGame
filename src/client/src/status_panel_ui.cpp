@@ -16,6 +16,14 @@ constexpr float kPad = 8.0F;
 constexpr float kBarH = 8.0F;
 constexpr Color kHpFill{190, 55, 50, 255};
 
+/// One expression for the panel's height, shared by the drawing and by
+/// status_panel_bottom(): two copies would drift and the panel below would either
+/// overlap or float.
+float panel_height(const Tileset& tileset) {
+    const float title_h = ui::text_height(tileset) + 4.0F;
+    return kPad + title_h + 4.0F + kPad + kBarH + 14.0F + kBarH + 14.0F + kPad;
+}
+
 }  // namespace
 
 void draw_status_panel(Renderer2D& renderer, const Tileset& tileset,
@@ -41,8 +49,7 @@ void draw_status_panel(Renderer2D& renderer, const Tileset& tileset,
             : (voc.id != sim::kVocationNone ? voc.base_mana : 0);
 
     const float title_h = ui::text_height(tileset) + 4.0F;
-    const float panel_h = kPad + title_h + 4.0F + kPad + kBarH + 14.0F + kBarH +
-                          14.0F + kPad;
+    const float panel_h = panel_height(tileset);
     const float x0 = theme::kMargin;
     const float y0 = theme::kMargin;
 
@@ -90,6 +97,10 @@ void draw_status_panel(Renderer2D& renderer, const Tileset& tileset,
                   static_cast<int>(max_mana));
     ui::text(renderer, tileset, line, bar_x, bar_y + kBarH + 2.0F,
              theme::kTextDim, 1.0F, kUi + 5.0F);
+}
+
+float status_panel_bottom(const Tileset& tileset) {
+    return theme::kMargin + panel_height(tileset);
 }
 
 }  // namespace client

@@ -549,11 +549,11 @@ int main(int argc, char** argv) {
 
                 if (open_corpse != nullptr) {
                     if (const auto index = client::corpse_loot_hit(
-                            *renderer, *open_corpse, mouse_x, mouse_y)) {
+                            tileset, *open_corpse, mouse_x, mouse_y)) {
                         session->request_loot_take(open_corpse->tile, *index);
                         consumed = true;
                     } else if (client::corpse_loot_panel_contains(
-                                   *renderer, *open_corpse, mouse_x, mouse_y)) {
+                                   tileset, *open_corpse, mouse_x, mouse_y)) {
                         consumed = true;  // click on chrome, keep panel open
                     }
                 }

@@ -230,13 +230,16 @@ def main(argv):
     ap.add_argument("--assets", default="assets", help="asset root to write into")
     ap.add_argument("--tilt", type=int, default=0, metavar="DEG",
                     help="clockwise lean in degrees, about the sprite's feet "
-                         "(default 0, upright). The OTSP creatures are drawn UPRIGHT "
-                         "in the sheet and the importer copies cells verbatim, so any "
-                         "lean here is a lean the art did not have: the pivot is the "
-                         "sprite's feet, and 30 degrees slides a 32px body ~16px "
-                         "sideways, which reads as the creature falling off its tile. "
-                         "Keep 0 unless a sheet really draws a creature leaning, and "
-                         "check it in the editor's F4 preview.")
+                         "(default 0, upright). The OTSP pack MIXES conventions, "
+                         "measured cell by cell: the creature rows (47-48 of "
+                         "creatures_03) are drawn upright and want 0, while the human "
+                         "outfit template (rows 1-25, col 1) is stored lying at 45 "
+                         "degrees and wants 45. Do not guess: rotate the cell's alpha "
+                         "mask by this angle about the foot and check that the "
+                         "principal axis lands on vertical, or eyeball it in the "
+                         "editor's F4 preview. A non-zero tilt also swings the sprite "
+                         "sideways, so the atlas line needs its origin compensated "
+                         "(45 degrees moves a 32x48 foot +11px in x, +9px in y).")
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would happen and write nothing")
     opt = ap.parse_args(argv)

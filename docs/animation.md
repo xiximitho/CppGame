@@ -95,24 +95,27 @@ do editor é onde se vê.
 
 ## A inclinação
 
-⚠️ **Esta seção afirmava o contrário até 2026-08-01, e o contrário estava errado.** O
-texto dizia: arte estilo Tibia é desenhada para uma grade alinhada aos eixos da tela,
-numa isométrica a criatura "tomba", e ~30° a põe de pé — com 30 sendo o default do
-importador. Foi medido e é falso:
+⚠️ **Esta seção dizia "~30° põe estas folhas de pé, e é o default do importador".
+Errado nas duas pontas, e medido em 2026-08-01.** A folha `otsp_creatures_03.png`
+**mistura** duas convenções:
 
-- as células de `otsp_creatures_03.png` estão **de pé** na folha;
-- o importador copia pixel a pixel (as bbox de conteúdo das 12 células do atlas batem
-  uma a uma com as da folha, só permutadas pelo `--dir-order`);
-- e como o pivô é o **pé** do sprite, 30° empurra um corpo de 32px uns **16px para o
-  lado**: os pés ficam no tile e o corpo sai dele.
+| Faixa | Como está desenhada | Evidência | `tilt` |
+|---|---|---|---|
+| linhas 47–48 (fantasma, criatura alada) | **de pé** | as bbox das 12 células do atlas batem uma a uma com as da folha, e a criatura tem pernas no fundo da célula | **0** |
+| linhas 1–25, coluna 1 (template humano do jogador) | **deitada a 45°** | o cavaleiro inteiro cabe em 32×32 (não é fragmento de 64×64) e o eixo principal mede 45°; rotacionando 45° ele fica um cavaleiro em pé normal | **45** |
 
-Ou seja, o `tilt` de 30° não corrigia inclinação nenhuma — ele criava o deslocamento
-que parecia ser problema de ângulo de visão. O valor certo para estas folhas é **0**,
-que é o novo default do `--tilt`.
+Então 30° punha inclinação onde não precisava (o mob saía do losango — era o "sprite
+deslocado") e não endireitava quem precisava (o jogador parava a 75° em vez de 90°).
 
-O campo continua existindo, porque é barato e uma folha pode de fato trazer arte
-tombada. Mas a suspeita, ao ver um mob desalinhado, deve começar pela **ancoragem**
-(`origin_x`/`origin_y`) e não pela rotação.
+**Como medir em vez de chutar:** rotacione a máscara alpha da célula pela mesma fórmula
+do `sdl_backend` (pivô no pé, `pivot_x = (x0+x1)/2`, `pivot_y = y1`) e calcule o eixo
+principal da massa opaca. Vertical = 90°. Para o template humano dá 45 + tilt, ou seja
+`tilt 45` cravado.
+
+**E compense o `origin`.** Girar em torno do pé balança a figura para o lado: a 45°, o
+pé de um sprite 32×48 sai +11px em x e +9px em y, então as linhas do jogador usam
+`origin -27 -41` no lugar do canônico `-16 -32`. Sem isso ele fica plantado ao lado do
+tile — o mesmo sintoma, por outra causa.
 
 Duas decisões dentro disso:
 
