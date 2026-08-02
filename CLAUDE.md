@@ -224,25 +224,36 @@ aparência que ganha `mobstrip`.
 Conjunto estático responde `frames == 1`, e `walk_frame` responde 0 para ele — por isso
 nenhum caller tem `if` de "não animado".
 
-A linha tem um campo `tilt` **opcional** no fim, em graus, e **o valor certo depende da
-faixa da folha** — o pacote OTSP mistura duas convenções, o que foi medido célula por
-célula:
+A linha tem um campo `tilt` **opcional** no fim, em graus, e **hoje nada shippado usa
+valor diferente de 0** — de propósito. O pacote OTSP mistura duas convenções, medido
+célula por célula:
 
-| Faixa de `otsp_creatures_03.png` | Como está desenhada | `tilt` |
+| Faixa de `otsp_creatures_03.png` | Como está desenhada | O que fazemos |
 |---|---|---|
-| linhas 47–48 (fantasma, criatura alada) → aparências 2 e 3 | **de pé** | **0** |
-| linhas 1–25, coluna 1 (template humano) → jogador | **deitada a 45°** | **45** |
+| linhas 47–48 (fantasma, criatura alada) → aparências 2 e 3 | **de pé** | nada, `tilt 0` |
+| linhas 1–25, coluna 1 (template humano) → jogador | **deitada a 45°** | **assada em pé no import** |
 
-O default do `--tilt` do importador é **0**, porque "de pé" é o caso que não precisa de
-nada. Ele já foi 30, que era errado nas duas pontas: punha inclinação em arte que não
-precisava (mob) e não endireitava a que precisava (jogador ficava a 75° em vez de 90°).
+O `tilt` já foi 30, errado nas duas pontas: inclinava arte que não precisava (o mob
+saía do losango) e não endireitava a que precisava (o jogador parava em 75°).
 
-**Tilt ≠ 0 exige compensar o `origin`.** `SpriteCmd::rotation` gira em torno do **pé**
-do sprite (base do centro da célula), então a figura balança para o lado: a 45°, o pé
-de um sprite 32×48 sai +11px em x e +9px em y. É por isso que as linhas do jogador
-usam `origin -27 -41` em vez do canônico `-16 -32` — sem isso ele fica plantado ao lado
-do tile, que era o sintoma de "sprite deslocado". Medir é rápido: rotacione a máscara
-alpha da célula pela mesma fórmula do backend e olhe onde caem as 6 linhas mais baixas.
+**Por que assar em vez de girar no render.** `SpriteCmd::rotation` gira em torno do
+**pé** do sprite, então a figura balança para o lado: a 45°, o pé de um 32×48 sai
++11px em x e +9px em y, e o atlas precisava de um `origin -27 -41` que nada mais no
+arquivo usa. Pior, a rotação acontece depois do zoom, então o grid de pixels do sprite
+fica torto em relação ao da tela e o contorno vira escadinha. `import_otsp_world.py`
+gira as células (`apply_upright`, mapeamento inverso, nearest — o mesmo que a GPU
+fazia) e recentra pelo **pé da base**, com o mesmo deslocamento aplicado às 4 máscaras
+de roupa, senão a roupa descola. Resultado: `origin` canônico, `tilt 0`, pixel
+alinhado, zero conta por sprite.
+
+O campo fica porque é barato e uma folha pode trazer arte tombada — mas a suspeita, ao
+ver um sprite desalinhado, começa pela **ancoragem**, não pela rotação.
+
+**As 4 direções são as 4 diagonais, e o par esquerda/direita é fácil de espelhar.**
+Nenhuma das quatro poses do template é perfil de lado (largura de ombro 18–21 nas
+quatro): duas olham para a câmera, duas para o fundo. Se o boneco andar para uma
+diagonal olhando para a oposta, é o `--dir-order`/`dir_order` espelhado — dá para
+medir de que lado da cabeça está a pele do rosto, em espaço de tela.
 
 `rotation == 0` desvia do `sin`/`cos`: todo tile de chão passa por ali, e girar não
 custa draw call porque o backend já emite quatro vértices por sprite. Arte, medidas

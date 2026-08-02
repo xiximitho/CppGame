@@ -112,10 +112,25 @@ do `sdl_backend` (pivô no pé, `pivot_x = (x0+x1)/2`, `pivot_y = y1`) e calcule
 principal da massa opaca. Vertical = 90°. Para o template humano dá 45 + tilt, ou seja
 `tilt 45` cravado.
 
-**E compense o `origin`.** Girar em torno do pé balança a figura para o lado: a 45°, o
-pé de um sprite 32×48 sai +11px em x e +9px em y, então as linhas do jogador usam
-`origin -27 -41` no lugar do canônico `-16 -32`. Sem isso ele fica plantado ao lado do
-tile — o mesmo sintoma, por outra causa.
+**E o jogador não usa mais `tilt` nenhum: a rotação é assada no import.** Girar em
+tempo de render tinha dois preços. Um: o pivô é o pé do sprite, então a figura balança
+para o lado (a 45° o pé de um 32×48 sai +11px em x, +9px em y) e o atlas precisava de
+`origin -27 -41`, que nada mais no arquivo usa. Dois: a rotação acontece **depois** do
+zoom, então o grid de pixels do sprite fica torto em relação ao da tela e o contorno
+vira escadinha.
+
+`tools/import_otsp_world.py` agora gira as células ao empacotar (`apply_upright`:
+mapeamento inverso com amostragem nearest, a mesma que a GPU fazia, para a arte não
+ganhar cor interpolada que o resto do tileset não tem) e recentra pelo **pé da base** —
+com o **mesmo** deslocamento aplicado às 4 máscaras de roupa, senão a roupa desliza
+para fora do corpo. Resultado: `origin` canônico `-16 -32`, `tilt 0`, pixel alinhado ao
+grid da tela, e nenhuma conta de rotação por sprite.
+
+**As quatro poses são as quatro diagonais.** Nenhuma é perfil de lado — largura de
+ombro 18–21 nas quatro, medida em espaço de tela; duas olham para a câmera, duas para o
+fundo. Se o boneco andar para uma diagonal olhando para a oposta, o `dir_order` está
+espelhado: meça de que lado da cabeça fica a pele do rosto depois de girar a célula.
+Foi o que aconteceu com `[2,3,0,1]`, corrigido para `[3,2,1,0]`.
 
 Duas decisões dentro disso:
 

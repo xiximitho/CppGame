@@ -159,6 +159,71 @@ def pad_actor_cell(cell32: bytearray) -> bytearray:
     return frame
 
 
+# This sheet's human template is drawn LYING ALONG THE ISO DIAGONAL: the whole
+# knight fits in one 32x32 cell with the head up-left and the feet down-right, and
+# its principal axis measures 45 degrees. Standing it up is baked here instead of
+# rotated per frame by the renderer, which is what the `tilt` field used to do.
+#
+# Baking wins three things. The origins go back to the canonical -16/-32 (rotating
+# about the cell's foot swung the figure ~11px sideways, so the atlas needed a
+# fudged -27/-41 that nothing else in the file uses). The sprite's pixel grid ends
+# up axis-aligned with the screen, so at integer zoom every source pixel maps to a
+# whole block instead of a smeared diagonal. And `tilt` stops being a trap that has
+# to be rediscovered per sheet.
+UPRIGHT_DEG = 45.0
+
+
+def _upright_terms():
+    import math
+    r = math.radians(UPRIGHT_DEG)
+    return math.sin(r), math.cos(r), ACTOR_W / 2.0, float(ACTOR_H)
+
+
+def upright_transform(base_cell: bytearray) -> tuple[float, float]:
+    """Translation that puts the ROTATED figure's feet at the cell's bottom centre.
+
+    Derived from the base body and then applied to every layer of the same frame:
+    a boots mask has different extents from the body, so measuring each layer on
+    its own would slide the clothes off the figure.
+    """
+    s, c, pivx, pivy = _upright_terms()
+    landed = []
+    for y in range(ACTOR_H):
+        for x in range(ACTOR_W):
+            if base_cell[(y * ACTOR_W + x) * 4 + 3] > 8:
+                dx, dy = x - pivx, y - pivy
+                landed.append((pivx + dx * c - dy * s, pivy + dx * s + dy * c))
+    if not landed:
+        return 0.0, 0.0
+    low = max(p[1] for p in landed)
+    feet = [p for p in landed if p[1] > low - 6.0]
+    foot_x = sum(p[0] for p in feet) / len(feet)
+    return pivx - foot_x, (ACTOR_H - 1.0) - low
+
+
+def apply_upright(cell: bytearray, tx: float, ty: float) -> bytearray:
+    """Rotate + translate by inverse mapping, nearest sample.
+
+    Nearest and 1:1 on purpose: the same sampling the GPU quad did, so the art does
+    not gain interpolated colours that the rest of the tileset does not have.
+    """
+    s, c, pivx, pivy = _upright_terms()
+    out = bytearray(ACTOR_W * ACTOR_H * 4)
+    for y in range(ACTOR_H):
+        for x in range(ACTOR_W):
+            ux, uy = x - tx, y - ty
+            dx, dy = ux - pivx, uy - pivy
+            sx = pivx + dx * c + dy * s          # inverse rotation
+            sy = pivy - dx * s + dy * c
+            ix, iy = int(round(sx)), int(round(sy))
+            if 0 <= ix < ACTOR_W and 0 <= iy < ACTOR_H:
+                si = (iy * ACTOR_W + ix) * 4
+                if cell[si + 3] > 8:
+                    di = (y * ACTOR_W + x) * 4
+                    out[di:di + 4] = cell[si:si + 4]
+    return out
+
+
 def composite_cell(sheet_w: int, sheet: bytearray, row: int) -> bytearray:
     """Base body for one walk frame.
 
@@ -296,7 +361,7 @@ def main() -> int:
     meta = upsert_line(
         meta, "object",
         lambda p: len(p) >= 2 and p[0] == "object" and p[1] == "101",
-        "object      101     64   64   64  64  -32      -32\n",
+        "object      101     64   64   64  64  -32      -48\n",
     )
     print("object 101 tree <- nature (7,33) left canopy")
 
@@ -308,7 +373,7 @@ def main() -> int:
     meta = upsert_line(
         meta, "object",
         lambda p: len(p) >= 2 and p[0] == "object" and p[1] == "102",
-        "object      102     128  64   64  64  -32      -32\n",
+        "object      102     128  64   64  64  -32      -48\n",
     )
     print("object 102 crate <- town (6,1)")
 
@@ -346,12 +411,21 @@ def main() -> int:
         (3, (255, 255, 0)),   # head
     ]
 
+    # One transform per sheet row, measured on the BODY and reused by every layer
+    # of that frame (see upright_transform).
+    upright = {
+        row: upright_transform(pad_actor_cell(composite_cell(cw, creat, row)))
+        for rows in sheet_blocks for row in rows
+    }
+    upright[13] = upright.get(13, upright_transform(
+        pad_actor_cell(composite_cell(cw, creat, 13))))
+
     def pack_strip(dst_y: int, make_cell) -> None:
         clear_rect(atlas, aw, 0, dst_y, strip_w, ACTOR_H)
         for block, rows in enumerate(sheet_blocks):
             atlas_dir = dir_order[block]
             for fi, row in enumerate(rows):
-                cell = pad_actor_cell(make_cell(row))
+                cell = apply_upright(pad_actor_cell(make_cell(row)), *upright[row])
                 x = (atlas_dir * frames + fi) * ACTOR_W
                 paste(atlas, aw, ah, x, dst_y, cell, ACTOR_W, ACTOR_H)
 
@@ -360,12 +434,13 @@ def main() -> int:
         meta, "playerstrip",
         lambda p: len(p) >= 1 and p[0] == "playerstrip",
         f"playerstrip  0  0    {band_y}  {ACTOR_W}  {ACTOR_H}  {dirs}  {frames}"
-        f"  -16  -32  30\n",
+        f"  -16  -32  0\n",
     )
     print(f"playerstrip <- creatures 4x3 @ y={band_y}")
 
     # Static actor[] fallback = front-facing frame 0 of the strip (atlas dir 2).
-    still = pad_actor_cell(composite_cell(cw, creat, 13))
+    still = apply_upright(pad_actor_cell(composite_cell(cw, creat, 13)),
+                         *upright[13])
     for d in range(8):
         x = d * ACTOR_W
         clear_rect(atlas, aw, x, 128, ACTOR_W, ACTOR_H)
@@ -391,7 +466,8 @@ def main() -> int:
             f"{dirs}  {frames}  -16  -32\n",
         )
         # Keep a static outfit line (frame 0, front) for simple lookups / preview.
-        still_mask = pad_actor_cell(make_mask(13))
+        still_mask = apply_upright(pad_actor_cell(make_mask(13)),
+                                   *upright[13])
         x = layer_id * ACTOR_W
         clear_rect(atlas, aw, x, 640, ACTOR_W, ACTOR_H)
         paste(atlas, aw, ah, x, 640, still_mask, ACTOR_W, ACTOR_H)
