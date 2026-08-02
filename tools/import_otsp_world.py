@@ -321,7 +321,16 @@ def main() -> int:
         [13, 15, 17],
         [19, 21, 23],
     ]
-    dir_order = [2, 3, 0, 1]  # sheet front,left,back,right → atlas 0..3
+    # Measured, not guessed. The four poses in this template are the four ISO
+    # DIAGONALS, not front/left/back/right: none of them is a side profile, two
+    # face the camera and two face away. Reading each block's face-skin position in
+    # screen space (rotate the cell 45 degrees, look at which side of the head the
+    # skin sits on) gives sheet order away-right, away-left, camera-left,
+    # camera-right, while the atlas wants away-left, away-right, camera-right,
+    # camera-left — mirrored in both halves. Hence [3, 2, 1, 0]: with [2, 3, 0, 1]
+    # the character walked facing the opposite diagonal from the one it moved
+    # along, which reads as sliding sideways.
+    dir_order = [3, 2, 1, 0]
     dirs, frames = 4, 3
     strip_cells = dirs * frames  # 12
     strip_w = strip_cells * ACTOR_W  # 384
